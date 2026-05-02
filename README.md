@@ -4,7 +4,7 @@
 `pandas.wide_to_long`, previewing the reshaped table, and creating interactive
 Plotly scatter and box plots.
 
-Version: `v2.0`  
+Version: `v2.1`  
 Author: `cnwang`  
 Date: `2024/04`
 
@@ -15,11 +15,12 @@ Date: `2024/04`
 - Reshape wide data to long data with `pandas.wide_to_long`.
 - User-defined `stubnames`, `suffix regex`, and suffix column name.
 - Mark columns that match `stubnames + suffix` in the column list.
-- Enable the Plot tab only after `wide_to_long` succeeds.
+- Enable the Scatter and Boxplot tabs only after `wide_to_long` succeeds.
 - Preserve source column order in the preview output.
 - Save reshaped data as CSV or Excel.
 - Create Plotly scatter charts with configurable X/Y/series/color/symbol/size/opacity.
-- Create Plotly box plots with configurable Y, group 1, and group 2.
+- Create Plotly box plots with configurable Y, group 1, group 2, sorted X
+  categories, point display mode, and per-box annotations.
 - Add horizontal and vertical reference lines.
 - Auto-fill X/Y ranges, 3-sigma reference lines, and Y statistics.
 - Pick reference line color with a color picker.
@@ -190,8 +191,14 @@ The Boxplot tab is also enabled only after `wide_to_long` succeeds.
    `Group 1` or `Group 1 / Group 2`.
 5. Choose `Points` to show only outliers, all points, jittered points, or no
    points.
-6. The chart is drawn automatically when enough selections are available.
-7. The Boxplot tab supports Y range, Y lines, Auto statistics, theme, plot size,
+6. Choose up to 5 annotation statistics to show above the X axis. The statistic
+   names are shown once outside the right side of the plot and each box shows
+   stacked values only: `N`, `max`, `min`, `median`, `average`, `standard`, or
+   `range`. Annotation size, color, alpha, and numeric format can be adjusted.
+   The numeric format applies to all annotation values except `N` and accepts
+   Python format specifiers such as `.2f`, `.3g`, `,.1f`, or `{value:.2f}`.
+7. The chart is drawn automatically when enough selections are available.
+8. The Boxplot tab supports Y range, Y lines, Auto statistics, theme, plot size,
    line color, line opacity/width, and HTML export.
 
 Boxplot does not use V lines or X range controls.
@@ -204,8 +211,13 @@ The exported file includes Plotly JS and can be opened without the app.
 ## Included Assets
 
 - `mainwindow.ui`: Qt Designer UI file.
+- `tabData.py`, `tabScatter.py`, `tabBoxplot.py`: tab controller modules.
 - `CascadiaNextTC.wght.ttf`: application font.
 - `AppIcon.appiconset`: application icon source images.
 - `app.ico`: Windows executable icon for PyInstaller.
 - `w2l.png`: help image shown by `what is wide_to_long`.
 - `demo.csv`, `demo2.csv`: sample data files.
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE` for details.

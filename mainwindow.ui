@@ -30,9 +30,9 @@
      </font>
     </property>
     <property name="currentIndex">
-     <number>0</number>
+     <number>2</number>
     </property>
-    <widget class="QWidget" name="tab1">
+    <widget class="QWidget" name="tabData">
      <attribute name="title">
       <string>Wide to long</string>
      </attribute>
@@ -588,7 +588,7 @@
       </widget>
      </widget>
     </widget>
-    <widget class="QWidget" name="tab2">
+    <widget class="QWidget" name="tabScatter">
      <attribute name="title">
       <string>Scatter</string>
      </attribute>
@@ -1248,7 +1248,7 @@
       </property>
      </widget>
     </widget>
-    <widget class="QWidget" name="tab3">
+    <widget class="QWidget" name="tabBoxplot">
      <attribute name="title">
       <string>Boxplot</string>
      </attribute>
@@ -1380,7 +1380,7 @@
        <property name="geometry">
         <rect>
          <x>20</x>
-         <y>75</y>
+         <y>65</y>
          <width>51</width>
          <height>21</height>
         </rect>
@@ -1393,7 +1393,7 @@
        <property name="geometry">
         <rect>
          <x>80</x>
-         <y>74</y>
+         <y>64</y>
          <width>401</width>
          <height>24</height>
         </rect>
@@ -1403,7 +1403,7 @@
        <property name="geometry">
         <rect>
          <x>510</x>
-         <y>74</y>
+         <y>64</y>
          <width>111</width>
          <height>24</height>
         </rect>
@@ -1415,24 +1415,11 @@
         <bool>true</bool>
        </property>
       </widget>
-      <widget class="QPushButton" name="boxAutoStatsButton">
-       <property name="geometry">
-        <rect>
-         <x>640</x>
-         <y>70</y>
-         <width>81</width>
-         <height>32</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Auto</string>
-       </property>
-      </widget>
       <widget class="QPushButton" name="boxPlotButton">
        <property name="geometry">
         <rect>
-         <x>740</x>
-         <y>70</y>
+         <x>20</x>
+         <y>260</y>
          <width>111</width>
          <height>32</height>
         </rect>
@@ -1444,8 +1431,8 @@
       <widget class="QPushButton" name="boxDownloadHtmlButton">
        <property name="geometry">
         <rect>
-         <x>860</x>
-         <y>70</y>
+         <x>300</x>
+         <y>260</y>
          <width>91</width>
          <height>32</height>
         </rect>
@@ -1454,80 +1441,11 @@
         <string>HTML</string>
        </property>
       </widget>
-      <widget class="QLabel" name="boxYTitleLabel">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>120</y>
-         <width>61</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Y title:</string>
-       </property>
-      </widget>
-      <widget class="QLineEdit" name="boxYTitleLineEdit">
-       <property name="geometry">
-        <rect>
-         <x>80</x>
-         <y>119</y>
-         <width>201</width>
-         <height>24</height>
-        </rect>
-       </property>
-      </widget>
-      <widget class="QLabel" name="boxYRangeLabel">
-       <property name="geometry">
-        <rect>
-         <x>300</x>
-         <y>120</y>
-         <width>61</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Y range:</string>
-       </property>
-      </widget>
-      <widget class="QLineEdit" name="boxYRangeLineEdit">
-       <property name="geometry">
-        <rect>
-         <x>370</x>
-         <y>119</y>
-         <width>141</width>
-         <height>24</height>
-        </rect>
-       </property>
-      </widget>
-      <widget class="QLabel" name="boxYLinesLabel">
-       <property name="geometry">
-        <rect>
-         <x>530</x>
-         <y>120</y>
-         <width>61</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Y lines:</string>
-       </property>
-      </widget>
-      <widget class="QLineEdit" name="boxYLinesLineEdit">
-       <property name="geometry">
-        <rect>
-         <x>600</x>
-         <y>119</y>
-         <width>181</width>
-         <height>24</height>
-        </rect>
-       </property>
-      </widget>
       <widget class="QLabel" name="boxThemeLabel">
        <property name="geometry">
         <rect>
-         <x>800</x>
-         <y>120</y>
+         <x>140</x>
+         <y>264</y>
          <width>51</width>
          <height>21</height>
         </rect>
@@ -1539,143 +1457,626 @@
       <widget class="QComboBox" name="boxPlotlyThemeComboBox">
        <property name="geometry">
         <rect>
-         <x>850</x>
-         <y>116</y>
+         <x>190</x>
+         <y>260</y>
          <width>101</width>
          <height>32</height>
         </rect>
        </property>
       </widget>
-      <widget class="QLabel" name="boxColorLabel">
+      <widget class="QGroupBox" name="groupBox">
        <property name="geometry">
         <rect>
-         <x>20</x>
-         <y>165</y>
-         <width>51</width>
-         <height>21</height>
+         <x>10</x>
+         <y>180</y>
+         <width>931</width>
+         <height>80</height>
         </rect>
        </property>
-       <property name="text">
-        <string>Color:</string>
+       <property name="title">
+        <string>statistic data</string>
        </property>
+       <widget class="QPushButton" name="boxAnnotationColorButton">
+        <property name="geometry">
+         <rect>
+          <x>610</x>
+          <y>25</y>
+          <width>61</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>#000000</string>
+        </property>
+       </widget>
+       <widget class="QComboBox" name="boxAnnotation5ComboBox">
+        <property name="geometry">
+         <rect>
+          <x>400</x>
+          <y>25</y>
+          <width>111</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <item>
+         <property name="text">
+          <string/>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>N</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>max</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>min</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>median</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>average</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>standard</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>range</string>
+         </property>
+        </item>
+       </widget>
+       <widget class="QLabel" name="boxAnnotationSizeLabel">
+        <property name="geometry">
+         <rect>
+          <x>510</x>
+          <y>30</y>
+          <width>31</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Size</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="boxAnnotationFormatLineEdit">
+        <property name="geometry">
+         <rect>
+          <x>860</x>
+          <y>30</y>
+          <width>61</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="whatsThis">
+         <string>Format controls annotation numbers except N. Examples: .2f shows 2 decimals, .3g keeps 3 significant digits, ,.1f adds thousands separators, and {value:.2f} is also accepted.</string>
+        </property>
+        <property name="placeholderText">
+         <string>.6g</string>
+        </property>
+       </widget>
+       <widget class="QSpinBox" name="boxAnnotationSizeSpinBox">
+        <property name="geometry">
+         <rect>
+          <x>550</x>
+          <y>25</y>
+          <width>51</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="minimum">
+         <number>6</number>
+        </property>
+        <property name="maximum">
+         <number>32</number>
+        </property>
+        <property name="value">
+         <number>11</number>
+        </property>
+       </widget>
+       <widget class="QLabel" name="boxAnnotationAlphaLabel">
+        <property name="geometry">
+         <rect>
+          <x>680</x>
+          <y>30</y>
+          <width>61</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>opacity</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="boxAnnotationFormatLabel">
+        <property name="geometry">
+         <rect>
+          <x>805</x>
+          <y>31</y>
+          <width>51</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="whatsThis">
+         <string>Format controls annotation numbers except N. Examples: .2f shows 2 decimals, .3g keeps 3 significant digits, ,.1f adds thousands separators, and {value:.2f} is also accepted.</string>
+        </property>
+        <property name="text">
+         <string>Format:</string>
+        </property>
+       </widget>
+       <widget class="QComboBox" name="boxAnnotation1ComboBox">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>25</y>
+          <width>111</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <item>
+         <property name="text">
+          <string/>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>N</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>max</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>min</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>median</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>average</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>standard</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>range</string>
+         </property>
+        </item>
+       </widget>
+       <widget class="QComboBox" name="boxAnnotation2ComboBox">
+        <property name="geometry">
+         <rect>
+          <x>100</x>
+          <y>25</y>
+          <width>111</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <item>
+         <property name="text">
+          <string/>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>N</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>max</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>min</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>median</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>average</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>standard</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>range</string>
+         </property>
+        </item>
+       </widget>
+       <widget class="QComboBox" name="boxAnnotation3ComboBox">
+        <property name="geometry">
+         <rect>
+          <x>200</x>
+          <y>25</y>
+          <width>111</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <item>
+         <property name="text">
+          <string/>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>N</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>max</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>min</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>median</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>average</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>standard</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>range</string>
+         </property>
+        </item>
+       </widget>
+       <widget class="QDoubleSpinBox" name="boxAnnotationAlphaSpinBox">
+        <property name="geometry">
+         <rect>
+          <x>740</x>
+          <y>20</y>
+          <width>61</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="minimum">
+         <double>0.000000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>1.000000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>0.100000000000000</double>
+        </property>
+        <property name="value">
+         <double>0.720000000000000</double>
+        </property>
+       </widget>
+       <widget class="QComboBox" name="boxAnnotation4ComboBox">
+        <property name="geometry">
+         <rect>
+          <x>300</x>
+          <y>25</y>
+          <width>111</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <item>
+         <property name="text">
+          <string/>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>N</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>max</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>min</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>median</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>average</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>standard</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>range</string>
+         </property>
+        </item>
+       </widget>
+       <widget class="QLabel" name="boxAnnotationLabel">
+        <property name="geometry">
+         <rect>
+          <x>-220</x>
+          <y>30</y>
+          <width>81</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Annotation:</string>
+        </property>
+       </widget>
       </widget>
-      <widget class="QPushButton" name="boxLineColorButton">
+      <widget class="QGroupBox" name="groupBox_2">
        <property name="geometry">
         <rect>
-         <x>80</x>
-         <y>160</y>
-         <width>91</width>
-         <height>32</height>
+         <x>10</x>
+         <y>90</y>
+         <width>921</width>
+         <height>91</height>
         </rect>
        </property>
-       <property name="text">
-        <string>#ff0000</string>
+       <property name="title">
+        <string>Y-line</string>
        </property>
-      </widget>
-      <widget class="QLabel" name="boxLineWidthLabel">
-       <property name="geometry">
-        <rect>
-         <x>190</x>
-         <y>165</y>
-         <width>91</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Width/opacity:</string>
-       </property>
-      </widget>
-      <widget class="QDoubleSpinBox" name="boxLineWidthSpinBox">
-       <property name="geometry">
-        <rect>
-         <x>290</x>
-         <y>160</y>
-         <width>81</width>
-         <height>32</height>
-        </rect>
-       </property>
-       <property name="minimum">
-        <double>0.000000000000000</double>
-       </property>
-       <property name="maximum">
-        <double>1.000000000000000</double>
-       </property>
-       <property name="singleStep">
-        <double>0.100000000000000</double>
-       </property>
-       <property name="value">
-        <double>0.500000000000000</double>
-       </property>
-      </widget>
-      <widget class="QLabel" name="boxPlotWidthLabel">
-       <property name="geometry">
-        <rect>
-         <x>400</x>
-         <y>165</y>
-         <width>81</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Plot width:</string>
-       </property>
-      </widget>
-      <widget class="QSpinBox" name="boxPlotWidthSpinBox">
-       <property name="geometry">
-        <rect>
-         <x>490</x>
-         <y>160</y>
-         <width>91</width>
-         <height>32</height>
-        </rect>
-       </property>
-       <property name="minimum">
-        <number>200</number>
-       </property>
-       <property name="maximum">
-        <number>5000</number>
-       </property>
-       <property name="singleStep">
-        <number>50</number>
-       </property>
-       <property name="value">
-        <number>900</number>
-       </property>
-      </widget>
-      <widget class="QLabel" name="boxPlotHeightLabel">
-       <property name="geometry">
-        <rect>
-         <x>610</x>
-         <y>165</y>
-         <width>81</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Plot height:</string>
-       </property>
-      </widget>
-      <widget class="QSpinBox" name="boxPlotHeightSpinBox">
-       <property name="geometry">
-        <rect>
-         <x>700</x>
-         <y>160</y>
-         <width>91</width>
-         <height>32</height>
-        </rect>
-       </property>
-       <property name="minimum">
-        <number>200</number>
-       </property>
-       <property name="maximum">
-        <number>5000</number>
-       </property>
-       <property name="singleStep">
-        <number>50</number>
-       </property>
-       <property name="value">
-        <number>500</number>
-       </property>
+       <widget class="QLabel" name="boxColorLabel">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>55</y>
+          <width>51</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Color:</string>
+        </property>
+       </widget>
+       <widget class="QPushButton" name="boxLineColorButton">
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>50</y>
+          <width>91</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>#ff0000</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="boxLineWidthLabel">
+        <property name="geometry">
+         <rect>
+          <x>180</x>
+          <y>55</y>
+          <width>91</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Width/opacity:</string>
+        </property>
+       </widget>
+       <widget class="QSpinBox" name="boxPlotWidthSpinBox">
+        <property name="geometry">
+         <rect>
+          <x>480</x>
+          <y>50</y>
+          <width>91</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="minimum">
+         <number>200</number>
+        </property>
+        <property name="maximum">
+         <number>5000</number>
+        </property>
+        <property name="singleStep">
+         <number>50</number>
+        </property>
+        <property name="value">
+         <number>900</number>
+        </property>
+       </widget>
+       <widget class="QDoubleSpinBox" name="boxLineWidthSpinBox">
+        <property name="geometry">
+         <rect>
+          <x>280</x>
+          <y>50</y>
+          <width>81</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="minimum">
+         <double>0.000000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>1.000000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>0.100000000000000</double>
+        </property>
+        <property name="value">
+         <double>0.500000000000000</double>
+        </property>
+       </widget>
+       <widget class="QLabel" name="boxPlotWidthLabel">
+        <property name="geometry">
+         <rect>
+          <x>390</x>
+          <y>55</y>
+          <width>81</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Plot width:</string>
+        </property>
+       </widget>
+       <widget class="QSpinBox" name="boxPlotHeightSpinBox">
+        <property name="geometry">
+         <rect>
+          <x>690</x>
+          <y>50</y>
+          <width>91</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="minimum">
+         <number>200</number>
+        </property>
+        <property name="maximum">
+         <number>5000</number>
+        </property>
+        <property name="singleStep">
+         <number>50</number>
+        </property>
+        <property name="value">
+         <number>500</number>
+        </property>
+       </widget>
+       <widget class="QLabel" name="boxPlotHeightLabel">
+        <property name="geometry">
+         <rect>
+          <x>600</x>
+          <y>55</y>
+          <width>81</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Plot height:</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="boxYTitleLabel">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>20</y>
+          <width>61</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Y title:</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="boxYRangeLabel">
+        <property name="geometry">
+         <rect>
+          <x>290</x>
+          <y>20</y>
+          <width>61</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Y range:</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="boxYTitleLineEdit">
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>20</y>
+          <width>201</width>
+          <height>24</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QLabel" name="boxYLinesLabel">
+        <property name="geometry">
+         <rect>
+          <x>520</x>
+          <y>20</y>
+          <width>61</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Y lines:</string>
+        </property>
+       </widget>
+       <widget class="QPushButton" name="boxAutoStatsButton">
+        <property name="geometry">
+         <rect>
+          <x>810</x>
+          <y>20</y>
+          <width>81</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Auto</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="boxYLinesLineEdit">
+        <property name="geometry">
+         <rect>
+          <x>590</x>
+          <y>20</y>
+          <width>181</width>
+          <height>24</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="boxYRangeLineEdit">
+        <property name="geometry">
+         <rect>
+          <x>360</x>
+          <y>20</y>
+          <width>141</width>
+          <height>24</height>
+         </rect>
+        </property>
+       </widget>
       </widget>
      </widget>
      <widget class="QLabel" name="boxStatisticLabel">

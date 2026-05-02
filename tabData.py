@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 from qt_helpers import require_child
 
 
-class Tab1Widget:
+class TabDataWidget:
     def __init__(self, rootWidget: QWidget):
         self.rootWidget = rootWidget
         self.filePathLineEdit = require_child(rootWidget, QLineEdit, 'filePathLineEdit')

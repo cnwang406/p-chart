@@ -8,14 +8,14 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QMessageBox, QTabWidget, QWidget
 
 from qt_helpers import require_child
-from tab1 import Tab1Widget
-from tab2 import Tab2Widget
-from tab3 import Tab3Widget
+from tabBoxplot import TabBoxplotWidget
+from tabData import TabDataWidget
+from tabScatter import TabScatterWidget
 
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.0'
+APP_VERSION = 'v2.1'
 APP_AUTHOR = 'cnwang'
 APP_DATE = '2024/04'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
@@ -45,12 +45,12 @@ class AppMain:
         if not self.app.windowIcon().isNull():
             self.ui.setWindowIcon(self.app.windowIcon())
         self.tabWidget = require_child(self.ui, QTabWidget, 'tabWidget')
-        self.tab1Widget = Tab1Widget(self.ui)
-        self.tab2Widget = Tab2Widget(self.ui)
-        self.tab3Widget = Tab3Widget(self.ui)
-        self.tab2Widget.set_tab1(self.tab1Widget)
-        self.tab3Widget.set_tab1(self.tab1Widget)
-        self.tab1Widget.add_data_changed_callback(self._update_plot_tab_enabled)
+        self.tabDataWidget = TabDataWidget(self.ui)
+        self.tabScatterWidget = TabScatterWidget(self.ui)
+        self.tabBoxplotWidget = TabBoxplotWidget(self.ui)
+        self.tabScatterWidget.set_tab_data(self.tabDataWidget)
+        self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)
+        self.tabDataWidget.add_data_changed_callback(self._update_plot_tab_enabled)
         self._update_plot_tab_enabled()
         self.tabWidget.setCurrentIndex(0)
         self.ui.show()
@@ -81,7 +81,7 @@ class AppMain:
         self.app.setFont(QFont(fontFamilies[0], 10))
 
     def _update_plot_tab_enabled(self) -> None:
-        enabled = not self.tab1Widget.get_melted_data().empty
+        enabled = not self.tabDataWidget.get_melted_data().empty
         for plotTabIndex in [1, 2]:
             if self.tabWidget.count() <= plotTabIndex:
                 continue

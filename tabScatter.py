@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -30,6 +30,7 @@ except ImportError:
     QWebEngineView = cast(type[QWidget] | None, None)
     WEB_ENGINE_AVAILABLE = False
 
+PLOT_ROW_ID = '__plotRowId'
 CUSTOM_TEMPLATE_NAME = 'customized'
 
 customTemplate = go.layout.Template()
@@ -42,34 +43,41 @@ customTemplate.layout.update(
 pio.templates[CUSTOM_TEMPLATE_NAME] = customTemplate
 
 
-class Tab3Widget:
+class TabScatterWidget:
     def __init__(self, rootWidget: QWidget):
-        self.tab1Widget = None
+        self.rootWidget = rootWidget
+        self.tabDataWidget = None
+
+        self.xComboBox = require_child(rootWidget, QComboBox, 'xComboBox')
+        self.yComboBox = require_child(rootWidget, QComboBox, 'yComboBox')
+        self.seriesComboBox = require_child(rootWidget, QComboBox, 'seriesComboBox')
+        self.symbolComboBox = require_child(rootWidget, QComboBox, 'symbolComboBox')
+        self.colorComboBox = require_child(rootWidget, QComboBox, 'colorComboBox')
+        self.sizeComboBox = require_child(rootWidget, QComboBox, 'sizeComboBox')
+        self.opacityComboBox = require_child(rootWidget, QComboBox, 'opacityComboBox')
+        self.plotTitleLineEdit = require_child(rootWidget, QLineEdit, 'plotTitleLineEdit')
+        self.xTitleLineEdit = require_child(rootWidget, QLineEdit, 'xTitleLineEdit')
+        self.yTitleLineEdit = require_child(rootWidget, QLineEdit, 'yTitleLineEdit')
+        self.xRangeLineEdit = require_child(rootWidget, QLineEdit, 'xRangeLineEdit')
+        self.yRangeLineEdit = require_child(rootWidget, QLineEdit, 'yRangeLineEdit')
+        self.legendCheckBox = require_child(rootWidget, QCheckBox, 'legendCheckBox')
+        self.autoStatsButton = require_child(rootWidget, QPushButton, 'autoStatsButton')
+        self.hlineLineEdit = require_child(rootWidget, QLineEdit, 'hlineLineEdit')
+        self.vlineLineEdit = require_child(rootWidget, QLineEdit, 'vlineLineEdit')
+        self.lineColorButton = require_child(rootWidget, QPushButton, 'lineColorButton')
+        self.lineWidthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'lineWidthSpinBox')
+        self.plotButton = require_child(rootWidget, QPushButton, 'plotButton')
+        self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'downloadHtmlButton')
+        self.plotlyThemeComboBox = require_child(rootWidget, QComboBox, 'plotlyThemeComboBox')
+        self.plotWidthSpinBox = require_child(rootWidget, QSpinBox, 'plotWidthSpinBox')
+        self.plotHeightSpinBox = require_child(rootWidget, QSpinBox, 'plotHeightSpinBox')
+        self.plotAreaWidget = require_child(rootWidget, QWidget, 'plotAreaWidget')
+        self.statisticLabel = require_child(rootWidget, QLabel, 'statisticLabel')
+        self.statusLabel = require_child(rootWidget, QLabel, 'statusLabelTab2')
+
+        self.chartView = QTextBrowser(self.plotAreaWidget)
         self.currentPlotHtml = ''
         self.lineColor = '#ff0000'
-
-        self.rootWidget = rootWidget
-        self.yComboBox = require_child(rootWidget, QComboBox, 'boxYComboBox')
-        self.group1ComboBox = require_child(rootWidget, QComboBox, 'boxGroup1ComboBox')
-        self.group2ComboBox = require_child(rootWidget, QComboBox, 'boxGroup2ComboBox')
-        self.pointsComboBox = require_child(rootWidget, QComboBox, 'boxPointsComboBox')
-        self.plotTitleLineEdit = require_child(rootWidget, QLineEdit, 'boxPlotTitleLineEdit')
-        self.yTitleLineEdit = require_child(rootWidget, QLineEdit, 'boxYTitleLineEdit')
-        self.yRangeLineEdit = require_child(rootWidget, QLineEdit, 'boxYRangeLineEdit')
-        self.hlineLineEdit = require_child(rootWidget, QLineEdit, 'boxYLinesLineEdit')
-        self.legendCheckBox = require_child(rootWidget, QCheckBox, 'boxLegendCheckBox')
-        self.autoStatsButton = require_child(rootWidget, QPushButton, 'boxAutoStatsButton')
-        self.lineColorButton = require_child(rootWidget, QPushButton, 'boxLineColorButton')
-        self.lineWidthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'boxLineWidthSpinBox')
-        self.plotlyThemeComboBox = require_child(rootWidget, QComboBox, 'boxPlotlyThemeComboBox')
-        self.plotWidthSpinBox = require_child(rootWidget, QSpinBox, 'boxPlotWidthSpinBox')
-        self.plotHeightSpinBox = require_child(rootWidget, QSpinBox, 'boxPlotHeightSpinBox')
-        self.plotButton = require_child(rootWidget, QPushButton, 'boxPlotButton')
-        self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'boxDownloadHtmlButton')
-        self.statisticLabel = require_child(rootWidget, QLabel, 'boxStatisticLabel')
-        self.plotAreaWidget = require_child(rootWidget, QWidget, 'boxPlotAreaWidget')
-        self.statusLabel = require_child(rootWidget, QLabel, 'boxStatusLabel')
-
         self._configure_plot_area()
         self._configure_signals()
         self._configure_defaults()
@@ -81,7 +89,7 @@ class Tab3Widget:
             self.chartView = QTextBrowser(self.plotAreaWidget)
             self.chartView.setOpenExternalLinks(True)
 
-        plotLayout = QVBoxLayout(self.plotAreaWidget)
+        plotLayout = self.plotAreaWidget.layout() or QVBoxLayout(self.plotAreaWidget)
         plotLayout.setContentsMargins(0, 0, 0, 0)
         plotLayout.addWidget(self.chartView)
 
@@ -90,29 +98,36 @@ class Tab3Widget:
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.autoStatsButton.clicked.connect(self._auto_fill_plot_stats)
         self.lineColorButton.clicked.connect(self._pick_line_color)
-        self.legendCheckBox.stateChanged.connect(self._redraw_existing_plot)
-        self.pointsComboBox.currentTextChanged.connect(self._redraw_existing_plot)
         self.plotlyThemeComboBox.currentTextChanged.connect(self._redraw_existing_plot)
         self.lineWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotHeightSpinBox.valueChanged.connect(self._redraw_existing_plot)
-        self.plotTitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
-        self.yTitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
-        self.yRangeLineEdit.editingFinished.connect(self._draw_plot_when_ready)
+        self.plotTitleLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
+        self.xTitleLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
+        self.yTitleLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
+        self.xRangeLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
+        self.yRangeLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
         self.hlineLineEdit.editingFinished.connect(self._update_stats_and_redraw)
+        self.vlineLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
+        self.xComboBox.currentTextChanged.connect(self._sync_x_title_from_column)
+        self.xComboBox.currentTextChanged.connect(self._update_plot_title)
+        self.xComboBox.currentTextChanged.connect(self._draw_plot_when_xy_ready)
         self.yComboBox.currentTextChanged.connect(self._sync_y_title_from_column)
         self.yComboBox.currentTextChanged.connect(self._update_plot_title)
-        self.yComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
-        self.group1ComboBox.currentTextChanged.connect(self._update_plot_title)
-        self.group1ComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
-        self.group2ComboBox.currentTextChanged.connect(self._update_plot_title)
-        self.group2ComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
+        self.yComboBox.currentTextChanged.connect(self._draw_plot_when_xy_ready)
+        for combo in [
+            self.seriesComboBox,
+            self.sizeComboBox,
+            self.colorComboBox,
+            self.opacityComboBox,
+            self.symbolComboBox,
+        ]:
+            combo.currentTextChanged.connect(self._update_plot_title)
+            combo.currentTextChanged.connect(self._redraw_existing_plot)
+        self.xTitleLineEdit.textChanged.connect(self._update_plot_title)
+        self.yTitleLineEdit.textChanged.connect(self._update_plot_title)
 
     def _configure_defaults(self) -> None:
-        self.legendCheckBox.setChecked(True)
-        if self.pointsComboBox.count() == 0:
-            self.pointsComboBox.addItems(['outliers', 'all', 'jitter', 'none'])
-        self.pointsComboBox.setCurrentText('outliers')
         self._update_line_color_button()
         self.lineWidthSpinBox.setMinimum(0.0)
         self.lineWidthSpinBox.setMaximum(1.0)
@@ -121,10 +136,12 @@ class Tab3Widget:
         self.lineWidthSpinBox.setValue(0.5)
         self.plotWidthSpinBox.setRange(200, 5000)
         self.plotWidthSpinBox.setSingleStep(50)
-        self.plotWidthSpinBox.setValue(900)
+        if self.plotWidthSpinBox.value() <= 200:
+            self.plotWidthSpinBox.setValue(max(200, self.plotAreaWidget.width()))
         self.plotHeightSpinBox.setRange(200, 5000)
         self.plotHeightSpinBox.setSingleStep(50)
-        self.plotHeightSpinBox.setValue(500)
+        if self.plotHeightSpinBox.value() <= 200:
+            self.plotHeightSpinBox.setValue(max(200, self.plotAreaWidget.height()))
         self.plotlyThemeComboBox.addItems([
             'plotly',
             'plotly_white',
@@ -140,6 +157,10 @@ class Tab3Widget:
             'none',
         ])
         self.plotlyThemeComboBox.setCurrentText('plotly')
+        self.statisticLabel.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
 
     def _pick_line_color(self) -> None:
         selectedColor = QColorDialog.getColor(
@@ -151,13 +172,15 @@ class Tab3Widget:
             return
         self.lineColor = selectedColor.name()
         self._update_line_color_button()
-        self._redraw_existing_plot()
 
     def _update_line_color_button(self) -> None:
         self.lineColorButton.setText(self.lineColor)
         self.lineColorButton.setStyleSheet(
             f'QPushButton {{ background-color: {self.lineColor}; color: white; }}'
         )
+
+    def _sync_x_title_from_column(self, columnName: str) -> None:
+        self.xTitleLineEdit.setText(columnName.strip())
 
     def _sync_y_title_from_column(self, columnName: str) -> None:
         self.yTitleLineEdit.setText(columnName.strip())
@@ -166,30 +189,30 @@ class Tab3Widget:
         return combo.currentText().strip()
 
     def _build_auto_plot_title(self) -> str:
-        yTitle = self.yTitleLineEdit.text().strip() or self._current_combo_text(self.yComboBox)
-        group1 = self._current_combo_text(self.group1ComboBox)
-        group2 = self._current_combo_text(self.group2ComboBox)
-        if not yTitle:
+        xTitle = self.xTitleLineEdit.text().strip()
+        yTitle = self.yTitleLineEdit.text().strip()
+        xTitle = xTitle or self._current_combo_text(self.xComboBox)
+        yTitle = yTitle or self._current_combo_text(self.yComboBox)
+        if not xTitle and not yTitle:
             return ''
-        title = f'{yTitle} boxplot'
-        if group1:
-            title = f'{title} by {group1}'
-        if group2:
-            title = f'{title} / {group2}'
+        if not xTitle or not yTitle:
+            return xTitle or yTitle
+
+        title = f'{xTitle} vs {yTitle}'
+        byParts = []
+        for label, combo in [
+            ('series', self.seriesComboBox),
+            ('size', self.sizeComboBox),
+            ('color', self.colorComboBox),
+            ('opacity', self.opacityComboBox),
+            ('symbol', self.symbolComboBox),
+        ]:
+            value = self._current_combo_text(combo)
+            if value:
+                byParts.append(f'{label}={value}')
+        if byParts:
+            title = f'{title} by {", ".join(byParts)}'
         return title
-
-    def _build_x_title(self, group1Column: str | None, group2Column: str | None) -> str:
-        return ' / '.join(column for column in [group1Column, group2Column] if column)
-
-    def _plotly_points_mode(self) -> tuple[str | bool, float | None]:
-        pointsMode = self.pointsComboBox.currentText().strip().lower()
-        if pointsMode == 'none':
-            return False, None
-        if pointsMode == 'jitter':
-            return 'all', 0.35
-        if pointsMode == 'all':
-            return 'all', 0.0
-        return 'outliers', None
 
     def _update_plot_title(self, *_args) -> None:
         self.plotTitleLineEdit.setText(self._build_auto_plot_title())
@@ -198,22 +221,29 @@ class Tab3Widget:
         if self.currentPlotHtml:
             self._draw_plot()
 
-    def _draw_plot_when_ready(self, *_args) -> None:
-        if self.tab1Widget is None:
+    def _draw_plot_when_xy_ready(self, *_args) -> None:
+        if self.tabDataWidget is None:
             return
 
-        dataFrame = self.tab1Widget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_melted_data()
+        if dataFrame.empty:
+            return
+
+        xColumn = self.xComboBox.currentText().strip()
         yColumn = self.yComboBox.currentText().strip()
-        if dataFrame.empty or not yColumn or yColumn not in dataFrame.columns:
+        if not xColumn or not yColumn:
+            return
+
+        if xColumn not in dataFrame.columns or yColumn not in dataFrame.columns:
             return
 
         self._draw_plot()
 
     def _update_stats_and_redraw(self, *_args) -> None:
-        if self.tab1Widget is None:
+        if self.tabDataWidget is None:
             return
 
-        dataFrame = self.tab1Widget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_melted_data()
         yColumn = self.yComboBox.currentText().strip()
         if dataFrame.empty or not yColumn or yColumn not in dataFrame.columns:
             return
@@ -224,21 +254,29 @@ class Tab3Widget:
 
         yStdev = float(ySeries.std(ddof=1)) if len(ySeries) > 1 else 0.0
         self._update_statistic_label(float(ySeries.mean()), yStdev)
-        self._draw_plot_when_ready()
+        self._draw_plot_when_xy_ready()
 
-    def set_tab1(self, tab1Widget) -> None:
-        self.tab1Widget = tab1Widget
-        if hasattr(self.tab1Widget, 'add_data_changed_callback'):
-            self.tab1Widget.add_data_changed_callback(self._refresh_column_options)
+    def set_tab_data(self, tabDataWidget) -> None:
+        self.tabDataWidget = tabDataWidget
+        if hasattr(self.tabDataWidget, 'add_data_changed_callback'):
+            self.tabDataWidget.add_data_changed_callback(self._refresh_column_options)
         self._refresh_column_options()
 
     def _refresh_column_options(self) -> None:
-        if self.tab1Widget is None:
+        if self.tabDataWidget is None:
             return
 
-        dataFrame = self.tab1Widget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_melted_data()
         columnNames = list(dataFrame.columns.astype(str)) if not dataFrame.empty else []
-        for combo in [self.yComboBox, self.group1ComboBox, self.group2ComboBox]:
+        for combo in [
+            self.xComboBox,
+            self.yComboBox,
+            self.seriesComboBox,
+            self.symbolComboBox,
+            self.colorComboBox,
+            self.sizeComboBox,
+            self.opacityComboBox,
+        ]:
             currentText = combo.currentText()
             combo.clear()
             combo.addItem('')
@@ -255,15 +293,18 @@ class Tab3Widget:
         if len(rangeParts) != 2:
             return None
         try:
-            return float(rangeParts[0]), float(rangeParts[1])
+            fromValue = float(rangeParts[0])
+            toValue = float(rangeParts[1])
+            return fromValue, toValue
         except ValueError:
             return None
 
     def _parse_line_values(self, value: str) -> list[float]:
         if not value:
             return []
+        lineParts = [item.strip() for item in value.split(',') if item.strip()]
         values = []
-        for linePart in [item.strip() for item in value.split(',') if item.strip()]:
+        for linePart in lineParts:
             try:
                 values.append(float(linePart))
             except ValueError:
@@ -272,6 +313,9 @@ class Tab3Widget:
 
     def _format_number(self, value: float) -> str:
         return f'{value:.6g}'
+
+    def _format_line_values(self, values: list[float]) -> str:
+        return ','.join(self._format_number(value) for value in values)
 
     def _decimal_places_for_series(self, series: pd.Series) -> int:
         maxDecimals = 0
@@ -312,35 +356,50 @@ class Tab3Widget:
         return self.lineColor
 
     def _auto_fill_plot_stats(self) -> None:
-        if self.tab1Widget is None:
-            self._set_status('No data source attached to boxplot tab.', error=True)
+        if self.tabDataWidget is None:
+            self._set_status('No data source attached to plot tab.', error=True)
             return
 
-        dataFrame = self.tab1Widget.get_melted_data()
-        yColumn = self.yComboBox.currentText().strip()
+        dataFrame = self.tabDataWidget.get_melted_data()
         if dataFrame.empty:
             self._set_status('No reshaped data available. Run wide_to_long first.', error=True)
             return
-        if not yColumn or yColumn not in dataFrame.columns:
-            self._set_status('Choose a valid Y column first.', error=True)
+
+        xColumn = self.xComboBox.currentText().strip()
+        yColumn = self.yComboBox.currentText().strip()
+        if not xColumn or not yColumn:
+            self._set_status('Choose both X and Y columns first.', error=True)
             return
 
+        if xColumn not in dataFrame.columns or yColumn not in dataFrame.columns:
+            self._set_status('Selected X or Y column not found in data.', error=True)
+            return
+
+        xSeries = pd.to_numeric(dataFrame[xColumn], errors='coerce').dropna()
         ySeries = pd.to_numeric(dataFrame[yColumn], errors='coerce').dropna()
-        if ySeries.empty:
-            self._set_status('Y must contain numeric data for Auto.', error=True)
+        if xSeries.empty or ySeries.empty:
+            self._set_status('X and Y must contain numeric data for Auto.', error=True)
             return
 
+        xAverage = float(xSeries.mean())
         yAverage = float(ySeries.mean())
+        xStdev = float(xSeries.std(ddof=1)) if len(xSeries) > 1 else 0.0
         yStdev = float(ySeries.std(ddof=1)) if len(ySeries) > 1 else 0.0
+        vlineValues = [xAverage - 3 * xStdev, xAverage + 3 * xStdev]
         hlineValues = [yAverage - 3 * yStdev, yAverage + 3 * yStdev]
+        xDecimals = self._decimal_places_for_series(dataFrame[xColumn])
         yDecimals = self._decimal_places_for_series(dataFrame[yColumn])
 
+        self.xRangeLineEdit.setText(
+            self._format_auto_values(self._expanded_line_range(vlineValues), xDecimals)
+        )
         self.yRangeLineEdit.setText(
             self._format_auto_values(self._expanded_line_range(hlineValues), yDecimals)
         )
+        self.vlineLineEdit.setText(self._format_auto_values(vlineValues, xDecimals))
         self.hlineLineEdit.setText(self._format_auto_values(hlineValues, yDecimals))
         self._update_statistic_label(yAverage, yStdev)
-        self._draw_plot_when_ready()
+        self._draw_plot_when_xy_ready()
 
     def _update_statistic_label(self, yAverage: float, yStdev: float) -> None:
         yTitle = self.yTitleLineEdit.text().strip() or self.yComboBox.currentText().strip()
@@ -370,94 +429,110 @@ class Tab3Widget:
 
         self.statisticLabel.setText(', '.join(parts))
 
-    def _ordered_categories(self, series: pd.Series) -> list:
-        return list(pd.Series(series.dropna().unique()).astype(str))
-
     def _draw_plot(self) -> None:
-        if self.tab1Widget is None:
-            self._set_status('No data source attached to boxplot tab.', error=True)
+        if self.tabDataWidget is None:
+            self._set_status('No data source attached to plot tab.', error=True)
             return
 
-        dataFrame = self.tab1Widget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_melted_data()
         if dataFrame.empty:
             self._set_status('No reshaped data available. Run wide_to_long first.', error=True)
             return
 
+        xColumn = self.xComboBox.currentText().strip()
         yColumn = self.yComboBox.currentText().strip()
-        group1Column = self.group1ComboBox.currentText().strip() or None
-        group2Column = self.group2ComboBox.currentText().strip() or None
-        if not yColumn:
-            self._set_status('Choose a Y column first.', error=True)
-            return
-        if yColumn not in dataFrame.columns:
-            self._set_status('Selected Y column not found in data.', error=True)
-            return
-        for groupColumn in [group1Column, group2Column]:
-            if groupColumn and groupColumn not in dataFrame.columns:
-                self._set_status('Selected group column not found in data.', error=True)
-                return
+        seriesColumn = self.seriesComboBox.currentText().strip() or None
+        symbolColumn = self.symbolComboBox.currentText().strip() or None
+        colorColumn = self.colorComboBox.currentText().strip() or None
+        sizeColumn = self.sizeComboBox.currentText().strip() or None
+        opacityColumn = self.opacityComboBox.currentText().strip() or None
 
-        plotTitle = self.plotTitleLineEdit.text().strip() or 'Plotly Boxplot'
+        if not xColumn or not yColumn:
+            self._set_status('Choose both X and Y columns first.', error=True)
+            return
+
+        if xColumn not in dataFrame.columns or yColumn not in dataFrame.columns:
+            self._set_status('Selected X or Y column not found in data.', error=True)
+            return
+
+        plotTitle = self.plotTitleLineEdit.text().strip() or 'Plotly Scatter'
+        xTitle = self.xTitleLineEdit.text().strip() or xColumn
         yTitle = self.yTitleLineEdit.text().strip() or yColumn
         plotlyTheme = self.plotlyThemeComboBox.currentText().strip()
         plotlyTheme = None if plotlyTheme == 'none' else plotlyTheme or 'plotly'
+        xRange = self._parse_range(self.xRangeLineEdit.text())
         yRange = self._parse_range(self.yRangeLineEdit.text())
         legendVisible = self.legendCheckBox.isChecked()
         hLines = self._parse_line_values(self.hlineLineEdit.text())
+        vLines = self._parse_line_values(self.vlineLineEdit.text())
         lineWidth = self.lineWidthSpinBox.value()
         lineColorWithOpacity = self._line_color_with_opacity(lineWidth)
-        pointsMode, jitterValue = self._plotly_points_mode()
+        plotWidth = self.plotWidthSpinBox.value()
+        plotHeight = self.plotHeightSpinBox.value()
 
         plotData = dataFrame.copy()
-        plotData[yColumn] = pd.to_numeric(plotData[yColumn], errors='coerce')
-        dropColumns = [yColumn, *[column for column in [group1Column, group2Column] if column]]
-        plotData = plotData.dropna(subset=dropColumns)
-        if plotData.empty:
-            self._set_status('No numeric Y data available for boxplot.', error=True)
-            return
-
-        yStatSeries = plotData[yColumn].dropna()
-        yStdev = float(yStatSeries.std(ddof=1)) if len(yStatSeries) > 1 else 0.0
-        self._update_statistic_label(float(yStatSeries.mean()), yStdev)
-
-        categoryOrders = {}
-        if group1Column:
-            categoryOrders[group1Column] = self._ordered_categories(plotData[group1Column])
-        if group2Column:
-            categoryOrders[group2Column] = self._ordered_categories(plotData[group2Column])
+        plotData = plotData.dropna(subset=[xColumn, yColumn]).reset_index(drop=True)
+        plotData[PLOT_ROW_ID] = plotData.index
+        yStatSeries = pd.to_numeric(plotData[yColumn], errors='coerce').dropna()
+        if not yStatSeries.empty:
+            yStdev = float(yStatSeries.std(ddof=1)) if len(yStatSeries) > 1 else 0.0
+            self._update_statistic_label(float(yStatSeries.mean()), yStdev)
 
         try:
-            fig = px.box(
+            colorArgument = colorColumn or seriesColumn
+            symbolArgument = symbolColumn
+            hoverData = []
+            if seriesColumn and seriesColumn != colorArgument:
+                hoverData.append(seriesColumn)
+
+            fig = px.scatter(
                 plotData,
-                x=group1Column,
+                x=xColumn,
                 y=yColumn,
-                color=group2Column,
-                points=pointsMode,
+                color=colorArgument,
+                symbol=symbolArgument,
+                size=sizeColumn if sizeColumn else None,
                 title=plotTitle,
-                labels={yColumn: yTitle},
-                category_orders=categoryOrders,
+                labels={xColumn: xTitle, yColumn: yTitle},
+                hover_data=hoverData,
+                custom_data=[PLOT_ROW_ID],
                 template=plotlyTheme,
             )
-            if jitterValue is not None:
-                fig.update_traces(jitter=jitterValue, pointpos=0)
+
+            if opacityColumn:
+                opacitySeries = self._normalize_opacity(plotData[opacityColumn])
+                for trace in fig.data:
+                    if hasattr(trace, 'customdata') and trace.customdata is not None:
+                        trace.marker.opacity = [
+                            float(opacitySeries.iloc[int(rowData[0])])
+                            for rowData in trace.customdata
+                        ]
+                    else:
+                        trace.marker.opacity = float(opacitySeries.mean())
+
+            if sizeColumn:
+                self._add_reference_trace(fig, f'Size: {sizeColumn}')
+            if opacityColumn:
+                self._add_reference_trace(fig, f'Opacity: {opacityColumn}')
+
             fig.update_layout(
-                boxmode='group',
                 legend=dict(
                     orientation='v',
                     y=1,
-                    x=1.02,
+                    x=1.16,
                     title_text='Legend',
                     bgcolor='rgba(255,255,255,0.92)',
                     bordercolor='rgba(0,0,0,0.15)',
                     borderwidth=1,
                 ),
-                margin={'t': 60, 'r': 180, 'l': 60, 'b': 80},
+                coloraxis_colorbar=dict(x=1.02),
+                margin={'t': 60, 'r': 220, 'l': 60, 'b': 60},
                 showlegend=legendVisible,
-                width=self.plotWidthSpinBox.value(),
-                height=self.plotHeightSpinBox.value(),
             )
-            fig.update_xaxes(title_text=self._build_x_title(group1Column, group2Column))
-            fig.update_yaxes(title_text=yTitle)
+            fig.update_layout(width=plotWidth, height=plotHeight)
+
+            if xRange is not None:
+                fig.update_xaxes(range=xRange)
             if yRange is not None:
                 fig.update_yaxes(range=yRange)
 
@@ -471,11 +546,46 @@ class Tab3Widget:
                     annotation_position='top right',
                     annotation_font_color=lineColorWithOpacity,
                 )
+            for vValue in vLines:
+                fig.add_vline(
+                    x=vValue,
+                    line_dash='dash',
+                    line_color=lineColorWithOpacity,
+                    line_width=lineWidth,
+                    annotation_text=self._format_line_label(xTitle, vValue),
+                    annotation_position='top right',
+                    annotation_font_color=lineColorWithOpacity,
+                )
 
             self._render_figure(fig)
-            self._set_status('Boxplot created successfully.')
+            self._set_status('Plot created successfully.')
         except Exception as exc:
-            self._set_status(f'Failed to draw boxplot: {exc}', error=True)
+            self._set_status(f'Failed to draw plot: {exc}', error=True)
+
+    def _normalize_opacity(self, series: pd.Series) -> pd.Series:
+        opacitySeries = pd.to_numeric(series, errors='coerce').fillna(1.0)
+        minValue = opacitySeries.min()
+        maxValue = opacitySeries.max()
+        if maxValue > 1 or minValue < 0:
+            valueSpan = maxValue - minValue
+            if valueSpan == 0:
+                opacitySeries = pd.Series(1.0, index=opacitySeries.index)
+            else:
+                opacitySeries = (opacitySeries - minValue) / valueSpan
+        return 0.2 + 0.8 * opacitySeries.clip(0, 1)
+
+    def _add_reference_trace(self, figure, traceName: str) -> None:
+        figure.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode='markers',
+                marker=dict(size=9, color='rgba(90,90,90,0.55)'),
+                name=traceName,
+                showlegend=True,
+                hoverinfo='skip',
+            )
+        )
 
     def _render_figure(self, figure) -> None:
         self.currentPlotHtml = pio.to_html(figure, full_html=True, include_plotlyjs=True)
@@ -487,13 +597,13 @@ class Tab3Widget:
 
     def _download_html(self) -> None:
         if not self.currentPlotHtml:
-            self._set_status('No boxplot HTML available. Draw a boxplot first.', error=True)
+            self._set_status('No plot HTML available. Draw a plot first.', error=True)
             return
 
         selectedFile, _ = QFileDialog.getSaveFileName(
             self.rootWidget,
             'Download Plotly HTML',
-            'boxplot.html',
+            'plot.html',
             'HTML Files (*.html);;All Files (*)',
         )
         if not selectedFile:
@@ -504,7 +614,7 @@ class Tab3Widget:
         try:
             with open(selectedFile, 'w', encoding='utf-8') as htmlFile:
                 htmlFile.write(self.currentPlotHtml)
-            self._set_status(f'Boxplot HTML saved to {selectedFile}.')
+            self._set_status(f'Plot HTML saved to {selectedFile}.')
         except Exception as exc:
             self._set_status(f'Failed to save Plotly HTML: {exc}', error=True)
 
