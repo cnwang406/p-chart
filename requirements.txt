@@ -1,0 +1,6 @@
+PySide6
+PySide6-WebEngine
+pandas
+plotly
+openpyxl
+PyInstaller
