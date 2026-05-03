@@ -20,6 +20,7 @@ hiddenimports = [
     'PySide6.QtWebEngineQuick',
 ]
 hiddenimports += collect_submodules('plotly')
+hiddenimports += collect_submodules('openpyxl')
 
 
 a = Analysis(
