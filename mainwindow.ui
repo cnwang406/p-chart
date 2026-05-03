@@ -35,7 +35,7 @@
     </property>
     <widget class="QWidget" name="tabData">
      <attribute name="title">
-      <string>Wide to long</string>
+      <string>Data process</string>
      </attribute>
      <widget class="QGroupBox" name="fileGroupBox">
       <property name="enabled">
@@ -78,6 +78,9 @@
          <family>Cascadia Next TC</family>
          <pointsize>14</pointsize>
         </font>
+       </property>
+       <property name="toolTip">
+        <string>可以 key 也可以拉也可以慢慢選</string>
        </property>
       </widget>
       <widget class="QPushButton" name="browseFileButton">
@@ -130,6 +133,9 @@
          <pointsize>14</pointsize>
         </font>
        </property>
+       <property name="toolTip">
+        <string>選擇 excel的 sheet.</string>
+       </property>
        <property name="text">
         <string>Load</string>
        </property>
@@ -137,8 +143,8 @@
       <widget class="QLabel" name="sheetLabel">
        <property name="geometry">
         <rect>
-         <x>540</x>
-         <y>30</y>
+         <x>580</x>
+         <y>36</y>
          <width>100</width>
          <height>20</height>
         </rect>
@@ -150,7 +156,7 @@
         </font>
        </property>
        <property name="text">
-        <string>Sheet:</string>
+        <string>Sheet</string>
        </property>
       </widget>
      </widget>
@@ -197,7 +203,7 @@
          <x>15</x>
          <y>34</y>
          <width>291</width>
-         <height>161</height>
+         <height>181</height>
         </rect>
        </property>
        <property name="font">
@@ -205,6 +211,9 @@
          <family>Cascadia Next TC</family>
          <pointsize>14</pointsize>
         </font>
+       </property>
+       <property name="toolTip">
+        <string>有顏色的代表符合被合併的命名規則</string>
        </property>
       </widget>
       <widget class="QWidget" name="layoutWidget">
@@ -240,7 +249,7 @@
        <rect>
         <x>20</x>
         <y>830</y>
-        <width>951</width>
+        <width>851</width>
         <height>16</height>
        </rect>
       </property>
@@ -306,6 +315,12 @@
          <pointsize>14</pointsize>
         </font>
        </property>
+       <property name="toolTip">
+        <string>Comma separated, e.g. WAT_, inline_,</string>
+       </property>
+       <property name="statusTip">
+        <string>Comma separated, e.g. WAT_, inline_,</string>
+       </property>
        <property name="placeholderText">
         <string>Comma separated, e.g. WAT_, inline_,</string>
        </property>
@@ -344,8 +359,11 @@
          <pointsize>14</pointsize>
         </font>
        </property>
+       <property name="toolTip">
+        <string>[TCBLR], 注意不含 _</string>
+       </property>
        <property name="placeholderText">
-        <string>[TCBLR]|\d+</string>
+        <string>[TCBLR]</string>
        </property>
       </widget>
       <widget class="QLabel" name="suffixNameLabel">
@@ -382,13 +400,16 @@
          <pointsize>14</pointsize>
         </font>
        </property>
+       <property name="toolTip">
+        <string>合併起來的叫什麼, 一般是 site</string>
+       </property>
       </widget>
       <widget class="QPushButton" name="meltButton">
        <property name="geometry">
         <rect>
-         <x>10</x>
+         <x>170</x>
          <y>180</y>
-         <width>391</width>
+         <width>291</width>
          <height>41</height>
         </rect>
        </property>
@@ -398,6 +419,15 @@
          <pointsize>16</pointsize>
         </font>
        </property>
+       <property name="toolTip">
+        <string>Lets go</string>
+       </property>
+       <property name="statusTip">
+        <string>開始轉換！</string>
+       </property>
+       <property name="whatsThis">
+        <string/>
+       </property>
        <property name="text">
         <string>wide_to_long (reshape) 轉換</string>
        </property>
@@ -405,9 +435,9 @@
       <widget class="QPushButton" name="infoButton">
        <property name="geometry">
         <rect>
-         <x>430</x>
+         <x>480</x>
          <y>180</y>
-         <width>181</width>
+         <width>131</width>
          <height>41</height>
         </rect>
        </property>
@@ -418,7 +448,7 @@
         </font>
        </property>
        <property name="text">
-        <string>what is wide_to_long ?</string>
+        <string>如何使用這個 app</string>
        </property>
       </widget>
       <widget class="QLabel" name="stubnamesLabel_2">
@@ -475,8 +505,8 @@
         <property name="geometry">
          <rect>
           <x>90</x>
-          <y>10</y>
-          <width>103</width>
+          <y>20</y>
+          <width>201</width>
           <height>32</height>
          </rect>
         </property>
@@ -486,14 +516,17 @@
           <pointsize>14</pointsize>
          </font>
         </property>
+        <property name="toolTip">
+         <string>很貼心的</string>
+        </property>
        </widget>
        <widget class="QLineEdit" name="sheetNameLineEdit">
         <property name="geometry">
          <rect>
-          <x>300</x>
+          <x>380</x>
           <y>20</y>
-          <width>291</width>
-          <height>21</height>
+          <width>211</width>
+          <height>24</height>
          </rect>
         </property>
         <property name="font">
@@ -507,7 +540,7 @@
         <property name="geometry">
          <rect>
           <x>530</x>
-          <y>44</y>
+          <y>45</y>
           <width>60</width>
           <height>32</height>
          </rect>
@@ -528,8 +561,8 @@
        <widget class="QLabel" name="sheetNameLabel">
         <property name="geometry">
          <rect>
-          <x>220</x>
-          <y>20</y>
+          <x>300</x>
+          <y>23</y>
           <width>76</width>
           <height>16</height>
          </rect>
@@ -548,7 +581,7 @@
         <property name="geometry">
          <rect>
           <x>440</x>
-          <y>44</y>
+          <y>45</y>
           <width>91</width>
           <height>32</height>
          </rect>
@@ -591,7 +624,7 @@
           <x>90</x>
           <y>50</y>
           <width>341</width>
-          <height>21</height>
+          <height>24</height>
          </rect>
         </property>
         <property name="font">
@@ -602,6 +635,56 @@
         </property>
        </widget>
       </widget>
+      <widget class="QPushButton" name="convertColumnButton">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>180</y>
+         <width>141</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="font">
+        <font>
+         <family>Cascadia Next TC</family>
+         <pointsize>14</pointsize>
+        </font>
+       </property>
+       <property name="toolTip">
+        <string>^([TLBCR])_(</string>
+       </property>
+       <property name="statusTip">
+        <string>^([TLBCR])_(.+)-&gt;^(.+)_([TLBCR])</string>
+       </property>
+       <property name="whatsThis">
+        <string/>
+       </property>
+       <property name="text">
+        <string>T_AVG --&gt; AVG_T</string>
+       </property>
+      </widget>
+     </widget>
+     <widget class="QPushButton" name="aboutButton">
+      <property name="geometry">
+       <rect>
+        <x>880</x>
+        <y>830</y>
+        <width>91</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>14</pointsize>
+       </font>
+      </property>
+      <property name="whatsThis">
+       <string>where to save</string>
+      </property>
+      <property name="text">
+       <string>About</string>
+      </property>
      </widget>
     </widget>
     <widget class="QWidget" name="tabScatter">
@@ -675,6 +758,9 @@
          <height>32</height>
         </rect>
        </property>
+       <property name="toolTip">
+        <string>數列</string>
+       </property>
        <property name="text">
         <string>Series:</string>
        </property>
@@ -711,6 +797,9 @@
          <height>32</height>
         </rect>
        </property>
+       <property name="toolTip">
+        <string>依照名稱訂外觀</string>
+       </property>
       </widget>
       <widget class="QLabel" name="colorLabel">
        <property name="geometry">
@@ -733,6 +822,9 @@
          <width>151</width>
          <height>32</height>
         </rect>
+       </property>
+       <property name="toolTip">
+        <string>色溫. 可以數字或名稱</string>
        </property>
       </widget>
       <widget class="QLabel" name="sizeLabel">
@@ -757,6 +849,9 @@
          <height>32</height>
         </rect>
        </property>
+       <property name="toolTip">
+        <string>依照數值給大小</string>
+       </property>
       </widget>
       <widget class="QLabel" name="opacityLabel">
        <property name="geometry">
@@ -779,6 +874,9 @@
          <width>111</width>
          <height>32</height>
         </rect>
+       </property>
+       <property name="toolTip">
+        <string>還能設定透明度</string>
        </property>
       </widget>
      </widget>
@@ -851,6 +949,9 @@
          <width>121</width>
          <height>21</height>
         </rect>
+       </property>
+       <property name="toolTip">
+        <string>如果X是日期, 也能用日期設定. 也可以用下面的 HTML拉</string>
        </property>
        <property name="placeholderText">
         <string>100,200</string>
@@ -933,6 +1034,9 @@
          <height>28</height>
         </rect>
        </property>
+       <property name="toolTip">
+        <string>自動算出 avg, 3sigma, 並畫上線.</string>
+       </property>
        <property name="whatsThis">
         <string>根據data畫出 limit, 並設定 range </string>
        </property>
@@ -956,9 +1060,9 @@
         <property name="geometry">
          <rect>
           <x>80</x>
-          <y>90</y>
-          <width>21</width>
-          <height>24</height>
+          <y>86</y>
+          <width>24</width>
+          <height>32</height>
          </rect>
         </property>
         <property name="text">
@@ -987,6 +1091,10 @@
           <height>21</height>
          </rect>
         </property>
+        <property name="toolTip">
+         <string>-2條線, 下面的統計會用這個當 range, avg 當 target.
+-3條線, 會被當 range 以及 target</string>
+        </property>
         <property name="whatsThis">
          <string>如果有兩組,會作為上下限,target用 avg, 計算 cpk. 有三組則中間那組當 target</string>
         </property>
@@ -1002,6 +1110,9 @@
           <width>181</width>
           <height>20</height>
          </rect>
+        </property>
+        <property name="toolTip">
+         <string>comma seperated, 100,200, 如果X是日期, 也能用日期</string>
         </property>
         <property name="placeholderText">
          <string>comma seperated, 100,200</string>
@@ -1110,6 +1221,9 @@
          <height>21</height>
         </rect>
        </property>
+       <property name="toolTip">
+        <string>就是 f-string. 數字格式, 除了N 不會套用  .2f 兩個小數, .3g 總長 3, ,.1f 加逗點, and {value:.2f} is also accepted.</string>
+       </property>
        <property name="placeholderText">
         <string>.2f</string>
        </property>
@@ -1122,6 +1236,9 @@
          <width>91</width>
          <height>21</height>
         </rect>
+       </property>
+       <property name="toolTip">
+        <string>就是 f-string. 數字格式, 除了N 不會套用  .2f 兩個小數, .3g 總長 3, ,.1f 加逗點, and {value:.2f} is also accepted.</string>
        </property>
        <property name="placeholderText">
         <string>.2f</string>
@@ -1148,6 +1265,9 @@
          <width>81</width>
          <height>32</height>
         </rect>
+       </property>
+       <property name="toolTip">
+        <string>樞紐分析的英文就是 pivot table</string>
        </property>
        <property name="whatsThis">
         <string>根據data畫出 limit, 並設定 range </string>
@@ -1196,7 +1316,7 @@
        </rect>
       </property>
       <property name="frameShape">
-       <enum>QFrame::Shape::Box</enum>
+       <enum>QFrame::Shape::NoFrame</enum>
       </property>
       <property name="text">
        <string>Plot status messages appear here.</string>
@@ -1703,7 +1823,7 @@
          </rect>
         </property>
         <property name="toolTip">
-         <string>Format controls annotation numbers except N. Examples: .2f shows 2 decimals, .3g keeps 3 significant digits, ,.1f adds thousands separators, and {value:.2f} is also accepted.</string>
+         <string>就是 f-string. 數字格式, 除了N 不會套用  .2f 兩個小數, .3g 總長 3, ,.1f 加逗點, and {value:.2f} is also accepted.</string>
         </property>
         <property name="whatsThis">
          <string>Format controls annotation numbers except N. Examples: .2f shows 2 decimals, .3g keeps 3 significant digits, ,.1f adds thousands separators, and {value:.2f} is also accepted.</string>
@@ -1818,7 +1938,7 @@
          </rect>
         </property>
         <property name="text">
-         <string>Color:</string>
+         <string>Color</string>
         </property>
        </widget>
        <widget class="QPushButton" name="boxLineColorButton">
@@ -1826,7 +1946,7 @@
          <rect>
           <x>70</x>
           <y>50</y>
-          <width>91</width>
+          <width>24</width>
           <height>32</height>
          </rect>
         </property>
@@ -1901,7 +2021,7 @@
          </rect>
         </property>
         <property name="text">
-         <string>Plot width:</string>
+         <string>Plot width</string>
         </property>
        </widget>
        <widget class="QSpinBox" name="boxPlotHeightSpinBox">
@@ -1936,7 +2056,7 @@
          </rect>
         </property>
         <property name="text">
-         <string>Plot height:</string>
+         <string>Plot height</string>
         </property>
        </widget>
        <widget class="QLabel" name="boxYTitleLabel">
@@ -1949,7 +2069,7 @@
          </rect>
         </property>
         <property name="text">
-         <string>Y title:</string>
+         <string>Y title</string>
         </property>
        </widget>
        <widget class="QLabel" name="boxYRangeLabel">
@@ -1962,7 +2082,7 @@
          </rect>
         </property>
         <property name="text">
-         <string>Y range:</string>
+         <string>Y range</string>
         </property>
        </widget>
        <widget class="QLineEdit" name="boxYTitleLineEdit">
@@ -1985,7 +2105,7 @@
          </rect>
         </property>
         <property name="text">
-         <string>Y lines:</string>
+         <string>Y lines</string>
         </property>
        </widget>
        <widget class="QPushButton" name="boxAutoStatsButton">
@@ -1996,6 +2116,9 @@
           <width>81</width>
           <height>32</height>
          </rect>
+        </property>
+        <property name="toolTip">
+         <string>自動算出 avg, 3sigma, 並畫上線.</string>
         </property>
         <property name="text">
          <string>Auto</string>
@@ -2010,6 +2133,10 @@
           <height>24</height>
          </rect>
         </property>
+        <property name="toolTip">
+         <string>-2條線, 下面的統計會用這個當 range, avg 當 target.
+-3條線, 會被當 range 以及 target</string>
+        </property>
        </widget>
        <widget class="QLineEdit" name="boxYRangeLineEdit">
         <property name="geometry">
@@ -2019,6 +2146,9 @@
           <width>141</width>
           <height>24</height>
          </rect>
+        </property>
+        <property name="toolTip">
+         <string>如果X是日期, 也能用日期設定. 也可以用下面的 HTML拉</string>
         </property>
        </widget>
        <widget class="QPushButton" name="boxplotPivotButton">
@@ -2031,7 +2161,7 @@
          </rect>
         </property>
         <property name="toolTip">
-         <string>根據data畫出 limit, 並設定 range </string>
+         <string>樞紐分析的英文就是 pivot table</string>
         </property>
         <property name="whatsThis">
          <string>根據data畫出 limit, 並設定 range </string>
@@ -2084,13 +2214,35 @@
        </rect>
       </property>
       <property name="frameShape">
-       <enum>QFrame::Shape::Box</enum>
+       <enum>QFrame::Shape::NoFrame</enum>
       </property>
       <property name="text">
        <string>Boxplot status messages appear here.</string>
       </property>
      </widget>
     </widget>
+   </widget>
+   <widget class="QLabel" name="noWebengineLabel">
+    <property name="geometry">
+     <rect>
+      <x>869</x>
+      <y>10</y>
+      <width>111</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Cascadia Next TC</family>
+      <pointsize>14</pointsize>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color: rgb(255, 24, 39);</string>
+    </property>
+    <property name="text">
+     <string>No webengine. </string>
+    </property>
    </widget>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>

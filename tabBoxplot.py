@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from qt_helpers import require_child
 from pivot_helpers import build_pivot_table, show_pivot_dialog
+from plot_templates import CUSTOM_TEMPLATE_NAME
 
 try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -33,17 +34,6 @@ try:
 except ImportError:
     QWebEngineView = None
     WEB_ENGINE_AVAILABLE = False
-
-CUSTOM_TEMPLATE_NAME = 'customized'
-
-customTemplate = go.layout.Template()
-customTemplate.layout.update(
-    font=dict(family='Cascadia Next TC', size=14),
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    title_font_color='white',
-)
-pio.templates[CUSTOM_TEMPLATE_NAME] = customTemplate
 
 
 class TabBoxplotWidget:
@@ -245,15 +235,19 @@ class TabBoxplotWidget:
         self._redraw_existing_plot()
 
     def _update_line_color_button(self) -> None:
-        self.lineColorButton.setText(self.lineColor)
+        self.lineColorButton.setText('')
+        self.lineColorButton.setToolTip(self.lineColor)
+        self.lineColorButton.setWhatsThis(self.lineColor)
         self.lineColorButton.setStyleSheet(
-            f'QPushButton {{ background-color: {self.lineColor}; color: white; }}'
+            f'QPushButton {{ background-color: {self.lineColor}; }}'
         )
 
     def _update_annotation_color_button(self) -> None:
-        self.annotationColorButton.setText(self.annotationColor)
+        self.annotationColorButton.setText('')
+        self.annotationColorButton.setToolTip(self.annotationColor)
+        self.annotationColorButton.setWhatsThis(self.annotationColor)
         self.annotationColorButton.setStyleSheet(
-            f'QPushButton {{ background-color: {self.annotationColor}; color: white; }}'
+            f'QPushButton {{ background-color: {self.annotationColor}; }}'
         )
 
     def _sync_y_title_from_column(self, columnName: str) -> None:
@@ -720,6 +714,12 @@ class TabBoxplotWidget:
             group1Column,
             group2Column,
         )
+        plotData[categoryColumn] = pd.Categorical(
+            plotData[categoryColumn],
+            categories=categoryOrder,
+            ordered=True,
+        )
+        plotData = plotData.sort_values(categoryColumn)
         bottomMargin = 80
         leftMargin = 60
         rightMargin = 230 if selectedAnnotationStats else 180
@@ -754,7 +754,11 @@ class TabBoxplotWidget:
                 width=self.plotWidthSpinBox.value(),
                 height=self.plotHeightSpinBox.value(),
             )
-            fig.update_xaxes(title_text=self._build_x_title(group1Column, group2Column))
+            fig.update_xaxes(
+                title_text=self._build_x_title(group1Column, group2Column),
+                categoryorder='array',
+                categoryarray=categoryOrder,
+            )
             fig.update_yaxes(title_text=yTitle)
             if yRange is not None:
                 fig.update_yaxes(range=yRange)
@@ -834,6 +838,9 @@ class TabBoxplotWidget:
             '<p>Boxplot is shown in the system browser.</p>'
             f'<p><a href="{viewerUri}">Open boxplot browser viewer</a></p>'
             '<p>The viewer reloads the latest Plotly HTML automatically. Use Download HTML to save a copy.</p>'
+            '<p>無法啟動 PySide6.WebEngine, 原因可能是 遠端桌面, 系統老舊沒有 GPU, 或者啟動時加了"--no-webengine"</p>'
+            '<p>結果會是畫面因為字型大小跑掉很醜， 圖不能在這裡顯示, 要到瀏覽器看</p>'
+            '<p><h1>不是我的錯！</h1></p>'
             '</div>'
         )
 

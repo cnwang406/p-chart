@@ -3,14 +3,25 @@ import sys
 
 import PySide6
 from PySide6.QtCore import QCoreApplication, QFile
-from PySide6.QtGui import QFont, QFontDatabase, QIcon
+from PySide6.QtGui import QFont, QFontDatabase, QIcon, QColor
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QMessageBox, QTabWidget, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from qt_helpers import require_child
 from tabBoxplot import TabBoxplotWidget
 from tabData import TabDataWidget
-from tabScatter import TabScatterWidget
+from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
@@ -66,16 +77,21 @@ class AppMain:
         if not self.app.windowIcon().isNull():
             self.ui.setWindowIcon(self.app.windowIcon())
         self.tabWidget = require_child(self.ui, QTabWidget, 'tabWidget')
+        self.noWebengineLabel = require_child(self.ui, QLabel, 'noWebengineLabel')
+        self.aboutButton = require_child(self.ui, QPushButton, 'aboutButton')
         self.tabDataWidget = TabDataWidget(self.ui)
         preferWebEngine = (
             not self.runtimeOptions['no_webengine']
             and not is_remote_desktop_session()
+            and WEB_ENGINE_AVAILABLE
         )
+        self.noWebengineLabel.setText('' if preferWebEngine else 'no webEngine')
         self.tabScatterWidget = TabScatterWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabBoxplotWidget = TabBoxplotWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabScatterWidget.set_tab_data(self.tabDataWidget)
         self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)
         self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
+        self.aboutButton.clicked.connect(self._show_about_dialog)
         self.tabWidget.setCurrentIndex(0)
         self.ui.show()
 
@@ -129,6 +145,51 @@ class AppMain:
         else:
             messageBox.setIcon(QMessageBox.Icon.Warning)
         messageBox.exec()
+
+    def _show_about_dialog(self) -> None:
+        dialog = QDialog(self.ui)
+        dialog.setWindowTitle(f'About {APP_NAME}')
+        dialogLayout = QVBoxLayout(dialog)
+
+        headerLayout = QHBoxLayout()
+        iconLabel = QLabel()
+        appIcon = self.app.windowIcon()
+        if not appIcon.isNull():
+            iconLabel.setPixmap(appIcon.pixmap(72, 72))
+        headerLayout.addWidget(iconLabel)
+
+        titleLabel = QLabel(f'{APP_NAME} {APP_VERSION}\nby {APP_AUTHOR}, {APP_DATE}')
+        titleFont = titleLabel.font()
+        titleFont.setPointSize(16)
+        titleLabel.setFont(titleFont)
+        headerLayout.addWidget(titleLabel, 1)
+        dialogLayout.addLayout(headerLayout)
+
+        acknowledgeTextEdit = QTextEdit()
+        acknowledgeFont = acknowledgeTextEdit.font()
+        acknowledgeFont.setPointSize(14)
+        acknowledgeTextEdit.setFont(acknowledgeFont)
+        acknowledgeTextEdit.setTextColor(QColor('darkblue'))
+        acknowledgeTextEdit.setReadOnly(True)
+        acknowledgeTextEdit.setText(
+"""
+    import packages and resources:
+        - PySide6 for GUI
+        - Plotly for plotting
+        - Pandas for data manipulation
+        - Cascadia Mono font for better aesthetics
+        - codex for code generation and debugging assistance
+
+    if you found this tool useful, please consider giving it me a cup of coffee~
+
+            畢竟 tokens ** 很燒錢的 **
+                                    cnwang, 2026/05
+""")
+        acknowledgeTextEdit.setMinimumSize(520, 260)
+        dialogLayout.addWidget(acknowledgeTextEdit)
+
+        dialog.resize(640, 420)
+        dialog.exec()
 
     def _load_ui(self, uiFilename: str) -> QWidget:
         uiPath = resource_path(uiFilename)

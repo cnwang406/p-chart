@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
     QGroupBox,
@@ -75,6 +76,7 @@ class TabDataWidget:
         self.meltButton = require_child(rootWidget, QPushButton, 'meltButton')
         self.saveButton = require_child(rootWidget, QPushButton, 'saveButton')
         self.infoButton = require_child(rootWidget, QPushButton, 'infoButton')
+        self.convertColumnButton = require_child(rootWidget, QPushButton, 'convertColumnButton')
         self.previewTableWidget = require_child(rootWidget, QTableWidget, 'previewTableWidget')
         self.statusLabel = require_child(rootWidget, QLabel, 'statusLabelTab1')
 
@@ -97,6 +99,7 @@ class TabDataWidget:
         self.meltButton.clicked.connect(self._melt_dataframe)
         self.saveButton.clicked.connect(self._save_melted_data)
         self.infoButton.clicked.connect(self._show_wide_to_long_info)
+        self.convertColumnButton.clicked.connect(self._convert_prefixed_columns)
 
         self.columnsListWidget.setSelectionMode(QAbstractItemView.NoSelection)
         self.tabDataWidget.setAcceptDrops(True)
@@ -166,11 +169,37 @@ class TabDataWidget:
         scrollArea.setWidget(imageLabel)
         scrollArea.setWidgetResizable(False)
 
+        infoTextEdit = QTextEdit()
+        infoFont = infoTextEdit.font()
+        infoFont.setPointSize(16)
+        infoTextEdit.setFont(infoFont)
+        infoTextEdit.setReadOnly(True)
+        infoTextEdit.setStyleSheet('QTextEdit { color: rgba(0, 0, 0, 204); }')
+        infoTextEdit.setPlainText(
+            """
+1. 這個app 會轉換 excel or csv, 利用 pandas 的 wide_to_long 功能, 把寬格式的資料轉換成長格式. 這對於後續的分析和繪圖很有幫助.
+(我也不知道這麼基本的功能 excel 為什麼沒有, 不過應該有人寫過巨集或 UEDA 可能也有. 我還沒測試, 反正 我寫這個比摸清楚 UEDA 還快)
+
+2. 但是必須先修改欄位, 要合併的必須都長得像 WAT_T, WAT_C....Thickness_T, Thickness_C, inlineRS_T....
+也就是說, 這些欄位的名稱都要有一個共同的前綴 (stubname), 和一個共同的後綴 (suffix), 這樣 wide_to_long 才知道要怎麼合併.
+我知道會很麻煩, 所以可以用 [T_AVG --> AVG_T] 這個按鈕來幫忙轉換一次. 但是如果欄位名稱太亂, 可能還是需要手動改一下比較快.
+
+3. 有些情況不需要, 比如 AVG -> Y, 時間 --> X, 打算用機台, product 當作 category, 這時候就不需要轉換了, 直接用原來的寬格式資料就好.
+
+4. 這個 app 輸出用 HTML + JavaScript 功能來顯示互動式圖表, 這樣就算是複雜的交互式圖表也能在app裡面直接看, 不需要再開一個 Excel 或 Python 的視窗.
+但是如果電腦環境不支援 PySide6.WebEngine, 就會退回到在系統瀏覽器裡面看圖, 這時候app 的字體可能會變得很大很醜,
+這 不 是 我 的 錯
+, 是 PySide6.WebEngine 的問題. 但是產生的 HTML 應該還是正常的,可以放大縮小移動 balabala
+""".strip()
+        )
+        infoTextEdit.setMinimumHeight(160)
+
         dialog = QDialog(self.rootWidget)
-        dialog.setWindowTitle('What is wide_to_long')
+        dialog.setWindowTitle('如 何 用 火')
         dialogLayout = QVBoxLayout(dialog)
         dialogLayout.addWidget(scrollArea)
-        dialog.resize(min(pixmap.width() + 40, 1100), min(pixmap.height() + 60, 800))
+        dialogLayout.addWidget(infoTextEdit)
+        dialog.resize(min(pixmap.width() + 40, 1100), min(pixmap.height() + 400, 900))
         dialog.exec()
 
     def _load_file(self) -> None:
@@ -188,6 +217,7 @@ class TabDataWidget:
             if filePath.lower().endswith('.csv'):
                 self.loadedDataFrame = pd.read_csv(filePath)
                 self._set_status('CSV loaded successfully.')
+                self._append_detected_stubnames()
                 self._populate_columns()
                 self._show_preview(self.loadedDataFrame)
                 self._notify_data_changed()
@@ -227,6 +257,7 @@ class TabDataWidget:
         try:
             self._invalidate_melted_data()
             self.loadedDataFrame = pd.read_excel(self.loadedFilePath, sheet_name=sheetName)
+            self._append_detected_stubnames()
             self._populate_columns()
             self._show_preview(self.loadedDataFrame)
             self._notify_data_changed()
@@ -239,6 +270,81 @@ class TabDataWidget:
         for columnName in self.loadedDataFrame.columns.astype(str):
             self.columnsListWidget.addItem(QListWidgetItem(columnName))
         self._mark_matching_columns()
+
+    def _convert_prefixed_columns(self) -> None:
+        if self.loadedDataFrame.empty:
+            self._set_status('Load data before converting column names.', error=True)
+            return
+
+        convertedColumns = []
+        convertedCount = 0
+        usedColumnNames = set()
+        for columnName in self.loadedDataFrame.columns.astype(str):
+            convertedName = self._convert_prefixed_column_name(columnName)
+            if convertedName != columnName:
+                convertedCount += 1
+            uniqueName = self._unique_column_name(convertedName, usedColumnNames)
+            usedColumnNames.add(uniqueName)
+            convertedColumns.append(uniqueName)
+
+        if convertedCount == 0:
+            self._set_status('No T_/L_/B_/C_/R_ column names found to convert.')
+            return
+
+        self._invalidate_melted_data()
+        self.loadedDataFrame.columns = convertedColumns
+        self._append_detected_stubnames()
+        self._populate_columns()
+        self._show_preview(self.loadedDataFrame)
+        self._notify_data_changed()
+        self._set_status(f'Converted {convertedCount} column names for wide_to_long.')
+
+    def _convert_prefixed_column_name(self, columnName: str) -> str:
+        matchedColumn = re.match(r'^([TLBCR])_(.+)$', columnName.strip())
+        if not matchedColumn:
+            return columnName
+        suffixName, stubName = matchedColumn.groups()
+        return f'{stubName}_{suffixName}'
+
+    def _unique_column_name(self, columnName: str, usedColumnNames: set[str]) -> str:
+        if columnName not in usedColumnNames:
+            return columnName
+
+        suffixIndex = 2
+        while f'{columnName}_{suffixIndex}' in usedColumnNames:
+            suffixIndex += 1
+        return f'{columnName}_{suffixIndex}'
+
+    def _append_detected_stubnames(self) -> None:
+        detectedStubnames = self._detect_suffix_stubnames()
+        if not detectedStubnames:
+            return
+
+        existingStubnames = self._parse_stubnames()
+        existingStubnameSet = set(existingStubnames)
+        newStubnames = [
+            stubname
+            for stubname in detectedStubnames
+            if stubname not in existingStubnameSet
+        ]
+        if not newStubnames:
+            return
+
+        self.stubnamesLineEdit.setText(','.join([*existingStubnames, *newStubnames]))
+
+    def _detect_suffix_stubnames(self) -> list[str]:
+        detectedStubnames = []
+        detectedStubnameSet = set()
+        for columnName in self.loadedDataFrame.columns.astype(str):
+            matchedColumn = re.match(r'^(.+)_([TLBCR])$', columnName.strip())
+            if not matchedColumn:
+                continue
+            stubname = matchedColumn.group(1)
+            if stubname in detectedStubnameSet:
+                continue
+            detectedStubnameSet.add(stubname)
+            detectedStubnames.append(stubname)
+        return detectedStubnames
 
     def _parse_stubnames(self) -> list[str]:
         rawStubnames = self.stubnamesLineEdit.text().strip()
