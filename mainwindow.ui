@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
+ <author>cnwang</author>
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1024</width>
-    <height>1024</height>
+    <width>1018</width>
+    <height>942</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -20,7 +21,7 @@
       <x>12</x>
       <y>6</y>
       <width>1001</width>
-      <height>939</height>
+      <height>971</height>
      </rect>
     </property>
     <property name="font">
@@ -30,7 +31,7 @@
      </font>
     </property>
     <property name="currentIndex">
-     <number>2</number>
+     <number>1</number>
     </property>
     <widget class="QWidget" name="tabData">
      <attribute name="title">
@@ -159,7 +160,7 @@
         <x>20</x>
         <y>70</y>
         <width>318</width>
-        <height>290</height>
+        <height>231</height>
        </rect>
       </property>
       <property name="font">
@@ -171,64 +172,66 @@
       <property name="title">
        <string>Sheet &amp; columns</string>
       </property>
-      <layout class="QVBoxLayout" name="verticalLayout_sheet">
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_columns">
-         <item>
-          <widget class="QGroupBox" name="columnsGroupBox">
-           <property name="font">
-            <font>
-             <family>Cascadia Next TC</family>
-             <pointsize>14</pointsize>
-            </font>
-           </property>
-           <property name="title">
-            <string>Columns</string>
-           </property>
-           <layout class="QHBoxLayout" name="horizontalLayout">
-            <item>
-             <widget class="QListWidget" name="columnsListWidget">
-              <property name="font">
-               <font>
-                <family>Cascadia Next TC</family>
-                <pointsize>14</pointsize>
-               </font>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QLabel" name="attachLabel_2">
-         <property name="font">
-          <font>
-           <family>Cascadia Next TC</family>
-           <pointsize>11</pointsize>
-          </font>
-         </property>
-         <property name="text">
-          <string>qualified stubnames and suffix will marked green</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
+      <widget class="QLabel" name="attachLabel_2">
+       <property name="geometry">
+        <rect>
+         <x>15</x>
+         <y>263</y>
+         <width>264</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="font">
+        <font>
+         <family>Cascadia Next TC</family>
+         <pointsize>11</pointsize>
+        </font>
+       </property>
+       <property name="text">
+        <string>qualified stubnames and suffix will marked green</string>
+       </property>
+      </widget>
+      <widget class="QListWidget" name="columnsListWidget">
+       <property name="geometry">
+        <rect>
+         <x>15</x>
+         <y>34</y>
+         <width>291</width>
+         <height>161</height>
+        </rect>
+       </property>
+       <property name="font">
+        <font>
+         <family>Cascadia Next TC</family>
+         <pointsize>14</pointsize>
+        </font>
+       </property>
+      </widget>
+      <widget class="QWidget" name="layoutWidget">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>0</y>
+         <width>2</width>
+         <height>2</height>
+        </rect>
+       </property>
+       <layout class="QHBoxLayout" name="horizontalLayout_columns"/>
+      </widget>
      </widget>
      <widget class="QTableWidget" name="previewTableWidget">
       <property name="geometry">
        <rect>
-        <x>50</x>
-        <y>383</y>
-        <width>921</width>
-        <height>481</height>
+        <x>20</x>
+        <y>310</y>
+        <width>951</width>
+        <height>511</height>
        </rect>
       </property>
       <property name="font">
        <font>
         <family>Cascadia Next TC</family>
-        <pointsize>14</pointsize>
+        <pointsize>12</pointsize>
        </font>
       </property>
      </widget>
@@ -236,8 +239,8 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>874</y>
-        <width>184</width>
+        <y>830</y>
+        <width>951</width>
         <height>16</height>
        </rect>
       </property>
@@ -254,10 +257,10 @@
      <widget class="QGroupBox" name="optionGroupBox">
       <property name="geometry">
        <rect>
-        <x>360</x>
+        <x>340</x>
         <y>70</y>
-        <width>611</width>
-        <height>291</height>
+        <width>631</width>
+        <height>231</height>
        </rect>
       </property>
       <property name="font">
@@ -267,7 +270,7 @@
        </font>
       </property>
       <property name="title">
-       <string>wide_to_long options</string>
+       <string>reshape options</string>
       </property>
       <widget class="QLabel" name="stubnamesLabel">
        <property name="geometry">
@@ -380,140 +383,13 @@
         </font>
        </property>
       </widget>
-      <widget class="QLabel" name="attachLabel">
-       <property name="geometry">
-        <rect>
-         <x>10</x>
-         <y>130</y>
-         <width>71</width>
-         <height>16</height>
-        </rect>
-       </property>
-       <property name="font">
-        <font>
-         <family>Cascadia Next TC</family>
-         <pointsize>14</pointsize>
-        </font>
-       </property>
-       <property name="text">
-        <string>Save mode</string>
-       </property>
-      </widget>
-      <widget class="QComboBox" name="attachComboBox">
-       <property name="geometry">
-        <rect>
-         <x>90</x>
-         <y>120</y>
-         <width>103</width>
-         <height>32</height>
-        </rect>
-       </property>
-       <property name="font">
-        <font>
-         <family>Cascadia Next TC</family>
-         <pointsize>14</pointsize>
-        </font>
-       </property>
-      </widget>
-      <widget class="QLabel" name="sheetNameLabel">
-       <property name="geometry">
-        <rect>
-         <x>220</x>
-         <y>130</y>
-         <width>76</width>
-         <height>16</height>
-        </rect>
-       </property>
-       <property name="font">
-        <font>
-         <family>Cascadia Next TC</family>
-         <pointsize>14</pointsize>
-        </font>
-       </property>
-       <property name="text">
-        <string>Sheet name</string>
-       </property>
-      </widget>
-      <widget class="QLineEdit" name="sheetNameLineEdit">
-       <property name="geometry">
-        <rect>
-         <x>300</x>
-         <y>130</y>
-         <width>291</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="font">
-        <font>
-         <family>Cascadia Next TC</family>
-         <pointsize>14</pointsize>
-        </font>
-       </property>
-      </widget>
-      <widget class="QLabel" name="savePathLabel">
-       <property name="geometry">
-        <rect>
-         <x>10</x>
-         <y>160</y>
-         <width>64</width>
-         <height>16</height>
-        </rect>
-       </property>
-       <property name="font">
-        <font>
-         <family>Cascadia Next TC</family>
-         <pointsize>14</pointsize>
-        </font>
-       </property>
-       <property name="text">
-        <string>Save path:</string>
-       </property>
-      </widget>
-      <widget class="QLineEdit" name="savePathLineEdit">
-       <property name="geometry">
-        <rect>
-         <x>90</x>
-         <y>160</y>
-         <width>341</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="font">
-        <font>
-         <family>Cascadia Next TC</family>
-         <pointsize>14</pointsize>
-        </font>
-       </property>
-      </widget>
-      <widget class="QPushButton" name="browseSaveButton">
-       <property name="geometry">
-        <rect>
-         <x>440</x>
-         <y>150</y>
-         <width>91</width>
-         <height>32</height>
-        </rect>
-       </property>
-       <property name="font">
-        <font>
-         <family>Cascadia Next TC</family>
-         <pointsize>14</pointsize>
-        </font>
-       </property>
-       <property name="whatsThis">
-        <string>where to save</string>
-       </property>
-       <property name="text">
-        <string>Browse...</string>
-       </property>
-      </widget>
       <widget class="QPushButton" name="meltButton">
        <property name="geometry">
         <rect>
-         <x>20</x>
-         <y>190</y>
-         <width>201</width>
-         <height>71</height>
+         <x>10</x>
+         <y>180</y>
+         <width>391</width>
+         <height>41</height>
         </rect>
        </property>
        <property name="font">
@@ -523,36 +399,14 @@
         </font>
        </property>
        <property name="text">
-        <string>wide_to_long 轉換</string>
-       </property>
-      </widget>
-      <widget class="QPushButton" name="saveButton">
-       <property name="geometry">
-        <rect>
-         <x>530</x>
-         <y>150</y>
-         <width>60</width>
-         <height>32</height>
-        </rect>
-       </property>
-       <property name="font">
-        <font>
-         <family>Cascadia Next TC</family>
-         <pointsize>14</pointsize>
-        </font>
-       </property>
-       <property name="whatsThis">
-        <string>Really Save</string>
-       </property>
-       <property name="text">
-        <string>Save</string>
+        <string>wide_to_long (reshape) 轉換</string>
        </property>
       </widget>
       <widget class="QPushButton" name="infoButton">
        <property name="geometry">
         <rect>
-         <x>230</x>
-         <y>200</y>
+         <x>430</x>
+         <y>180</y>
          <width>181</width>
          <height>41</height>
         </rect>
@@ -585,6 +439,168 @@
        <property name="text">
         <string>大小寫不一樣</string>
        </property>
+      </widget>
+      <widget class="QGroupBox" name="groupBox_3">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>90</y>
+         <width>611</width>
+         <height>81</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>file manipulation</string>
+       </property>
+       <widget class="QLabel" name="savePathLabel">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>50</y>
+          <width>64</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <family>Cascadia Next TC</family>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>Save path:</string>
+        </property>
+       </widget>
+       <widget class="QComboBox" name="attachComboBox">
+        <property name="geometry">
+         <rect>
+          <x>90</x>
+          <y>10</y>
+          <width>103</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <family>Cascadia Next TC</family>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="sheetNameLineEdit">
+        <property name="geometry">
+         <rect>
+          <x>300</x>
+          <y>20</y>
+          <width>291</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <family>Cascadia Next TC</family>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+       </widget>
+       <widget class="QPushButton" name="saveButton">
+        <property name="geometry">
+         <rect>
+          <x>530</x>
+          <y>44</y>
+          <width>60</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <family>Cascadia Next TC</family>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+        <property name="whatsThis">
+         <string>Really Save</string>
+        </property>
+        <property name="text">
+         <string>Save</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="sheetNameLabel">
+        <property name="geometry">
+         <rect>
+          <x>220</x>
+          <y>20</y>
+          <width>76</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <family>Cascadia Next TC</family>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>Sheet name</string>
+        </property>
+       </widget>
+       <widget class="QPushButton" name="browseSaveButton">
+        <property name="geometry">
+         <rect>
+          <x>440</x>
+          <y>44</y>
+          <width>91</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <family>Cascadia Next TC</family>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+        <property name="whatsThis">
+         <string>where to save</string>
+        </property>
+        <property name="text">
+         <string>Browse...</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="attachLabel">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>20</y>
+          <width>71</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <family>Cascadia Next TC</family>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>Save mode</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="savePathLineEdit">
+        <property name="geometry">
+         <rect>
+          <x>90</x>
+          <y>50</y>
+          <width>341</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <family>Cascadia Next TC</family>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+       </widget>
       </widget>
      </widget>
     </widget>
@@ -776,26 +792,26 @@
        </rect>
       </property>
       <property name="title">
-       <string>Layout</string>
+       <string>Annotation</string>
       </property>
       <widget class="QLabel" name="plotTitleLabel">
        <property name="geometry">
         <rect>
          <x>15</x>
-         <y>33</y>
+         <y>30</y>
          <width>51</width>
          <height>16</height>
         </rect>
        </property>
        <property name="text">
-        <string>Title:</string>
+        <string>Title</string>
        </property>
       </widget>
       <widget class="QLineEdit" name="plotTitleLineEdit">
        <property name="geometry">
         <rect>
          <x>70</x>
-         <y>33</y>
+         <y>30</y>
          <width>411</width>
          <height>21</height>
         </rect>
@@ -806,12 +822,12 @@
         <rect>
          <x>15</x>
          <y>64</y>
-         <width>61</width>
+         <width>16</width>
          <height>16</height>
         </rect>
        </property>
        <property name="text">
-        <string>X title:</string>
+        <string>X</string>
        </property>
       </widget>
       <widget class="QLineEdit" name="xTitleLineEdit">
@@ -827,23 +843,10 @@
         <string>x-axis title</string>
        </property>
       </widget>
-      <widget class="QLabel" name="xRangeLabel">
-       <property name="geometry">
-        <rect>
-         <x>330</x>
-         <y>64</y>
-         <width>51</width>
-         <height>16</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>X range:</string>
-       </property>
-      </widget>
       <widget class="QLineEdit" name="xRangeLineEdit">
        <property name="geometry">
         <rect>
-         <x>390</x>
+         <x>360</x>
          <y>64</y>
          <width>121</width>
          <height>21</height>
@@ -858,12 +861,12 @@
         <rect>
          <x>15</x>
          <y>95</y>
-         <width>71</width>
+         <width>21</width>
          <height>16</height>
         </rect>
        </property>
        <property name="text">
-        <string>Y title:</string>
+        <string>Y</string>
        </property>
       </widget>
       <widget class="QLineEdit" name="yTitleLineEdit">
@@ -882,20 +885,20 @@
       <widget class="QLabel" name="yRangeLabel">
        <property name="geometry">
         <rect>
-         <x>330</x>
-         <y>95</y>
+         <x>320</x>
+         <y>80</y>
          <width>51</width>
          <height>16</height>
         </rect>
        </property>
        <property name="text">
-        <string>Y range:</string>
+        <string>range</string>
        </property>
       </widget>
       <widget class="QLineEdit" name="yRangeLineEdit">
        <property name="geometry">
         <rect>
-         <x>390</x>
+         <x>360</x>
          <y>95</y>
          <width>121</width>
          <height>21</height>
@@ -940,10 +943,10 @@
       <widget class="QGroupBox" name="lineGroupBox">
        <property name="geometry">
         <rect>
-         <x>520</x>
-         <y>35</y>
-         <width>421</width>
-         <height>111</height>
+         <x>640</x>
+         <y>15</y>
+         <width>311</width>
+         <height>131</height>
         </rect>
        </property>
        <property name="title">
@@ -952,9 +955,9 @@
        <widget class="QPushButton" name="lineColorButton">
         <property name="geometry">
          <rect>
-          <x>324</x>
-          <y>30</y>
-          <width>81</width>
+          <x>80</x>
+          <y>90</y>
+          <width>21</width>
           <height>24</height>
          </rect>
         </property>
@@ -965,14 +968,14 @@
        <widget class="QLabel" name="lineColorLabel">
         <property name="geometry">
          <rect>
-          <x>270</x>
-          <y>30</y>
-          <width>85</width>
+          <x>30</x>
+          <y>90</y>
+          <width>41</width>
           <height>21</height>
          </rect>
         </property>
         <property name="text">
-         <string>Color:</string>
+         <string>Color</string>
         </property>
        </widget>
        <widget class="QLineEdit" name="hlineLineEdit">
@@ -1007,14 +1010,14 @@
        <widget class="QLabel" name="lineWidthLabel">
         <property name="geometry">
          <rect>
-          <x>271</x>
-          <y>60</y>
+          <x>111</x>
+          <y>90</y>
           <width>51</width>
           <height>21</height>
          </rect>
         </property>
         <property name="text">
-         <string>Width:</string>
+         <string>Width</string>
         </property>
        </widget>
        <widget class="QLabel" name="hlineLabel">
@@ -1027,14 +1030,14 @@
          </rect>
         </property>
         <property name="text">
-         <string>Y lines:</string>
+         <string>Y lines</string>
         </property>
        </widget>
        <widget class="QDoubleSpinBox" name="lineWidthSpinBox">
         <property name="geometry">
          <rect>
-          <x>330</x>
-          <y>60</y>
+          <x>160</x>
+          <y>90</y>
           <width>81</width>
           <height>21</height>
          </rect>
@@ -1062,7 +1065,7 @@
          </rect>
         </property>
         <property name="text">
-         <string>X lines:</string>
+         <string>X lines</string>
         </property>
        </widget>
       </widget>
@@ -1085,14 +1088,82 @@
         <string>auto calculate limit and calculate statistic data</string>
        </property>
       </widget>
+      <widget class="QLabel" name="yFormatLabel">
+       <property name="geometry">
+        <rect>
+         <x>490</x>
+         <y>80</y>
+         <width>51</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>format</string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="xFormatLineEdit">
+       <property name="geometry">
+        <rect>
+         <x>540</x>
+         <y>64</y>
+         <width>91</width>
+         <height>21</height>
+        </rect>
+       </property>
+       <property name="placeholderText">
+        <string>.2f</string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="yFormatLineEdit">
+       <property name="geometry">
+        <rect>
+         <x>540</x>
+         <y>95</y>
+         <width>91</width>
+         <height>21</height>
+        </rect>
+       </property>
+       <property name="placeholderText">
+        <string>.2f</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="xTitleLabel_2">
+       <property name="geometry">
+        <rect>
+         <x>30</x>
+         <y>80</y>
+         <width>61</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Title</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="scatterPivotButton">
+       <property name="geometry">
+        <rect>
+         <x>540</x>
+         <y>120</y>
+         <width>81</width>
+         <height>32</height>
+        </rect>
+       </property>
+       <property name="whatsThis">
+        <string>根據data畫出 limit, 並設定 range </string>
+       </property>
+       <property name="text">
+        <string>pivot</string>
+       </property>
+      </widget>
      </widget>
      <widget class="QWidget" name="plotAreaWidget" native="true">
       <property name="geometry">
        <rect>
         <x>20</x>
         <y>319</y>
-        <width>941</width>
-        <height>531</height>
+        <width>961</width>
+        <height>501</height>
        </rect>
       </property>
       <property name="whatsThis">
@@ -1103,7 +1174,7 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>288</y>
+        <y>290</y>
         <width>941</width>
         <height>24</height>
        </rect>
@@ -1119,10 +1190,13 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>872</y>
-        <width>209</width>
+        <y>830</y>
+        <width>951</width>
         <height>16</height>
        </rect>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::Box</enum>
       </property>
       <property name="text">
        <string>Plot status messages appear here.</string>
@@ -1132,7 +1206,7 @@
       <property name="geometry">
        <rect>
         <x>194</x>
-        <y>251</y>
+        <y>261</y>
         <width>131</width>
         <height>32</height>
        </rect>
@@ -1145,7 +1219,7 @@
       <property name="geometry">
        <rect>
         <x>339</x>
-        <y>252</y>
+        <y>267</y>
         <width>46</width>
         <height>16</height>
        </rect>
@@ -1158,7 +1232,7 @@
       <property name="geometry">
        <rect>
         <x>21</x>
-        <y>251</y>
+        <y>261</y>
         <width>161</width>
         <height>32</height>
        </rect>
@@ -1171,7 +1245,7 @@
       <property name="geometry">
        <rect>
         <x>390</x>
-        <y>250</y>
+        <y>260</y>
         <width>103</width>
         <height>32</height>
        </rect>
@@ -1181,7 +1255,7 @@
       <property name="geometry">
        <rect>
         <x>510</x>
-        <y>252</y>
+        <y>267</y>
         <width>45</width>
         <height>16</height>
        </rect>
@@ -1194,7 +1268,7 @@
       <property name="geometry">
        <rect>
         <x>560</x>
-        <y>250</y>
+        <y>260</y>
         <width>91</width>
         <height>32</height>
        </rect>
@@ -1216,7 +1290,7 @@
       <property name="geometry">
        <rect>
         <x>670</x>
-        <y>252</y>
+        <y>267</y>
         <width>51</width>
         <height>16</height>
        </rect>
@@ -1229,7 +1303,7 @@
       <property name="geometry">
        <rect>
         <x>730</x>
-        <y>250</y>
+        <y>260</y>
         <width>91</width>
         <height>32</height>
        </rect>
@@ -1274,13 +1348,13 @@
         </rect>
        </property>
        <property name="text">
-        <string>Y:</string>
+        <string>Y</string>
        </property>
       </widget>
       <widget class="QComboBox" name="boxYComboBox">
        <property name="geometry">
         <rect>
-         <x>60</x>
+         <x>70</x>
          <y>28</y>
          <width>161</width>
          <height>32</height>
@@ -1297,13 +1371,13 @@
         </rect>
        </property>
        <property name="text">
-        <string>Group 1:</string>
+        <string>Group 1</string>
        </property>
       </widget>
       <widget class="QComboBox" name="boxGroup1ComboBox">
        <property name="geometry">
         <rect>
-         <x>320</x>
+         <x>300</x>
          <y>28</y>
          <width>161</width>
          <height>32</height>
@@ -1313,20 +1387,20 @@
       <widget class="QLabel" name="boxGroup2Label">
        <property name="geometry">
         <rect>
-         <x>510</x>
+         <x>480</x>
          <y>30</y>
          <width>61</width>
          <height>24</height>
         </rect>
        </property>
        <property name="text">
-        <string>Group 2:</string>
+        <string>Group 2</string>
        </property>
       </widget>
       <widget class="QComboBox" name="boxGroup2ComboBox">
        <property name="geometry">
         <rect>
-         <x>580</x>
+         <x>530</x>
          <y>28</y>
          <width>161</width>
          <height>32</height>
@@ -1336,7 +1410,7 @@
       <widget class="QLabel" name="boxPointsLabel">
        <property name="geometry">
         <rect>
-         <x>760</x>
+         <x>700</x>
          <y>30</y>
          <width>51</width>
          <height>24</height>
@@ -1349,7 +1423,7 @@
       <widget class="QComboBox" name="boxPointsComboBox">
        <property name="geometry">
         <rect>
-         <x>820</x>
+         <x>750</x>
          <y>28</y>
          <width>121</width>
          <height>32</height>
@@ -1402,7 +1476,7 @@
       <widget class="QCheckBox" name="boxLegendCheckBox">
        <property name="geometry">
         <rect>
-         <x>510</x>
+         <x>750</x>
          <y>64</y>
          <width>111</width>
          <height>24</height>
@@ -1419,46 +1493,46 @@
        <property name="geometry">
         <rect>
          <x>20</x>
-         <y>260</y>
+         <y>244</y>
          <width>111</width>
          <height>32</height>
         </rect>
        </property>
        <property name="text">
-        <string>Refresh</string>
+        <string>Refresh Plot</string>
        </property>
       </widget>
       <widget class="QPushButton" name="boxDownloadHtmlButton">
        <property name="geometry">
         <rect>
          <x>300</x>
-         <y>260</y>
-         <width>91</width>
+         <y>244</y>
+         <width>121</width>
          <height>32</height>
         </rect>
        </property>
        <property name="text">
-        <string>HTML</string>
+        <string>download HTML</string>
        </property>
       </widget>
       <widget class="QLabel" name="boxThemeLabel">
        <property name="geometry">
         <rect>
-         <x>140</x>
-         <y>264</y>
+         <x>150</x>
+         <y>248</y>
          <width>51</width>
          <height>21</height>
         </rect>
        </property>
        <property name="text">
-        <string>Theme:</string>
+        <string>Theme</string>
        </property>
       </widget>
       <widget class="QComboBox" name="boxPlotlyThemeComboBox">
        <property name="geometry">
         <rect>
          <x>190</x>
-         <y>260</y>
+         <y>244</y>
          <width>101</width>
          <height>32</height>
         </rect>
@@ -1469,19 +1543,136 @@
         <rect>
          <x>10</x>
          <y>180</y>
-         <width>931</width>
-         <height>80</height>
+         <width>941</width>
+         <height>61</height>
         </rect>
        </property>
        <property name="title">
-        <string>statistic data</string>
+        <string>Annotation statistic data</string>
        </property>
+       <widget class="QCheckBox" name="boxAnnotationNCheckBox">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>22</y>
+          <width>41</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>N</string>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="boxAnnotationMaxCheckBox">
+        <property name="geometry">
+         <rect>
+          <x>55</x>
+          <y>22</y>
+          <width>61</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>max</string>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="boxAnnotationQ1CheckBox">
+        <property name="geometry">
+         <rect>
+          <x>115</x>
+          <y>22</y>
+          <width>61</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>1/4Q</string>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="boxAnnotationMedianCheckBox">
+        <property name="geometry">
+         <rect>
+          <x>180</x>
+          <y>22</y>
+          <width>81</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>median</string>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="boxAnnotationAverageCheckBox">
+        <property name="geometry">
+         <rect>
+          <x>265</x>
+          <y>22</y>
+          <width>81</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>average</string>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="boxAnnotationQ3CheckBox">
+        <property name="geometry">
+         <rect>
+          <x>350</x>
+          <y>22</y>
+          <width>61</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>3/4Q</string>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="boxAnnotationMinCheckBox">
+        <property name="geometry">
+         <rect>
+          <x>415</x>
+          <y>22</y>
+          <width>51</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>min</string>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="boxAnnotationStdevCheckBox">
+        <property name="geometry">
+         <rect>
+          <x>470</x>
+          <y>22</y>
+          <width>151</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>stdev</string>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="boxAnnotationRangeCheckBox">
+        <property name="geometry">
+         <rect>
+          <x>535</x>
+          <y>22</y>
+          <width>71</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>range</string>
+        </property>
+       </widget>
        <widget class="QPushButton" name="boxAnnotationColorButton">
         <property name="geometry">
          <rect>
-          <x>610</x>
-          <y>25</y>
-          <width>61</width>
+          <x>700</x>
+          <y>17</y>
+          <width>21</width>
           <height>32</height>
          </rect>
         </property>
@@ -1489,61 +1680,11 @@
          <string>#000000</string>
         </property>
        </widget>
-       <widget class="QComboBox" name="boxAnnotation5ComboBox">
-        <property name="geometry">
-         <rect>
-          <x>400</x>
-          <y>25</y>
-          <width>111</width>
-          <height>32</height>
-         </rect>
-        </property>
-        <item>
-         <property name="text">
-          <string/>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>N</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>max</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>min</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>median</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>average</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>standard</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>range</string>
-         </property>
-        </item>
-       </widget>
        <widget class="QLabel" name="boxAnnotationSizeLabel">
         <property name="geometry">
          <rect>
-          <x>510</x>
-          <y>30</y>
+          <x>610</x>
+          <y>22</y>
           <width>31</width>
           <height>21</height>
          </rect>
@@ -1555,24 +1696,27 @@
        <widget class="QLineEdit" name="boxAnnotationFormatLineEdit">
         <property name="geometry">
          <rect>
-          <x>860</x>
-          <y>30</y>
-          <width>61</width>
+          <x>890</x>
+          <y>20</y>
+          <width>51</width>
           <height>24</height>
          </rect>
+        </property>
+        <property name="toolTip">
+         <string>Format controls annotation numbers except N. Examples: .2f shows 2 decimals, .3g keeps 3 significant digits, ,.1f adds thousands separators, and {value:.2f} is also accepted.</string>
         </property>
         <property name="whatsThis">
          <string>Format controls annotation numbers except N. Examples: .2f shows 2 decimals, .3g keeps 3 significant digits, ,.1f adds thousands separators, and {value:.2f} is also accepted.</string>
         </property>
         <property name="placeholderText">
-         <string>.6g</string>
+         <string>.4f</string>
         </property>
        </widget>
        <widget class="QSpinBox" name="boxAnnotationSizeSpinBox">
         <property name="geometry">
          <rect>
-          <x>550</x>
-          <y>25</y>
+          <x>645</x>
+          <y>17</y>
           <width>51</width>
           <height>32</height>
          </rect>
@@ -1590,8 +1734,8 @@
        <widget class="QLabel" name="boxAnnotationAlphaLabel">
         <property name="geometry">
          <rect>
-          <x>680</x>
-          <y>30</y>
+          <x>730</x>
+          <y>23</y>
           <width>61</width>
           <height>21</height>
          </rect>
@@ -1603,8 +1747,8 @@
        <widget class="QLabel" name="boxAnnotationFormatLabel">
         <property name="geometry">
          <rect>
-          <x>805</x>
-          <y>31</y>
+          <x>860</x>
+          <y>23</y>
           <width>51</width>
           <height>21</height>
          </rect>
@@ -1613,164 +1757,14 @@
          <string>Format controls annotation numbers except N. Examples: .2f shows 2 decimals, .3g keeps 3 significant digits, ,.1f adds thousands separators, and {value:.2f} is also accepted.</string>
         </property>
         <property name="text">
-         <string>Format:</string>
+         <string>fmt</string>
         </property>
-       </widget>
-       <widget class="QComboBox" name="boxAnnotation1ComboBox">
-        <property name="geometry">
-         <rect>
-          <x>0</x>
-          <y>25</y>
-          <width>111</width>
-          <height>32</height>
-         </rect>
-        </property>
-        <item>
-         <property name="text">
-          <string/>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>N</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>max</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>min</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>median</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>average</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>standard</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>range</string>
-         </property>
-        </item>
-       </widget>
-       <widget class="QComboBox" name="boxAnnotation2ComboBox">
-        <property name="geometry">
-         <rect>
-          <x>100</x>
-          <y>25</y>
-          <width>111</width>
-          <height>32</height>
-         </rect>
-        </property>
-        <item>
-         <property name="text">
-          <string/>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>N</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>max</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>min</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>median</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>average</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>standard</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>range</string>
-         </property>
-        </item>
-       </widget>
-       <widget class="QComboBox" name="boxAnnotation3ComboBox">
-        <property name="geometry">
-         <rect>
-          <x>200</x>
-          <y>25</y>
-          <width>111</width>
-          <height>32</height>
-         </rect>
-        </property>
-        <item>
-         <property name="text">
-          <string/>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>N</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>max</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>min</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>median</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>average</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>standard</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>range</string>
-         </property>
-        </item>
        </widget>
        <widget class="QDoubleSpinBox" name="boxAnnotationAlphaSpinBox">
         <property name="geometry">
          <rect>
-          <x>740</x>
-          <y>20</y>
+          <x>780</x>
+          <y>15</y>
           <width>61</width>
           <height>32</height>
          </rect>
@@ -1788,67 +1782,17 @@
          <double>0.720000000000000</double>
         </property>
        </widget>
-       <widget class="QComboBox" name="boxAnnotation4ComboBox">
-        <property name="geometry">
-         <rect>
-          <x>300</x>
-          <y>25</y>
-          <width>111</width>
-          <height>32</height>
-         </rect>
-        </property>
-        <item>
-         <property name="text">
-          <string/>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>N</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>max</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>min</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>median</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>average</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>standard</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>range</string>
-         </property>
-        </item>
-       </widget>
        <widget class="QLabel" name="boxAnnotationLabel">
         <property name="geometry">
          <rect>
-          <x>-220</x>
-          <y>30</y>
+          <x>10</x>
+          <y>53</y>
           <width>81</width>
           <height>21</height>
          </rect>
         </property>
         <property name="text">
-         <string>Annotation:</string>
+         <string/>
         </property>
        </widget>
       </widget>
@@ -1857,7 +1801,7 @@
         <rect>
          <x>10</x>
          <y>90</y>
-         <width>921</width>
+         <width>941</width>
          <height>91</height>
         </rect>
        </property>
@@ -2077,6 +2021,25 @@
          </rect>
         </property>
        </widget>
+       <widget class="QPushButton" name="boxplotPivotButton">
+        <property name="geometry">
+         <rect>
+          <x>810</x>
+          <y>50</y>
+          <width>81</width>
+          <height>32</height>
+         </rect>
+        </property>
+        <property name="toolTip">
+         <string>根據data畫出 limit, 並設定 range </string>
+        </property>
+        <property name="whatsThis">
+         <string>根據data畫出 limit, 並設定 range </string>
+        </property>
+        <property name="text">
+         <string>pivot</string>
+        </property>
+       </widget>
       </widget>
      </widget>
      <widget class="QLabel" name="boxStatisticLabel">
@@ -2084,7 +2047,7 @@
        <rect>
         <x>20</x>
         <y>295</y>
-        <width>941</width>
+        <width>961</width>
         <height>24</height>
        </rect>
       </property>
@@ -2100,19 +2063,28 @@
        <rect>
         <x>20</x>
         <y>325</y>
-        <width>941</width>
-        <height>525</height>
+        <width>961</width>
+        <height>471</height>
        </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>12</pointsize>
+       </font>
       </property>
      </widget>
      <widget class="QLabel" name="boxStatusLabel">
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>872</y>
-        <width>241</width>
+        <y>830</y>
+        <width>951</width>
         <height>16</height>
        </rect>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::Box</enum>
       </property>
       <property name="text">
        <string>Boxplot status messages appear here.</string>
@@ -2120,16 +2092,6 @@
      </widget>
     </widget>
    </widget>
-  </widget>
-  <widget class="QMenuBar" name="menubar">
-   <property name="geometry">
-    <rect>
-     <x>0</x>
-     <y>0</y>
-     <width>1024</width>
-     <height>33</height>
-    </rect>
-   </property>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>

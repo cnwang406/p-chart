@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
+from pandas.api.types import is_datetime64_any_dtype
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from qt_helpers import require_child
+from pivot_helpers import build_pivot_table, show_pivot_dialog
 
 try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -60,6 +62,8 @@ class TabScatterWidget:
         self.yTitleLineEdit = require_child(rootWidget, QLineEdit, 'yTitleLineEdit')
         self.xRangeLineEdit = require_child(rootWidget, QLineEdit, 'xRangeLineEdit')
         self.yRangeLineEdit = require_child(rootWidget, QLineEdit, 'yRangeLineEdit')
+        self.xFormatLineEdit = require_child(rootWidget, QLineEdit, 'xFormatLineEdit')
+        self.yFormatLineEdit = require_child(rootWidget, QLineEdit, 'yFormatLineEdit')
         self.legendCheckBox = require_child(rootWidget, QCheckBox, 'legendCheckBox')
         self.autoStatsButton = require_child(rootWidget, QPushButton, 'autoStatsButton')
         self.hlineLineEdit = require_child(rootWidget, QLineEdit, 'hlineLineEdit')
@@ -67,6 +71,7 @@ class TabScatterWidget:
         self.lineColorButton = require_child(rootWidget, QPushButton, 'lineColorButton')
         self.lineWidthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'lineWidthSpinBox')
         self.plotButton = require_child(rootWidget, QPushButton, 'plotButton')
+        self.scatterPivotButton = require_child(rootWidget, QPushButton, 'scatterPivotButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'downloadHtmlButton')
         self.plotlyThemeComboBox = require_child(rootWidget, QComboBox, 'plotlyThemeComboBox')
         self.plotWidthSpinBox = require_child(rootWidget, QSpinBox, 'plotWidthSpinBox')
@@ -95,6 +100,7 @@ class TabScatterWidget:
 
     def _configure_signals(self) -> None:
         self.plotButton.clicked.connect(self._draw_plot)
+        self.scatterPivotButton.clicked.connect(self._show_pivot_table)
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.autoStatsButton.clicked.connect(self._auto_fill_plot_stats)
         self.lineColorButton.clicked.connect(self._pick_line_color)
@@ -107,9 +113,12 @@ class TabScatterWidget:
         self.yTitleLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
         self.xRangeLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
         self.yRangeLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
+        self.xFormatLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
+        self.yFormatLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
         self.hlineLineEdit.editingFinished.connect(self._update_stats_and_redraw)
         self.vlineLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
         self.xComboBox.currentTextChanged.connect(self._sync_x_title_from_column)
+        self.xComboBox.currentTextChanged.connect(self._sync_x_format_from_column)
         self.xComboBox.currentTextChanged.connect(self._update_plot_title)
         self.xComboBox.currentTextChanged.connect(self._draw_plot_when_xy_ready)
         self.yComboBox.currentTextChanged.connect(self._sync_y_title_from_column)
@@ -184,6 +193,18 @@ class TabScatterWidget:
 
     def _sync_y_title_from_column(self, columnName: str) -> None:
         self.yTitleLineEdit.setText(columnName.strip())
+
+    def _sync_x_format_from_column(self, columnName: str) -> None:
+        if self.tabDataWidget is None:
+            return
+        dataFrame = self.tabDataWidget.get_melted_data()
+        columnName = columnName.strip()
+        if not columnName or columnName not in dataFrame.columns:
+            return
+        if self._is_date_series(dataFrame[columnName]):
+            self.xFormatLineEdit.setText('mm/dd')
+        elif self.xFormatLineEdit.text().strip().lower() == 'mm/dd':
+            self.xFormatLineEdit.clear()
 
     def _current_combo_text(self, combo: QComboBox) -> str:
         return combo.currentText().strip()
@@ -299,6 +320,17 @@ class TabScatterWidget:
         except ValueError:
             return None
 
+    def _parse_date_range(self, value: str) -> list | None:
+        if not value:
+            return None
+        rangeParts = [part.strip() for part in value.split(',') if part.strip()]
+        if len(rangeParts) != 2:
+            return None
+        parsedDates = pd.to_datetime(rangeParts, errors='coerce')
+        if pd.isna(parsedDates).any():
+            return None
+        return [parsedDate.to_pydatetime() for parsedDate in parsedDates]
+
     def _parse_line_values(self, value: str) -> list[float]:
         if not value:
             return []
@@ -310,6 +342,17 @@ class TabScatterWidget:
             except ValueError:
                 continue
         return values
+
+    def _parse_date_line_values(self, value: str) -> list:
+        if not value:
+            return []
+        lineParts = [item.strip() for item in value.split(',') if item.strip()]
+        parsedDates = pd.to_datetime(lineParts, errors='coerce')
+        return [
+            parsedDate.to_pydatetime()
+            for parsedDate in parsedDates
+            if not pd.isna(parsedDate)
+        ]
 
     def _format_number(self, value: float) -> str:
         return f'{value:.6g}'
@@ -330,6 +373,59 @@ class TabScatterWidget:
     def _format_auto_values(self, values: list[float], decimalPlaces: int) -> str:
         return ','.join(f'{value:.{decimalPlaces}f}' for value in values)
 
+    def _is_date_series(self, series: pd.Series) -> bool:
+        nonNullSeries = series.dropna()
+        if nonNullSeries.empty:
+            return False
+        if is_datetime64_any_dtype(nonNullSeries):
+            return True
+        if pd.api.types.is_numeric_dtype(nonNullSeries):
+            return False
+        parsedDates = pd.to_datetime(nonNullSeries, errors='coerce')
+        return parsedDates.notna().mean() >= 0.8
+
+    def _date_tick_format(self, formatText: str) -> str:
+        formatText = formatText.strip() or 'mm/dd'
+        if '%' in formatText:
+            return formatText
+
+        convertedParts = []
+        index = 0
+        while index < len(formatText):
+            remainingText = formatText[index:]
+            if remainingText.startswith(('yyyy', 'YYYY')):
+                convertedParts.append('%Y')
+                index += 4
+            elif remainingText.startswith(('yy', 'YY')):
+                convertedParts.append('%y')
+                index += 2
+            elif remainingText.startswith(('HH', 'hh')):
+                convertedParts.append('%H')
+                index += 2
+            elif remainingText.startswith(('SS', 'ss')):
+                convertedParts.append('%S')
+                index += 2
+            elif remainingText.startswith('MM'):
+                previousChar = formatText[index - 1] if index > 0 else ''
+                convertedParts.append('%M' if previousChar == ':' else '%m')
+                index += 2
+            elif remainingText.startswith('mm'):
+                convertedParts.append('%m')
+                index += 2
+            elif remainingText.startswith(('dd', 'DD')):
+                convertedParts.append('%d')
+                index += 2
+            else:
+                convertedParts.append(formatText[index])
+                index += 1
+        return ''.join(convertedParts)
+
+    def _format_date_label(self, value) -> str:
+        parsedDate = pd.to_datetime(value, errors='coerce')
+        if pd.isna(parsedDate):
+            return str(value)
+        return parsedDate.strftime(self._date_tick_format(self.xFormatLineEdit.text()))
+
     def _expanded_line_range(self, values: list[float]) -> list[float]:
         lowerValue = min(values)
         upperValue = max(values)
@@ -345,6 +441,43 @@ class TabScatterWidget:
 
     def _format_line_label(self, axisTitle: str, value: float) -> str:
         return f'{axisTitle}={value:g}'
+
+    def _format_date_line_label(self, axisTitle: str, value) -> str:
+        return f'{axisTitle}={self._format_date_label(value)}'
+
+    def _add_date_vline(
+        self,
+        fig,
+        value,
+        axisTitle: str,
+        lineColor: str,
+        lineWidth: float,
+    ) -> None:
+        fig.add_shape(
+            type='line',
+            x0=value,
+            x1=value,
+            y0=0,
+            y1=1,
+            xref='x',
+            yref='paper',
+            line=dict(
+                color=lineColor,
+                width=lineWidth,
+                dash='dash',
+            ),
+        )
+        fig.add_annotation(
+            x=value,
+            y=1,
+            xref='x',
+            yref='paper',
+            text=self._format_date_line_label(axisTitle, value),
+            showarrow=False,
+            yanchor='bottom',
+            xanchor='left',
+            font=dict(color=lineColor),
+        )
 
     def _line_color_with_opacity(self, opacity: float) -> str:
         opacity = max(0.0, min(1.0, opacity))
@@ -375,31 +508,39 @@ class TabScatterWidget:
             self._set_status('Selected X or Y column not found in data.', error=True)
             return
 
-        xSeries = pd.to_numeric(dataFrame[xColumn], errors='coerce').dropna()
+        xIsDate = self._is_date_series(dataFrame[xColumn])
+        if xIsDate:
+            self.xFormatLineEdit.setText(self.xFormatLineEdit.text().strip() or 'mm/dd')
+            xSeries = pd.Series(dtype='float64')
+        else:
+            xSeries = pd.to_numeric(dataFrame[xColumn], errors='coerce').dropna()
         ySeries = pd.to_numeric(dataFrame[yColumn], errors='coerce').dropna()
-        if xSeries.empty or ySeries.empty:
-            self._set_status('X and Y must contain numeric data for Auto.', error=True)
+        if ySeries.empty:
+            self._set_status('Y must contain numeric data for Auto.', error=True)
             return
 
-        xAverage = float(xSeries.mean())
         yAverage = float(ySeries.mean())
-        xStdev = float(xSeries.std(ddof=1)) if len(xSeries) > 1 else 0.0
         yStdev = float(ySeries.std(ddof=1)) if len(ySeries) > 1 else 0.0
-        vlineValues = [xAverage - 3 * xStdev, xAverage + 3 * xStdev]
         hlineValues = [yAverage - 3 * yStdev, yAverage + 3 * yStdev]
-        xDecimals = self._decimal_places_for_series(dataFrame[xColumn])
         yDecimals = self._decimal_places_for_series(dataFrame[yColumn])
 
-        self.xRangeLineEdit.setText(
-            self._format_auto_values(self._expanded_line_range(vlineValues), xDecimals)
-        )
+        if not xSeries.empty:
+            xAverage = float(xSeries.mean())
+            xStdev = float(xSeries.std(ddof=1)) if len(xSeries) > 1 else 0.0
+            vlineValues = [xAverage - 3 * xStdev, xAverage + 3 * xStdev]
+            xDecimals = self._decimal_places_for_series(dataFrame[xColumn])
+            self.xRangeLineEdit.setText(
+                self._format_auto_values(self._expanded_line_range(vlineValues), xDecimals)
+            )
+            self.vlineLineEdit.setText(self._format_auto_values(vlineValues, xDecimals))
         self.yRangeLineEdit.setText(
             self._format_auto_values(self._expanded_line_range(hlineValues), yDecimals)
         )
-        self.vlineLineEdit.setText(self._format_auto_values(vlineValues, xDecimals))
         self.hlineLineEdit.setText(self._format_auto_values(hlineValues, yDecimals))
         self._update_statistic_label(yAverage, yStdev)
         self._draw_plot_when_xy_ready()
+        if xSeries.empty:
+            self._set_status('Auto updated Y statistics only; X is not numeric.')
 
     def _update_statistic_label(self, yAverage: float, yStdev: float) -> None:
         yTitle = self.yTitleLineEdit.text().strip() or self.yComboBox.currentText().strip()
@@ -428,6 +569,38 @@ class TabScatterWidget:
                 ])
 
         self.statisticLabel.setText(', '.join(parts))
+
+    def _show_pivot_table(self) -> None:
+        if self.tabDataWidget is None:
+            self._set_status('No data source attached to plot tab.', error=True)
+            return
+
+        dataFrame = self.tabDataWidget.get_melted_data()
+        yColumn = self.yComboBox.currentText().strip()
+        if dataFrame.empty:
+            self._set_status('No data available for pivot.', error=True)
+            return
+        if not yColumn or yColumn not in dataFrame.columns:
+            self._set_status('Choose a valid Y column before pivot.', error=True)
+            return
+
+        groupColumns = []
+        for combo in [
+            self.seriesComboBox,
+            self.symbolComboBox,
+            self.colorComboBox,
+            self.sizeComboBox,
+            self.opacityComboBox,
+        ]:
+            columnName = combo.currentText().strip()
+            if columnName and columnName in dataFrame.columns and columnName not in groupColumns:
+                groupColumns.append(columnName)
+
+        pivotData = build_pivot_table(dataFrame, yColumn, groupColumns)
+        if pivotData.empty:
+            self._set_status('No numeric Y data available for pivot.', error=True)
+            return
+        show_pivot_dialog(self.rootWidget, 'Scatter pivot', pivotData)
 
     def _draw_plot(self) -> None:
         if self.tabDataWidget is None:
@@ -460,18 +633,34 @@ class TabScatterWidget:
         yTitle = self.yTitleLineEdit.text().strip() or yColumn
         plotlyTheme = self.plotlyThemeComboBox.currentText().strip()
         plotlyTheme = None if plotlyTheme == 'none' else plotlyTheme or 'plotly'
-        xRange = self._parse_range(self.xRangeLineEdit.text())
+        xIsDate = self._is_date_series(dataFrame[xColumn])
+        xRange = (
+            self._parse_date_range(self.xRangeLineEdit.text())
+            if xIsDate
+            else self._parse_range(self.xRangeLineEdit.text())
+        )
         yRange = self._parse_range(self.yRangeLineEdit.text())
         legendVisible = self.legendCheckBox.isChecked()
         hLines = self._parse_line_values(self.hlineLineEdit.text())
-        vLines = self._parse_line_values(self.vlineLineEdit.text())
+        vLines = (
+            self._parse_date_line_values(self.vlineLineEdit.text())
+            if xIsDate
+            else self._parse_line_values(self.vlineLineEdit.text())
+        )
         lineWidth = self.lineWidthSpinBox.value()
         lineColorWithOpacity = self._line_color_with_opacity(lineWidth)
         plotWidth = self.plotWidthSpinBox.value()
         plotHeight = self.plotHeightSpinBox.value()
 
         plotData = dataFrame.copy()
+        if xIsDate:
+            self.xFormatLineEdit.setText(self.xFormatLineEdit.text().strip() or 'mm/dd')
+            plotData[xColumn] = pd.to_datetime(plotData[xColumn], errors='coerce')
+        plotData[yColumn] = pd.to_numeric(plotData[yColumn], errors='coerce')
         plotData = plotData.dropna(subset=[xColumn, yColumn]).reset_index(drop=True)
+        if plotData.empty:
+            self._set_status('Y must contain numeric data for plotting.', error=True)
+            return
         plotData[PLOT_ROW_ID] = plotData.index
         yStatSeries = pd.to_numeric(plotData[yColumn], errors='coerce').dropna()
         if not yStatSeries.empty:
@@ -535,6 +724,12 @@ class TabScatterWidget:
                 fig.update_xaxes(range=xRange)
             if yRange is not None:
                 fig.update_yaxes(range=yRange)
+            xFormat = self.xFormatLineEdit.text().strip()
+            yFormat = self.yFormatLineEdit.text().strip()
+            if xFormat:
+                fig.update_xaxes(tickformat=self._date_tick_format(xFormat) if xIsDate else xFormat)
+            if yFormat:
+                fig.update_yaxes(tickformat=yFormat)
 
             for hValue in hLines:
                 fig.add_hline(
@@ -547,15 +742,24 @@ class TabScatterWidget:
                     annotation_font_color=lineColorWithOpacity,
                 )
             for vValue in vLines:
-                fig.add_vline(
-                    x=vValue,
-                    line_dash='dash',
-                    line_color=lineColorWithOpacity,
-                    line_width=lineWidth,
-                    annotation_text=self._format_line_label(xTitle, vValue),
-                    annotation_position='top right',
-                    annotation_font_color=lineColorWithOpacity,
-                )
+                if xIsDate:
+                    self._add_date_vline(
+                        fig,
+                        vValue,
+                        xTitle,
+                        lineColorWithOpacity,
+                        lineWidth,
+                    )
+                else:
+                    fig.add_vline(
+                        x=vValue,
+                        line_dash='dash',
+                        line_color=lineColorWithOpacity,
+                        line_width=lineWidth,
+                        annotation_text=self._format_line_label(xTitle, vValue),
+                        annotation_position='top right',
+                        annotation_font_color=lineColorWithOpacity,
+                    )
 
             self._render_figure(fig)
             self._set_status('Plot created successfully.')

@@ -2,7 +2,7 @@ import os
 import re
 
 import pandas as pd
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QColor, QBrush, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -25,14 +25,45 @@ from PySide6.QtWidgets import (
 from qt_helpers import require_child
 
 
+class DropFileFilter(QObject):
+    def __init__(self, onFileDropped) -> None:
+        super().__init__()
+        self.onFileDropped = onFileDropped
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.DragEnter:
+            if self._first_supported_drop_file(event.mimeData()):
+                event.acceptProposedAction()
+                return True
+        if event.type() == QEvent.Type.Drop:
+            filePath = self._first_supported_drop_file(event.mimeData())
+            if filePath:
+                self.onFileDropped(filePath)
+                event.acceptProposedAction()
+                return True
+        return super().eventFilter(watched, event)
+
+    def _first_supported_drop_file(self, mimeData) -> str:
+        if not mimeData.hasUrls():
+            return ''
+        for url in mimeData.urls():
+            if not url.isLocalFile():
+                continue
+            filePath = url.toLocalFile()
+            if filePath.lower().endswith(('.csv', '.xls', '.xlsx')):
+                return filePath
+        return ''
+
+
 class TabDataWidget:
     def __init__(self, rootWidget: QWidget):
         self.rootWidget = rootWidget
+        self.tabDataWidget = require_child(rootWidget, QWidget, 'tabData')
         self.filePathLineEdit = require_child(rootWidget, QLineEdit, 'filePathLineEdit')
         self.browseFileButton = require_child(rootWidget, QPushButton, 'browseFileButton')
         self.loadButton = require_child(rootWidget, QPushButton, 'loadButton')
         self.sheetComboBox = require_child(rootWidget, QComboBox, 'sheetComboBox')
-        self.columnsGroupBox = require_child(rootWidget, QGroupBox, 'columnsGroupBox')
+        self.sheetGroupBox = require_child(rootWidget, QGroupBox, 'sheetGroupBox')
         self.columnsListWidget = require_child(rootWidget, QListWidget, 'columnsListWidget')
         self.stubnamesLineEdit = require_child(rootWidget, QLineEdit, 'stubnamesLineEdit')
         self.suffixLineEdit = require_child(rootWidget, QLineEdit, 'suffixLineEdit')
@@ -55,6 +86,7 @@ class TabDataWidget:
         self.matchingColumnCount = 0
         self.totalColumnCount = 0
         self._matchedColumnColor = QBrush(QColor(208, 245, 216))
+        self.dropFileFilter = DropFileFilter(self._load_dropped_file)
 
         self._configure_widgets()
 
@@ -67,6 +99,16 @@ class TabDataWidget:
         self.infoButton.clicked.connect(self._show_wide_to_long_info)
 
         self.columnsListWidget.setSelectionMode(QAbstractItemView.NoSelection)
+        self.tabDataWidget.setAcceptDrops(True)
+        self.tabDataWidget.installEventFilter(self.dropFileFilter)
+        self.filePathLineEdit.setAcceptDrops(True)
+        self.filePathLineEdit.installEventFilter(self.dropFileFilter)
+        previewFont = self.previewTableWidget.font()
+        previewFont.setPointSize(12)
+        self.previewTableWidget.setFont(previewFont)
+        self.previewTableWidget.horizontalHeader().setFont(previewFont)
+        self.previewTableWidget.verticalHeader().setFont(previewFont)
+        self.previewTableWidget.setStyleSheet('QTableWidget { color: rgba(0, 0, 0, 204); }')
 
         self.filePathLineEdit.textChanged.connect(self._invalidate_melted_data)
         self.stubnamesLineEdit.textChanged.connect(self._mark_matching_columns)
@@ -80,6 +122,11 @@ class TabDataWidget:
         self.sheetNameLineEdit.setText('wide_to_long')
         self.suffixNameLineEdit.setText('site')
         self.suffixLineEdit.setText('[TCBLR]')
+
+    def _load_dropped_file(self, filePath: str) -> None:
+        self._invalidate_melted_data()
+        self.filePathLineEdit.setText(filePath)
+        self._load_file()
 
     def _browse_file(self) -> None:
         selectedFile, _ = QFileDialog.getOpenFileName(
@@ -142,6 +189,8 @@ class TabDataWidget:
                 self.loadedDataFrame = pd.read_csv(filePath)
                 self._set_status('CSV loaded successfully.')
                 self._populate_columns()
+                self._show_preview(self.loadedDataFrame)
+                self._notify_data_changed()
                 self.sheetComboBox.clear()
                 self.sheetComboBox.addItem('csv')
                 self.sheetComboBox.setEnabled(False)
@@ -179,6 +228,8 @@ class TabDataWidget:
             self._invalidate_melted_data()
             self.loadedDataFrame = pd.read_excel(self.loadedFilePath, sheet_name=sheetName)
             self._populate_columns()
+            self._show_preview(self.loadedDataFrame)
+            self._notify_data_changed()
             self._set_status(f'Sheet "{sheetName}" loaded successfully.')
         except Exception as exc:
             self._set_status(f'Failed to load sheet: {exc}', error=True)
@@ -217,7 +268,7 @@ class TabDataWidget:
         matchingColumns = set(self._matching_columns())
         self.matchingColumnCount = len(matchingColumns)
         self.totalColumnCount = self.columnsListWidget.count()
-        self._update_columns_group_title()
+        self._update_sheet_group_title()
         for rowIndex in range(self.columnsListWidget.count()):
             item = self.columnsListWidget.item(rowIndex)
             if item is None:
@@ -232,9 +283,9 @@ class TabDataWidget:
                 item.setToolTip('Matched by stubnames and suffix regex.')
         self._notify_match_changed()
 
-    def _update_columns_group_title(self) -> None:
-        self.columnsGroupBox.setTitle(
-            f'Columns ({self.matchingColumnCount}/{self.totalColumnCount})'
+    def _update_sheet_group_title(self) -> None:
+        self.sheetGroupBox.setTitle(
+            f'Sheet & columns ({self.matchingColumnCount}/{self.totalColumnCount})'
         )
 
     def _ordered_reshaped_columns(
@@ -373,7 +424,18 @@ class TabDataWidget:
             self._set_status(f'Error saving reshaped data: {exc}', error=True)
 
     def get_melted_data(self) -> pd.DataFrame:
+        if self.meltedDataFrame.empty:
+            return self.loadedDataFrame.copy()
         return self.meltedDataFrame.copy()
+
+    def get_plot_data(self) -> pd.DataFrame:
+        return self.get_melted_data()
+
+    def has_loaded_data(self) -> bool:
+        return not self.loadedDataFrame.empty
+
+    def has_reshaped_data(self) -> bool:
+        return not self.meltedDataFrame.empty
 
     def add_data_changed_callback(self, callback) -> None:
         self.dataChangedCallbacks.append(callback)

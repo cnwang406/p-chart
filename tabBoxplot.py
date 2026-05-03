@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from qt_helpers import require_child
+from pivot_helpers import build_pivot_table, show_pivot_dialog
 
 try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -55,12 +56,19 @@ class TabBoxplotWidget:
         self.group1ComboBox = require_child(rootWidget, QComboBox, 'boxGroup1ComboBox')
         self.group2ComboBox = require_child(rootWidget, QComboBox, 'boxGroup2ComboBox')
         self.pointsComboBox = require_child(rootWidget, QComboBox, 'boxPointsComboBox')
-        self.annotationComboBoxes = [
-            require_child(rootWidget, QComboBox, 'boxAnnotation1ComboBox'),
-            require_child(rootWidget, QComboBox, 'boxAnnotation2ComboBox'),
-            require_child(rootWidget, QComboBox, 'boxAnnotation3ComboBox'),
-            require_child(rootWidget, QComboBox, 'boxAnnotation4ComboBox'),
-            require_child(rootWidget, QComboBox, 'boxAnnotation5ComboBox'),
+        self.annotationCheckBoxes = [
+            ('N', require_child(rootWidget, QCheckBox, 'boxAnnotationNCheckBox')),
+            ('max', require_child(rootWidget, QCheckBox, 'boxAnnotationMaxCheckBox')),
+            ('q1', require_child(rootWidget, QCheckBox, 'boxAnnotationQ1CheckBox')),
+            ('median', require_child(rootWidget, QCheckBox, 'boxAnnotationMedianCheckBox')),
+            ('average', require_child(rootWidget, QCheckBox, 'boxAnnotationAverageCheckBox')),
+            ('q3', require_child(rootWidget, QCheckBox, 'boxAnnotationQ3CheckBox')),
+            ('min', require_child(rootWidget, QCheckBox, 'boxAnnotationMinCheckBox')),
+            (
+                'standard deviation',
+                require_child(rootWidget, QCheckBox, 'boxAnnotationStdevCheckBox'),
+            ),
+            ('range', require_child(rootWidget, QCheckBox, 'boxAnnotationRangeCheckBox')),
         ]
         self.annotationSizeSpinBox = require_child(rootWidget, QSpinBox, 'boxAnnotationSizeSpinBox')
         self.annotationColorButton = require_child(rootWidget, QPushButton, 'boxAnnotationColorButton')
@@ -86,6 +94,7 @@ class TabBoxplotWidget:
         self.plotWidthSpinBox = require_child(rootWidget, QSpinBox, 'boxPlotWidthSpinBox')
         self.plotHeightSpinBox = require_child(rootWidget, QSpinBox, 'boxPlotHeightSpinBox')
         self.plotButton = require_child(rootWidget, QPushButton, 'boxPlotButton')
+        self.boxplotPivotButton = require_child(rootWidget, QPushButton, 'boxplotPivotButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'boxDownloadHtmlButton')
         self.statisticLabel = require_child(rootWidget, QLabel, 'boxStatisticLabel')
         self.plotAreaWidget = require_child(rootWidget, QWidget, 'boxPlotAreaWidget')
@@ -108,14 +117,15 @@ class TabBoxplotWidget:
 
     def _configure_signals(self) -> None:
         self.plotButton.clicked.connect(self._draw_plot)
+        self.boxplotPivotButton.clicked.connect(self._show_pivot_table)
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.autoStatsButton.clicked.connect(self._auto_fill_plot_stats)
         self.lineColorButton.clicked.connect(self._pick_line_color)
         self.annotationColorButton.clicked.connect(self._pick_annotation_color)
         self.legendCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.pointsComboBox.currentTextChanged.connect(self._redraw_existing_plot)
-        for annotationComboBox in self.annotationComboBoxes:
-            annotationComboBox.currentTextChanged.connect(self._redraw_existing_plot)
+        for _statName, annotationCheckBox in self.annotationCheckBoxes:
+            annotationCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.annotationSizeSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.annotationAlphaSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.annotationFormatLineEdit.editingFinished.connect(self._redraw_existing_plot)
@@ -140,10 +150,6 @@ class TabBoxplotWidget:
         if self.pointsComboBox.count() == 0:
             self.pointsComboBox.addItems(['outliers', 'all', 'jitter', 'none'])
         self.pointsComboBox.setCurrentText('outliers')
-        annotationOptions = ['', 'N', 'max', 'min', 'median', 'average', 'standard', 'range']
-        for annotationComboBox in self.annotationComboBoxes:
-            if annotationComboBox.count() == 0:
-                annotationComboBox.addItems(annotationOptions)
         self._update_line_color_button()
         self._update_annotation_color_button()
         self.annotationSizeSpinBox.setRange(6, 32)
@@ -154,7 +160,7 @@ class TabBoxplotWidget:
         self.annotationAlphaSpinBox.setDecimals(2)
         self.annotationAlphaSpinBox.setValue(0.72)
         if not self.annotationFormatLineEdit.text().strip():
-            self.annotationFormatLineEdit.setText('.6g')
+            self.annotationFormatLineEdit.setText('.4f')
         self.annotationFormatLineEdit.setWhatsThis(
             'Format controls annotation numbers except N. Examples: .2f shows '
             '2 decimals, .3g keeps 3 significant digits, ,.1f adds thousands '
@@ -256,12 +262,11 @@ class TabBoxplotWidget:
         return 'outliers', None
 
     def _selected_annotation_stats(self) -> list[str]:
-        selectedStats = []
-        for annotationComboBox in self.annotationComboBoxes:
-            statName = annotationComboBox.currentText().strip()
-            if statName and statName not in selectedStats:
-                selectedStats.append(statName)
-        return selectedStats[:5]
+        return [
+            statName
+            for statName, annotationCheckBox in self.annotationCheckBoxes
+            if annotationCheckBox.isChecked()
+        ]
 
     def _update_plot_title(self, *_args) -> None:
         self.plotTitleLineEdit.setText(self._build_auto_plot_title())
@@ -451,6 +456,32 @@ class TabBoxplotWidget:
 
         self.statisticLabel.setText(', '.join(parts))
 
+    def _show_pivot_table(self) -> None:
+        if self.tabDataWidget is None:
+            self._set_status('No data source attached to boxplot tab.', error=True)
+            return
+
+        dataFrame = self.tabDataWidget.get_melted_data()
+        yColumn = self.yComboBox.currentText().strip()
+        if dataFrame.empty:
+            self._set_status('No data available for pivot.', error=True)
+            return
+        if not yColumn or yColumn not in dataFrame.columns:
+            self._set_status('Choose a valid Y column before pivot.', error=True)
+            return
+
+        groupColumns = []
+        for combo in [self.group1ComboBox, self.group2ComboBox]:
+            columnName = combo.currentText().strip()
+            if columnName and columnName in dataFrame.columns and columnName not in groupColumns:
+                groupColumns.append(columnName)
+
+        pivotData = build_pivot_table(dataFrame, yColumn, groupColumns)
+        if pivotData.empty:
+            self._set_status('No numeric Y data available for pivot.', error=True)
+            return
+        show_pivot_dialog(self.rootWidget, 'Boxplot pivot', pivotData)
+
     def _ordered_categories(self, series: pd.Series) -> list:
         return sorted(
             list(pd.Series(series.dropna().unique()).astype(str)),
@@ -523,13 +554,17 @@ class TabBoxplotWidget:
             return ''
         if statName == 'max':
             return self._format_annotation_number(float(series.max()))
+        if statName == 'q1':
+            return self._format_annotation_number(float(series.quantile(0.25)))
         if statName == 'min':
             return self._format_annotation_number(float(series.min()))
         if statName == 'median':
             return self._format_annotation_number(float(series.median()))
         if statName == 'average':
             return self._format_annotation_number(float(series.mean()))
-        if statName == 'standard':
+        if statName == 'q3':
+            return self._format_annotation_number(float(series.quantile(0.75)))
+        if statName == 'standard deviation':
             stdev = float(series.std(ddof=1)) if len(series) > 1 else 0.0
             return self._format_annotation_number(stdev)
         if statName == 'range':
@@ -540,10 +575,12 @@ class TabBoxplotWidget:
         labels = {
             'N': 'N',
             'max': 'MAX',
+            'q1': '1/4Q',
             'min': 'MIN',
             'median': 'MEDIAN',
             'average': 'AVERAGE',
-            'standard': 'STANDARD',
+            'q3': '3/4Q',
+            'standard deviation': 'STANDARD DEVIATION',
             'range': 'RANGE',
         }
         return labels.get(statName, statName.upper())

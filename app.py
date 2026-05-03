@@ -15,7 +15,7 @@ from tabScatter import TabScatterWidget
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.1'
+APP_VERSION = 'v2.2'
 APP_AUTHOR = 'cnwang'
 APP_DATE = '2024/04'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
@@ -50,8 +50,7 @@ class AppMain:
         self.tabBoxplotWidget = TabBoxplotWidget(self.ui)
         self.tabScatterWidget.set_tab_data(self.tabDataWidget)
         self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)
-        self.tabDataWidget.add_data_changed_callback(self._update_plot_tab_enabled)
-        self._update_plot_tab_enabled()
+        self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
         self.tabWidget.setCurrentIndex(0)
         self.ui.show()
 
@@ -80,18 +79,31 @@ class AppMain:
 
         self.app.setFont(QFont(fontFamilies[0], 10))
 
-    def _update_plot_tab_enabled(self) -> None:
-        enabled = not self.tabDataWidget.get_melted_data().empty
-        for plotTabIndex in [1, 2]:
-            if self.tabWidget.count() <= plotTabIndex:
-                continue
-            self.tabWidget.setTabEnabled(plotTabIndex, enabled)
-            self.tabWidget.setTabToolTip(
-                plotTabIndex,
-                '' if enabled else 'Run wide_to_long successfully before plotting.',
-            )
-        if not enabled and self.tabWidget.currentIndex() in [1, 2]:
-            self.tabWidget.setCurrentIndex(0)
+    def _warn_if_plotting_loaded_data(self, tabIndex: int) -> None:
+        if tabIndex not in [1, 2]:
+            return
+        if not self.tabDataWidget.has_loaded_data() or self.tabDataWidget.has_reshaped_data():
+            return
+
+        warningText = '尚未完成 reshape. 會以原本的資料進行畫圖'
+        if tabIndex == 1:
+            self.tabScatterWidget._set_status(warningText, error=True)
+        elif tabIndex == 2:
+            self.tabBoxplotWidget._set_status(warningText, error=True)
+        self._show_app_icon_warning(warningText)
+
+    def _show_app_icon_warning(self, message: str) -> None:
+        messageBox = QMessageBox(self.ui)
+        messageBox.setWindowTitle('Warning')
+        messageBox.setText(message)
+        messageBox.setStandardButtons(QMessageBox.StandardButton.Ok)
+        appIcon = self.app.windowIcon()
+        if not appIcon.isNull():
+            messageBox.setWindowIcon(appIcon)
+            messageBox.setIconPixmap(appIcon.pixmap(64, 64))
+        else:
+            messageBox.setIcon(QMessageBox.Icon.Warning)
+        messageBox.exec()
 
     def _load_ui(self, uiFilename: str) -> QWidget:
         uiPath = resource_path(uiFilename)
