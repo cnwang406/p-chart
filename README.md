@@ -16,9 +16,11 @@ License: MIT
 - Create Plotly scatter charts with X/Y, series, color, symbol, size, opacity,
   reference lines, auto ranges, and Y statistics.
 - Create Plotly box plots with Y, Group 1, Group 2, sorted X categories, point
-  display options, Y lines, and up to 5 per-box annotations.
+  display options, Y lines, and selectable per-box annotations.
 - Support drag-and-drop loading, date-aware scatter X axes, and copyable pivot
   summary tables.
+- Use embedded Qt WebEngine for Plotly charts, with system-browser fallback for
+  Remote Desktop sessions or `--no-webengine` / `-W`.
 - Export Plotly charts as self-contained HTML.
 - Package as a Windows 10 desktop app with PyInstaller.
 
@@ -33,6 +35,13 @@ python3 -m venv .venv
 
 ```bash
 .venv/bin/python app.py
+```
+
+To force the system-browser Plotly fallback:
+
+```bash
+.venv/bin/python app.py --no-webengine
+.venv/bin/python app.py -W
 ```
 
 ## Package

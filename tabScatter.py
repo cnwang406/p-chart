@@ -1,4 +1,6 @@
-from typing import cast
+import tempfile
+import webbrowser
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
@@ -24,31 +26,24 @@ from PySide6.QtWidgets import (
 
 from qt_helpers import require_child
 from pivot_helpers import build_pivot_table, show_pivot_dialog
+from plot_templates import CUSTOM_TEMPLATE_NAME
 
 try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
     WEB_ENGINE_AVAILABLE = True
 except ImportError:
-    QWebEngineView = cast(type[QWidget] | None, None)
+    QWebEngineView = None
     WEB_ENGINE_AVAILABLE = False
 
 PLOT_ROW_ID = '__plotRowId'
-CUSTOM_TEMPLATE_NAME = 'customized'
-
-customTemplate = go.layout.Template()
-customTemplate.layout.update(
-    font=dict(family='Cascadia Next TC', size=14),
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    title_font_color='white',
-)
-pio.templates[CUSTOM_TEMPLATE_NAME] = customTemplate
 
 
 class TabScatterWidget:
-    def __init__(self, rootWidget: QWidget):
+    def __init__(self, rootWidget: QWidget, preferWebEngine: bool = True):
         self.rootWidget = rootWidget
         self.tabDataWidget = None
+        self.preferWebEngine = preferWebEngine
+        self.useExternalBrowser = True
 
         self.xComboBox = require_child(rootWidget, QComboBox, 'xComboBox')
         self.yComboBox = require_child(rootWidget, QComboBox, 'yComboBox')
@@ -80,22 +75,44 @@ class TabScatterWidget:
         self.statisticLabel = require_child(rootWidget, QLabel, 'statisticLabel')
         self.statusLabel = require_child(rootWidget, QLabel, 'statusLabelTab2')
 
-        self.chartView = QTextBrowser(self.plotAreaWidget)
         self.currentPlotHtml = ''
+        self.currentPlotFilePath = ''
+        self.currentViewerFilePath = ''
+        self._browserViewerOpened = False
         self.lineColor = '#ff0000'
         self._configure_plot_area()
         self._configure_signals()
         self._configure_defaults()
 
     def _configure_plot_area(self) -> None:
-        if WEB_ENGINE_AVAILABLE and QWebEngineView is not None:
-            self.chartView = QWebEngineView(self.plotAreaWidget)
+        if self.preferWebEngine and WEB_ENGINE_AVAILABLE and QWebEngineView is not None:
+            try:
+                self.chartView = QWebEngineView(self.plotAreaWidget)
+                self.useExternalBrowser = False
+            except Exception:
+                self.chartView = QTextBrowser(self.plotAreaWidget)
+                self.chartView.setOpenExternalLinks(True)
+                self.useExternalBrowser = True
         else:
             self.chartView = QTextBrowser(self.plotAreaWidget)
             self.chartView.setOpenExternalLinks(True)
+            self.useExternalBrowser = True
 
         plotLayout = self.plotAreaWidget.layout() or QVBoxLayout(self.plotAreaWidget)
         plotLayout.setContentsMargins(0, 0, 0, 0)
+        plotLayout.addWidget(self.chartView)
+
+    def _switch_to_external_browser_view(self) -> None:
+        self.useExternalBrowser = True
+        if isinstance(self.chartView, QTextBrowser):
+            self.chartView.setOpenExternalLinks(True)
+            return
+
+        plotLayout = self.plotAreaWidget.layout() or QVBoxLayout(self.plotAreaWidget)
+        plotLayout.removeWidget(self.chartView)
+        self.chartView.deleteLater()
+        self.chartView = QTextBrowser(self.plotAreaWidget)
+        self.chartView.setOpenExternalLinks(True)
         plotLayout.addWidget(self.chartView)
 
     def _configure_signals(self) -> None:
@@ -183,9 +200,11 @@ class TabScatterWidget:
         self._update_line_color_button()
 
     def _update_line_color_button(self) -> None:
-        self.lineColorButton.setText(self.lineColor)
+        self.lineColorButton.setText('')
+        self.lineColorButton.setToolTip(self.lineColor)
+        self.lineColorButton.setWhatsThis(self.lineColor)
         self.lineColorButton.setStyleSheet(
-            f'QPushButton {{ background-color: {self.lineColor}; color: white; }}'
+            f'QPushButton {{ background-color: {self.lineColor}; }}'
         )
 
     def _sync_x_title_from_column(self, columnName: str) -> None:
@@ -793,11 +812,58 @@ class TabScatterWidget:
 
     def _render_figure(self, figure) -> None:
         self.currentPlotHtml = pio.to_html(figure, full_html=True, include_plotlyjs=True)
-        html = pio.to_html(figure, full_html=False, include_plotlyjs='cdn')
-        if WEB_ENGINE_AVAILABLE:
-            self.chartView.setHtml(html, QUrl('about:blank'))
-        else:
-            self.chartView.setHtml(html)
+        if not self.useExternalBrowser:
+            html = pio.to_html(figure, full_html=False, include_plotlyjs='cdn')
+            try:
+                self.chartView.setHtml(html, QUrl('about:blank'))
+                return
+            except Exception:
+                self._switch_to_external_browser_view()
+
+        self.currentPlotFilePath = str(Path(tempfile.gettempdir()) / 'p-chart-scatter.html')
+        with open(self.currentPlotFilePath, 'w', encoding='utf-8') as htmlFile:
+            htmlFile.write(self.currentPlotHtml)
+
+        plotUri = Path(self.currentPlotFilePath).resolve().as_uri()
+        self.currentViewerFilePath = str(Path(tempfile.gettempdir()) / 'p-chart-scatter-viewer.html')
+        viewerUri = Path(self.currentViewerFilePath).resolve().as_uri()
+        viewerHtml = f'''<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>p-chart Scatter</title>
+  <style>
+    html, body, iframe {{ width: 100%; height: 100%; margin: 0; border: 0; overflow: hidden; }}
+  </style>
+</head>
+<body>
+  <iframe id="plotFrame" src="{plotUri}"></iframe>
+  <script>
+    const plotUri = {plotUri!r};
+    const frame = document.getElementById('plotFrame');
+    setInterval(() => {{
+      frame.src = `${{plotUri}}?t=${{Date.now()}}`;
+    }}, 2000);
+  </script>
+</body>
+</html>
+'''
+        with open(self.currentViewerFilePath, 'w', encoding='utf-8') as htmlFile:
+            htmlFile.write(viewerHtml)
+
+        if not self._browserViewerOpened:
+            webbrowser.open(viewerUri)
+            self._browserViewerOpened = True
+        self.chartView.setHtml(
+            '<div style="font-family: Cascadia Next TC, sans-serif; font-size: 14px; padding: 16px;">'
+            '<p>Scatter plot is shown in the system browser.</p>'
+            f'<p><a href="{viewerUri}">Open scatter browser viewer</a></p>'
+            '<p>The viewer reloads the latest Plotly HTML automatically. Use Download HTML to save a copy.</p>'
+            '<p>無法啟動 PySide6.WebEngine, 原因可能是 遠端桌面, 系統老舊沒有 GPU, 或者啟動時加了"--no-webengine"</p>'
+            '<p>結果會是畫面因為字型大小跑掉很醜， 圖不能在這裡顯示, 要到瀏覽器看</p>'
+            '<p><h1>不是我的錯！</h1></p>'
+            '</div>'
+        )
 
     def _download_html(self) -> None:
         if not self.currentPlotHtml:

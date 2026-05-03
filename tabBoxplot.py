@@ -1,5 +1,7 @@
 import re
-from typing import cast
+import tempfile
+import webbrowser
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
@@ -24,30 +26,25 @@ from PySide6.QtWidgets import (
 
 from qt_helpers import require_child
 from pivot_helpers import build_pivot_table, show_pivot_dialog
+from plot_templates import CUSTOM_TEMPLATE_NAME
 
 try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
     WEB_ENGINE_AVAILABLE = True
 except ImportError:
-    QWebEngineView = cast(type[QWidget] | None, None)
+    QWebEngineView = None
     WEB_ENGINE_AVAILABLE = False
-
-CUSTOM_TEMPLATE_NAME = 'customized'
-
-customTemplate = go.layout.Template()
-customTemplate.layout.update(
-    font=dict(family='Cascadia Next TC', size=14),
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    title_font_color='white',
-)
-pio.templates[CUSTOM_TEMPLATE_NAME] = customTemplate
 
 
 class TabBoxplotWidget:
-    def __init__(self, rootWidget: QWidget):
+    def __init__(self, rootWidget: QWidget, preferWebEngine: bool = True):
         self.tabDataWidget = None
+        self.preferWebEngine = preferWebEngine
+        self.useExternalBrowser = True
         self.currentPlotHtml = ''
+        self.currentPlotFilePath = ''
+        self.currentViewerFilePath = ''
+        self._browserViewerOpened = False
         self.lineColor = '#ff0000'
         self.annotationColor = '#000000'
 
@@ -105,14 +102,34 @@ class TabBoxplotWidget:
         self._configure_defaults()
 
     def _configure_plot_area(self) -> None:
-        if WEB_ENGINE_AVAILABLE and QWebEngineView is not None:
-            self.chartView = QWebEngineView(self.plotAreaWidget)
+        if self.preferWebEngine and WEB_ENGINE_AVAILABLE and QWebEngineView is not None:
+            try:
+                self.chartView = QWebEngineView(self.plotAreaWidget)
+                self.useExternalBrowser = False
+            except Exception:
+                self.chartView = QTextBrowser(self.plotAreaWidget)
+                self.chartView.setOpenExternalLinks(True)
+                self.useExternalBrowser = True
         else:
             self.chartView = QTextBrowser(self.plotAreaWidget)
             self.chartView.setOpenExternalLinks(True)
+            self.useExternalBrowser = True
 
         plotLayout = QVBoxLayout(self.plotAreaWidget)
         plotLayout.setContentsMargins(0, 0, 0, 0)
+        plotLayout.addWidget(self.chartView)
+
+    def _switch_to_external_browser_view(self) -> None:
+        self.useExternalBrowser = True
+        if isinstance(self.chartView, QTextBrowser):
+            self.chartView.setOpenExternalLinks(True)
+            return
+
+        plotLayout = self.plotAreaWidget.layout() or QVBoxLayout(self.plotAreaWidget)
+        plotLayout.removeWidget(self.chartView)
+        self.chartView.deleteLater()
+        self.chartView = QTextBrowser(self.plotAreaWidget)
+        self.chartView.setOpenExternalLinks(True)
         plotLayout.addWidget(self.chartView)
 
     def _configure_signals(self) -> None:
@@ -218,15 +235,19 @@ class TabBoxplotWidget:
         self._redraw_existing_plot()
 
     def _update_line_color_button(self) -> None:
-        self.lineColorButton.setText(self.lineColor)
+        self.lineColorButton.setText('')
+        self.lineColorButton.setToolTip(self.lineColor)
+        self.lineColorButton.setWhatsThis(self.lineColor)
         self.lineColorButton.setStyleSheet(
-            f'QPushButton {{ background-color: {self.lineColor}; color: white; }}'
+            f'QPushButton {{ background-color: {self.lineColor}; }}'
         )
 
     def _update_annotation_color_button(self) -> None:
-        self.annotationColorButton.setText(self.annotationColor)
+        self.annotationColorButton.setText('')
+        self.annotationColorButton.setToolTip(self.annotationColor)
+        self.annotationColorButton.setWhatsThis(self.annotationColor)
         self.annotationColorButton.setStyleSheet(
-            f'QPushButton {{ background-color: {self.annotationColor}; color: white; }}'
+            f'QPushButton {{ background-color: {self.annotationColor}; }}'
         )
 
     def _sync_y_title_from_column(self, columnName: str) -> None:
@@ -693,6 +714,12 @@ class TabBoxplotWidget:
             group1Column,
             group2Column,
         )
+        plotData[categoryColumn] = pd.Categorical(
+            plotData[categoryColumn],
+            categories=categoryOrder,
+            ordered=True,
+        )
+        plotData = plotData.sort_values(categoryColumn)
         bottomMargin = 80
         leftMargin = 60
         rightMargin = 230 if selectedAnnotationStats else 180
@@ -727,7 +754,11 @@ class TabBoxplotWidget:
                 width=self.plotWidthSpinBox.value(),
                 height=self.plotHeightSpinBox.value(),
             )
-            fig.update_xaxes(title_text=self._build_x_title(group1Column, group2Column))
+            fig.update_xaxes(
+                title_text=self._build_x_title(group1Column, group2Column),
+                categoryorder='array',
+                categoryarray=categoryOrder,
+            )
             fig.update_yaxes(title_text=yTitle)
             if yRange is not None:
                 fig.update_yaxes(range=yRange)
@@ -760,11 +791,58 @@ class TabBoxplotWidget:
 
     def _render_figure(self, figure) -> None:
         self.currentPlotHtml = pio.to_html(figure, full_html=True, include_plotlyjs=True)
-        html = pio.to_html(figure, full_html=False, include_plotlyjs='cdn')
-        if WEB_ENGINE_AVAILABLE:
-            self.chartView.setHtml(html, QUrl('about:blank'))
-        else:
-            self.chartView.setHtml(html)
+        if not self.useExternalBrowser:
+            html = pio.to_html(figure, full_html=False, include_plotlyjs='cdn')
+            try:
+                self.chartView.setHtml(html, QUrl('about:blank'))
+                return
+            except Exception:
+                self._switch_to_external_browser_view()
+
+        self.currentPlotFilePath = str(Path(tempfile.gettempdir()) / 'p-chart-boxplot.html')
+        with open(self.currentPlotFilePath, 'w', encoding='utf-8') as htmlFile:
+            htmlFile.write(self.currentPlotHtml)
+
+        plotUri = Path(self.currentPlotFilePath).resolve().as_uri()
+        self.currentViewerFilePath = str(Path(tempfile.gettempdir()) / 'p-chart-boxplot-viewer.html')
+        viewerUri = Path(self.currentViewerFilePath).resolve().as_uri()
+        viewerHtml = f'''<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>p-chart Boxplot</title>
+  <style>
+    html, body, iframe {{ width: 100%; height: 100%; margin: 0; border: 0; overflow: hidden; }}
+  </style>
+</head>
+<body>
+  <iframe id="plotFrame" src="{plotUri}"></iframe>
+  <script>
+    const plotUri = {plotUri!r};
+    const frame = document.getElementById('plotFrame');
+    setInterval(() => {{
+      frame.src = `${{plotUri}}?t=${{Date.now()}}`;
+    }}, 2000);
+  </script>
+</body>
+</html>
+'''
+        with open(self.currentViewerFilePath, 'w', encoding='utf-8') as htmlFile:
+            htmlFile.write(viewerHtml)
+
+        if not self._browserViewerOpened:
+            webbrowser.open(viewerUri)
+            self._browserViewerOpened = True
+        self.chartView.setHtml(
+            '<div style="font-family: Cascadia Next TC, sans-serif; font-size: 14px; padding: 16px;">'
+            '<p>Boxplot is shown in the system browser.</p>'
+            f'<p><a href="{viewerUri}">Open boxplot browser viewer</a></p>'
+            '<p>The viewer reloads the latest Plotly HTML automatically. Use Download HTML to save a copy.</p>'
+            '<p>無法啟動 PySide6.WebEngine, 原因可能是 遠端桌面, 系統老舊沒有 GPU, 或者啟動時加了"--no-webengine"</p>'
+            '<p>結果會是畫面因為字型大小跑掉很醜， 圖不能在這裡顯示, 要到瀏覽器看</p>'
+            '<p><h1>不是我的錯！</h1></p>'
+            '</div>'
+        )
 
     def _download_html(self) -> None:
         if not self.currentPlotHtml:
