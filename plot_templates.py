@@ -32,7 +32,7 @@ def register_custom_template() -> None:
         ),
         legend=dict(
             bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#E6E6E6'),
+            font=dict(color="#111010"),
         ),
     )
     customTemplate.layout.colorway = [

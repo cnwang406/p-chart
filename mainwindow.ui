@@ -250,7 +250,7 @@
         <x>20</x>
         <y>830</y>
         <width>851</width>
-        <height>16</height>
+        <height>24</height>
        </rect>
       </property>
       <property name="font">
@@ -1299,6 +1299,12 @@
         <height>24</height>
        </rect>
       </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>14</pointsize>
+       </font>
+      </property>
       <property name="text">
        <string>Statistics appear here.</string>
       </property>
@@ -1312,8 +1318,14 @@
         <x>20</x>
         <y>830</y>
         <width>951</width>
-        <height>16</height>
+        <height>24</height>
        </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>14</pointsize>
+       </font>
       </property>
       <property name="frameShape">
        <enum>QFrame::Shape::NoFrame</enum>
@@ -2181,6 +2193,12 @@
         <height>24</height>
        </rect>
       </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>14</pointsize>
+       </font>
+      </property>
       <property name="text">
        <string>Statistics appear here.</string>
       </property>
@@ -2210,8 +2228,14 @@
         <x>20</x>
         <y>830</y>
         <width>951</width>
-        <height>16</height>
+        <height>24</height>
        </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>14</pointsize>
+       </font>
       </property>
       <property name="frameShape">
        <enum>QFrame::Shape::NoFrame</enum>
