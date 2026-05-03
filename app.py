@@ -23,6 +23,7 @@ APP_ICON_FILENAME = os.path.join(
     'AppIcon.appiconset',
     'icon-ios-marketing-1024x1024-1x.png',
 )
+NO_WEBENGINE_ARGS = {'--no-webengine', '-W'}
 
 
 def resource_path(filename: str) -> str:
@@ -30,8 +31,28 @@ def resource_path(filename: str) -> str:
     return os.path.join(basePath, filename)
 
 
+def remove_runtime_args() -> dict[str, bool]:
+    runtimeOptions = {'no_webengine': False}
+    qtArgs = [sys.argv[0]]
+    for argument in sys.argv[1:]:
+        if argument in NO_WEBENGINE_ARGS:
+            runtimeOptions['no_webengine'] = True
+            continue
+        qtArgs.append(argument)
+    sys.argv[:] = qtArgs
+    return runtimeOptions
+
+
+def is_remote_desktop_session() -> bool:
+    if not sys.platform.startswith('win'):
+        return False
+    sessionName = os.environ.get('SESSIONNAME', '').lower()
+    return sessionName.startswith('rdp-') or sessionName.startswith('rdp')
+
+
 class AppMain:
     def __init__(self) -> None:
+        self.runtimeOptions = remove_runtime_args()
         if os.path.exists(QT_PLUGIN_PATH):
             QCoreApplication.addLibraryPath(QT_PLUGIN_PATH)
         if os.path.exists(QT_PLATFORM_PLUGIN_PATH):
@@ -46,8 +67,12 @@ class AppMain:
             self.ui.setWindowIcon(self.app.windowIcon())
         self.tabWidget = require_child(self.ui, QTabWidget, 'tabWidget')
         self.tabDataWidget = TabDataWidget(self.ui)
-        self.tabScatterWidget = TabScatterWidget(self.ui)
-        self.tabBoxplotWidget = TabBoxplotWidget(self.ui)
+        preferWebEngine = (
+            not self.runtimeOptions['no_webengine']
+            and not is_remote_desktop_session()
+        )
+        self.tabScatterWidget = TabScatterWidget(self.ui, preferWebEngine=preferWebEngine)
+        self.tabBoxplotWidget = TabBoxplotWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabScatterWidget.set_tab_data(self.tabDataWidget)
         self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)
         self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)

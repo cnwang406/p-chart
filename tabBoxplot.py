@@ -1,5 +1,7 @@
 import re
-from typing import cast
+import tempfile
+import webbrowser
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
@@ -29,7 +31,7 @@ try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
     WEB_ENGINE_AVAILABLE = True
 except ImportError:
-    QWebEngineView = cast(type[QWidget] | None, None)
+    QWebEngineView = None
     WEB_ENGINE_AVAILABLE = False
 
 CUSTOM_TEMPLATE_NAME = 'customized'
@@ -45,9 +47,14 @@ pio.templates[CUSTOM_TEMPLATE_NAME] = customTemplate
 
 
 class TabBoxplotWidget:
-    def __init__(self, rootWidget: QWidget):
+    def __init__(self, rootWidget: QWidget, preferWebEngine: bool = True):
         self.tabDataWidget = None
+        self.preferWebEngine = preferWebEngine
+        self.useExternalBrowser = True
         self.currentPlotHtml = ''
+        self.currentPlotFilePath = ''
+        self.currentViewerFilePath = ''
+        self._browserViewerOpened = False
         self.lineColor = '#ff0000'
         self.annotationColor = '#000000'
 
@@ -105,14 +112,34 @@ class TabBoxplotWidget:
         self._configure_defaults()
 
     def _configure_plot_area(self) -> None:
-        if WEB_ENGINE_AVAILABLE and QWebEngineView is not None:
-            self.chartView = QWebEngineView(self.plotAreaWidget)
+        if self.preferWebEngine and WEB_ENGINE_AVAILABLE and QWebEngineView is not None:
+            try:
+                self.chartView = QWebEngineView(self.plotAreaWidget)
+                self.useExternalBrowser = False
+            except Exception:
+                self.chartView = QTextBrowser(self.plotAreaWidget)
+                self.chartView.setOpenExternalLinks(True)
+                self.useExternalBrowser = True
         else:
             self.chartView = QTextBrowser(self.plotAreaWidget)
             self.chartView.setOpenExternalLinks(True)
+            self.useExternalBrowser = True
 
         plotLayout = QVBoxLayout(self.plotAreaWidget)
         plotLayout.setContentsMargins(0, 0, 0, 0)
+        plotLayout.addWidget(self.chartView)
+
+    def _switch_to_external_browser_view(self) -> None:
+        self.useExternalBrowser = True
+        if isinstance(self.chartView, QTextBrowser):
+            self.chartView.setOpenExternalLinks(True)
+            return
+
+        plotLayout = self.plotAreaWidget.layout() or QVBoxLayout(self.plotAreaWidget)
+        plotLayout.removeWidget(self.chartView)
+        self.chartView.deleteLater()
+        self.chartView = QTextBrowser(self.plotAreaWidget)
+        self.chartView.setOpenExternalLinks(True)
         plotLayout.addWidget(self.chartView)
 
     def _configure_signals(self) -> None:
@@ -760,11 +787,55 @@ class TabBoxplotWidget:
 
     def _render_figure(self, figure) -> None:
         self.currentPlotHtml = pio.to_html(figure, full_html=True, include_plotlyjs=True)
-        html = pio.to_html(figure, full_html=False, include_plotlyjs='cdn')
-        if WEB_ENGINE_AVAILABLE:
-            self.chartView.setHtml(html, QUrl('about:blank'))
-        else:
-            self.chartView.setHtml(html)
+        if not self.useExternalBrowser:
+            html = pio.to_html(figure, full_html=False, include_plotlyjs='cdn')
+            try:
+                self.chartView.setHtml(html, QUrl('about:blank'))
+                return
+            except Exception:
+                self._switch_to_external_browser_view()
+
+        self.currentPlotFilePath = str(Path(tempfile.gettempdir()) / 'p-chart-boxplot.html')
+        with open(self.currentPlotFilePath, 'w', encoding='utf-8') as htmlFile:
+            htmlFile.write(self.currentPlotHtml)
+
+        plotUri = Path(self.currentPlotFilePath).resolve().as_uri()
+        self.currentViewerFilePath = str(Path(tempfile.gettempdir()) / 'p-chart-boxplot-viewer.html')
+        viewerUri = Path(self.currentViewerFilePath).resolve().as_uri()
+        viewerHtml = f'''<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>p-chart Boxplot</title>
+  <style>
+    html, body, iframe {{ width: 100%; height: 100%; margin: 0; border: 0; overflow: hidden; }}
+  </style>
+</head>
+<body>
+  <iframe id="plotFrame" src="{plotUri}"></iframe>
+  <script>
+    const plotUri = {plotUri!r};
+    const frame = document.getElementById('plotFrame');
+    setInterval(() => {{
+      frame.src = `${{plotUri}}?t=${{Date.now()}}`;
+    }}, 2000);
+  </script>
+</body>
+</html>
+'''
+        with open(self.currentViewerFilePath, 'w', encoding='utf-8') as htmlFile:
+            htmlFile.write(viewerHtml)
+
+        if not self._browserViewerOpened:
+            webbrowser.open(viewerUri)
+            self._browserViewerOpened = True
+        self.chartView.setHtml(
+            '<div style="font-family: Cascadia Next TC, sans-serif; font-size: 14px; padding: 16px;">'
+            '<p>Boxplot is shown in the system browser.</p>'
+            f'<p><a href="{viewerUri}">Open boxplot browser viewer</a></p>'
+            '<p>The viewer reloads the latest Plotly HTML automatically. Use Download HTML to save a copy.</p>'
+            '</div>'
+        )
 
     def _download_html(self) -> None:
         if not self.currentPlotHtml:
