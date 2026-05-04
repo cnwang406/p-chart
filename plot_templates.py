@@ -1,6 +1,8 @@
 import plotly.graph_objects as go
 import plotly.io as pio
 
+from plotly_local import PLOTLY_FONT_STACK
+
 CUSTOM_TEMPLATE_NAME = 'customized'
 
 
@@ -9,7 +11,7 @@ def register_custom_template() -> None:
     
     customTemplate.layout.update(
         font=dict(
-            family='Cascadia Next TC',
+            family=PLOTLY_FONT_STACK,
             size=14,
             color='#E6E6E6',
         ),

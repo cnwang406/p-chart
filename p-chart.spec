@@ -8,6 +8,9 @@ app_name = 'p-chart'
 
 datas = [
     ('mainwindow.ui', '.'),
+    ('mainwindow-win.ui', '.'),
+    ('mainwindow-mac.ui', '.'),
+    ('plotly.min.js', '.'),
     ('CascadiaNextTC.wght.ttf', '.'),
     ('w2l.png', '.'),
     ('AppIcon.appiconset/icon-ios-marketing-1024x1024-1x.png', 'AppIcon.appiconset'),
