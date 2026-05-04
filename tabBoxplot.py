@@ -251,7 +251,7 @@ class TabBoxplotWidget:
         )
 
     def _sync_y_title_from_column(self, columnName: str) -> None:
-        self.yTitleLineEdit.setText(columnName.strip())
+        self.yTitleLineEdit.setText(columnName.strip().rstrip())
 
     def _current_combo_text(self, combo: QComboBox) -> str:
         return combo.currentText().strip()
