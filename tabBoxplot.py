@@ -250,8 +250,11 @@ class TabBoxplotWidget:
             f'QPushButton {{ background-color: {self.annotationColor}; }}'
         )
 
+    def _axis_title_from_column(self, columnName: str) -> str:
+        return columnName.strip().rstrip('_')
+
     def _sync_y_title_from_column(self, columnName: str) -> None:
-        self.yTitleLineEdit.setText(columnName.strip())
+        self.yTitleLineEdit.setText(self._axis_title_from_column(columnName))
 
     def _current_combo_text(self, combo: QComboBox) -> str:
         return combo.currentText().strip()

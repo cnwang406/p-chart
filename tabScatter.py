@@ -213,11 +213,14 @@ class TabScatterWidget:
             f'QPushButton {{ background-color: {self.lineColor}; }}'
         )
 
+    def _axis_title_from_column(self, columnName: str) -> str:
+        return columnName.strip().rstrip('_')
+
     def _sync_x_title_from_column(self, columnName: str) -> None:
-        self.xTitleLineEdit.setText(columnName.strip())
+        self.xTitleLineEdit.setText(self._axis_title_from_column(columnName))
 
     def _sync_y_title_from_column(self, columnName: str) -> None:
-        self.yTitleLineEdit.setText(columnName.strip())
+        self.yTitleLineEdit.setText(self._axis_title_from_column(columnName))
 
     def _sync_x_format_from_column(self, columnName: str) -> None:
         if self.tabDataWidget is None:
