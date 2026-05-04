@@ -26,7 +26,7 @@ from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.2'
+APP_VERSION = 'v2.2.1'
 APP_AUTHOR = 'cnwang'
 APP_DATE = '2024/04'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
@@ -72,7 +72,7 @@ class AppMain:
         self._configure_application_metadata()
         self._configure_application_icon()
         self._load_application_font()
-        self.ui = self._load_ui('mainwindow.ui')
+        self.ui = self._load_ui(self._platform_ui_filename())
         self.ui.setWindowTitle(WINDOW_TITLE)
         if not self.app.windowIcon().isNull():
             self.ui.setWindowIcon(self.app.windowIcon())
@@ -93,6 +93,7 @@ class AppMain:
         self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
         self.aboutButton.clicked.connect(self._show_about_dialog)
         self.tabWidget.setCurrentIndex(0)
+        self._center_window()
         self.ui.show()
 
     def _configure_application_metadata(self) -> None:
@@ -119,6 +120,23 @@ class AppMain:
             return
 
         self.app.setFont(QFont(fontFamilies[0], 10))
+
+    def _platform_ui_filename(self) -> str:
+        if sys.platform.startswith('win'):
+            return 'mainwindow-win.ui'
+        if sys.platform == 'darwin':
+            return 'mainwindow-mac.ui'
+        return 'mainwindow.ui'
+
+    def _center_window(self) -> None:
+        screen = self.app.primaryScreen()
+        if screen is None:
+            return
+
+        self.ui.adjustSize()
+        windowFrame = self.ui.frameGeometry()
+        windowFrame.moveCenter(screen.availableGeometry().center())
+        self.ui.move(windowFrame.topLeft())
 
     def _warn_if_plotting_loaded_data(self, tabIndex: int) -> None:
         if tabIndex not in [1, 2]:
@@ -177,7 +195,7 @@ class AppMain:
         - PySide6 for GUI
         - Plotly for plotting
         - Pandas for data manipulation
-        - Cascadia Mono font for better aesthetics
+        - Cascadia Next TC font for Windows/macOS UI consistency
         - codex for code generation and debugging assistance
 
     if you found this tool useful, please consider giving it me a cup of coffee~

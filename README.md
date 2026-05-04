@@ -3,7 +3,7 @@
 `p-chart` is a PySide6 desktop tool for reshaping CSV/Excel data with
 `pandas.wide_to_long` and creating interactive Plotly scatter and box plots.
 
-Version: `v2.2`  
+Version: `v2.2.1`  
 Author: `cnwang`  
 License: MIT
 
@@ -21,7 +21,7 @@ License: MIT
   summary tables.
 - Use embedded Qt WebEngine for Plotly charts, with system-browser fallback for
   Remote Desktop sessions or `--no-webengine` / `-W`.
-- Export Plotly charts as self-contained HTML.
+- Export Plotly charts as offline HTML that uses the bundled `plotly.min.js`.
 - Package as a Windows 10 desktop app with PyInstaller.
 
 ## Install
@@ -56,7 +56,8 @@ For Windows 10 release builds, run the equivalent command on Windows:
 .\.venv\Scripts\python.exe -m PyInstaller p-chart.spec
 ```
 
-The spec bundles the UI file, font, help image, app icons, and Windows `.ico`.
+The spec bundles the Windows/macOS UI files, local Plotly JavaScript, font, help
+image, app icons, and Windows `.ico`.
 
 ## Workflow
 
@@ -79,7 +80,10 @@ accepts Python specifiers such as `.2f`, `.3g`, `,.1f`, or `{value:.2f}`.
 ## Files
 
 - `app.py`: application entry point.
-- `mainwindow.ui`: Qt Designer UI.
+- `mainwindow-win.ui`, `mainwindow-mac.ui`: platform-specific Qt Designer UI
+  files selected automatically at startup.
+- `mainwindow.ui`: fallback Qt Designer UI for other platforms.
+- `plotly_local.py`: local Plotly HTML helper for offline chart rendering.
 - `tabData.py`, `tabScatter.py`, `tabBoxplot.py`: tab controllers.
 - `p-chart.spec`: PyInstaller build config.
 - `LICENSE`: MIT License.

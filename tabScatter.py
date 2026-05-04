@@ -5,7 +5,6 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import plotly.io as pio
 from pandas.api.types import is_datetime64_any_dtype
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QColor
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
 from qt_helpers import require_child
 from pivot_helpers import build_pivot_table, show_pivot_dialog
 from plot_templates import CUSTOM_TEMPLATE_NAME
+from plotly_local import local_plotly_html
 
 try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -811,9 +811,9 @@ class TabScatterWidget:
         )
 
     def _render_figure(self, figure) -> None:
-        self.currentPlotHtml = pio.to_html(figure, full_html=True, include_plotlyjs=True)
+        self.currentPlotHtml = local_plotly_html(figure, fullHtml=True)
         if not self.useExternalBrowser:
-            html = pio.to_html(figure, full_html=False, include_plotlyjs='cdn')
+            html = local_plotly_html(figure, fullHtml=False)
             try:
                 self.chartView.setHtml(html, QUrl('about:blank'))
                 return

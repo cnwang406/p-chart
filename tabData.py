@@ -336,7 +336,7 @@ class TabDataWidget:
         detectedStubnames = []
         detectedStubnameSet = set()
         for columnName in self.loadedDataFrame.columns.astype(str):
-            matchedColumn = re.match(r'^(.+)_([TLBCR])$', columnName.strip())
+            matchedColumn = re.match(r'^(.+_)([TLBCR])$', columnName.strip())
             if not matchedColumn:
                 continue
             stubname = matchedColumn.group(1)
