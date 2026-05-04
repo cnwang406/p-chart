@@ -214,10 +214,10 @@ class TabScatterWidget:
         )
 
     def _sync_x_title_from_column(self, columnName: str) -> None:
-        self.xTitleLineEdit.setText(columnName.strip())
+        self.xTitleLineEdit.setText(columnName.strip().rstrip('_'))
 
     def _sync_y_title_from_column(self, columnName: str) -> None:
-        self.yTitleLineEdit.setText(columnName.strip())
+        self.yTitleLineEdit.setText(columnName.strip().rstrip('_'))
 
     def _sync_x_format_from_column(self, columnName: str) -> None:
         if self.tabDataWidget is None:
