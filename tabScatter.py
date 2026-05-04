@@ -1,3 +1,4 @@
+import re
 import tempfile
 import webbrowser
 from pathlib import Path
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+import warnings
 
 from qt_helpers import require_child
 from pivot_helpers import build_pivot_table, show_pivot_dialog
@@ -39,6 +41,10 @@ PLOT_ROW_ID = '__plotRowId'
 
 
 class TabScatterWidget:
+    _excelZeroDatePattern = re.compile(
+        r'^\s*\d{4}[/-](?:0[/-]\d{1,2}|\d{1,2}[/-]0)(?:\s+\d{1,2}:\d{1,2}(?::\d{1,2})?)?\s*$'
+    )
+
     def __init__(self, rootWidget: QWidget, preferWebEngine: bool = True):
         self.rootWidget = rootWidget
         self.tabDataWidget = None
@@ -284,16 +290,25 @@ class TabScatterWidget:
             return
 
         dataFrame = self.tabDataWidget.get_melted_data()
+        xColumn = self.xComboBox.currentText().strip()
         yColumn = self.yComboBox.currentText().strip()
         if dataFrame.empty or not yColumn or yColumn not in dataFrame.columns:
             return
 
-        ySeries = pd.to_numeric(dataFrame[yColumn], errors='coerce').dropna()
+        xIsDate = xColumn in dataFrame.columns and self._is_date_series(dataFrame[xColumn])
+        vLines = self._current_vline_values(xIsDate)
+        statData, intervalLabel = self._filter_data_by_x_vlines(
+            dataFrame,
+            xColumn,
+            xIsDate,
+            vLines,
+        )
+        ySeries = pd.to_numeric(statData[yColumn], errors='coerce').dropna()
         if ySeries.empty:
             return
 
         yStdev = float(ySeries.std(ddof=1)) if len(ySeries) > 1 else 0.0
-        self._update_statistic_label(float(ySeries.mean()), yStdev)
+        self._update_statistic_label(float(ySeries.mean()), yStdev, intervalLabel)
         self._draw_plot_when_xy_ready()
 
     def set_tab_data(self, tabDataWidget) -> None:
@@ -373,6 +388,42 @@ class TabScatterWidget:
             if not pd.isna(parsedDate)
         ]
 
+    def _current_vline_values(self, xIsDate: bool) -> list:
+        return (
+            self._parse_date_line_values(self.vlineLineEdit.text())
+            if xIsDate
+            else self._parse_line_values(self.vlineLineEdit.text())
+        )
+
+    def _filter_data_by_x_vlines(
+        self,
+        dataFrame: pd.DataFrame,
+        xColumn: str,
+        xIsDate: bool,
+        vLines: list,
+    ) -> tuple[pd.DataFrame, str]:
+        if len(vLines) != 2 or not xColumn or xColumn not in dataFrame.columns:
+            return dataFrame, ''
+
+        lowerValue, upperValue = sorted(vLines)
+        if xIsDate:
+            xSeries = pd.to_datetime(dataFrame[xColumn], errors='coerce')
+            lowerValue = pd.Timestamp(lowerValue)
+            upperValue = pd.Timestamp(upperValue)
+            intervalLabel = (
+                f'{xColumn} between '
+                f'{self._format_date_label(lowerValue)} and {self._format_date_label(upperValue)}'
+            )
+        else:
+            xSeries = pd.to_numeric(dataFrame[xColumn], errors='coerce')
+            intervalLabel = (
+                f'{xColumn} between '
+                f'{self._format_number(lowerValue)} and {self._format_number(upperValue)}'
+            )
+
+        filteredData = dataFrame.loc[xSeries.between(lowerValue, upperValue, inclusive='both')]
+        return filteredData, intervalLabel
+
     def _format_number(self, value: float) -> str:
         return f'{value:.6g}'
 
@@ -400,8 +451,20 @@ class TabScatterWidget:
             return True
         if pd.api.types.is_numeric_dtype(nonNullSeries):
             return False
-        parsedDates = pd.to_datetime(nonNullSeries, errors='coerce')
+        if self._has_excel_zero_date_text(nonNullSeries):
+            return False
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")  # 確保會被捕捉
+            parsedDates = pd.to_datetime(nonNullSeries, errors='coerce')
+            if w:
+                statusMsg = str(w[0].message)   
+                self._set_status(f'something wrong while pd.to_datetime: {statusMsg}', error=True)
+
         return parsedDates.notna().mean() >= 0.8
+
+    def _has_excel_zero_date_text(self, series: pd.Series) -> bool:
+        textSeries = series.astype(str).str.strip()
+        return bool(textSeries.str.match(self._excelZeroDatePattern).any())
 
     def _date_tick_format(self, formatText: str) -> str:
         formatText = formatText.strip() or 'mm/dd'
@@ -556,12 +619,28 @@ class TabScatterWidget:
             self._format_auto_values(self._expanded_line_range(hlineValues), yDecimals)
         )
         self.hlineLineEdit.setText(self._format_auto_values(hlineValues, yDecimals))
-        self._update_statistic_label(yAverage, yStdev)
+        vLines = self._current_vline_values(xIsDate)
+        statData, intervalLabel = self._filter_data_by_x_vlines(
+            dataFrame,
+            xColumn,
+            xIsDate,
+            vLines,
+        )
+        yStatSeries = pd.to_numeric(statData[yColumn], errors='coerce').dropna()
+        if not yStatSeries.empty:
+            yAverage = float(yStatSeries.mean())
+            yStdev = float(yStatSeries.std(ddof=1)) if len(yStatSeries) > 1 else 0.0
+        self._update_statistic_label(yAverage, yStdev, intervalLabel)
         self._draw_plot_when_xy_ready()
         if xSeries.empty:
             self._set_status('Auto updated Y statistics only; X is not numeric.')
 
-    def _update_statistic_label(self, yAverage: float, yStdev: float) -> None:
+    def _update_statistic_label(
+        self,
+        yAverage: float,
+        yStdev: float,
+        intervalLabel: str = '',
+    ) -> None:
         yTitle = self.yTitleLineEdit.text().strip() or self.yComboBox.currentText().strip()
         parts = [
             f'{yTitle} average = {self._format_number(yAverage)}',
@@ -587,6 +666,8 @@ class TabScatterWidget:
                     f'Cpk = {cpk:.2f}',
                 ])
 
+        if intervalLabel:
+            parts.append(f'interval = {intervalLabel}')
         self.statisticLabel.setText(', '.join(parts))
 
     def _show_pivot_table(self) -> None:
@@ -595,12 +676,16 @@ class TabScatterWidget:
             return
 
         dataFrame = self.tabDataWidget.get_melted_data()
+        xColumn = self.xComboBox.currentText().strip()
         yColumn = self.yComboBox.currentText().strip()
         if dataFrame.empty:
             self._set_status('No data available for pivot.', error=True)
             return
         if not yColumn or yColumn not in dataFrame.columns:
             self._set_status('Choose a valid Y column before pivot.', error=True)
+            return
+        if not xColumn or xColumn not in dataFrame.columns:
+            self._set_status('Choose a valid X column before pivot.', error=True)
             return
 
         groupColumns = []
@@ -615,11 +700,22 @@ class TabScatterWidget:
             if columnName and columnName in dataFrame.columns and columnName not in groupColumns:
                 groupColumns.append(columnName)
 
-        pivotData = build_pivot_table(dataFrame, yColumn, groupColumns)
+        xIsDate = self._is_date_series(dataFrame[xColumn])
+        vLines = self._current_vline_values(xIsDate)
+        pivotInputData, intervalLabel = self._filter_data_by_x_vlines(
+            dataFrame,
+            xColumn,
+            xIsDate,
+            vLines,
+        )
+        pivotData = build_pivot_table(pivotInputData, yColumn, groupColumns, xColumn)
         if pivotData.empty:
             self._set_status('No numeric Y data available for pivot.', error=True)
             return
-        show_pivot_dialog(self.rootWidget, 'Scatter pivot', pivotData)
+        dialogTitle = 'Scatter pivot'
+        if intervalLabel:
+            dialogTitle = f'{dialogTitle} ({intervalLabel})'
+        show_pivot_dialog(self.rootWidget, dialogTitle, pivotData)
 
     def _draw_plot(self) -> None:
         if self.tabDataWidget is None:
@@ -661,11 +757,7 @@ class TabScatterWidget:
         yRange = self._parse_range(self.yRangeLineEdit.text())
         legendVisible = self.legendCheckBox.isChecked()
         hLines = self._parse_line_values(self.hlineLineEdit.text())
-        vLines = (
-            self._parse_date_line_values(self.vlineLineEdit.text())
-            if xIsDate
-            else self._parse_line_values(self.vlineLineEdit.text())
-        )
+        vLines = self._current_vline_values(xIsDate)
         lineWidth = self.lineWidthSpinBox.value()
         lineColorWithOpacity = self._line_color_with_opacity(lineWidth)
         plotWidth = self.plotWidthSpinBox.value()
@@ -681,10 +773,16 @@ class TabScatterWidget:
             self._set_status('Y must contain numeric data for plotting.', error=True)
             return
         plotData[PLOT_ROW_ID] = plotData.index
-        yStatSeries = pd.to_numeric(plotData[yColumn], errors='coerce').dropna()
+        statData, intervalLabel = self._filter_data_by_x_vlines(
+            plotData,
+            xColumn,
+            xIsDate,
+            vLines,
+        )
+        yStatSeries = pd.to_numeric(statData[yColumn], errors='coerce').dropna()
         if not yStatSeries.empty:
             yStdev = float(yStatSeries.std(ddof=1)) if len(yStatSeries) > 1 else 0.0
-            self._update_statistic_label(float(yStatSeries.mean()), yStdev)
+            self._update_statistic_label(float(yStatSeries.mean()), yStdev, intervalLabel)
 
         try:
             colorArgument = colorColumn or seriesColumn
@@ -813,9 +911,11 @@ class TabScatterWidget:
     def _render_figure(self, figure) -> None:
         self.currentPlotHtml = local_plotly_html(figure, fullHtml=True)
         if not self.useExternalBrowser:
+            assetsDir = Path(__file__).resolve().parent
             html = local_plotly_html(figure, fullHtml=False)
             try:
-                self.chartView.setHtml(html, QUrl('about:blank'))
+                baseUrl = QUrl.fromLocalFile(str(assetsDir)+'/')
+                self.chartView.setHtml(html, baseUrl)
                 return
             except Exception:
                 self._switch_to_external_browser_view()

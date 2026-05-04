@@ -17,7 +17,14 @@ def resource_path(filename: str) -> str:
 
 
 def local_plotly_html(figure, fullHtml: bool) -> str:
-    html = pio.to_html(figure, full_html=fullHtml, include_plotlyjs=False)
+    assetsDir = Path(__file__).resolve().parent
+    plotlyJsName = PLOTLY_JS_FILENAME
+    plotlyJSPath = assetsDir / plotlyJsName
+    if not plotlyJSPath.exists():
+        raise FileNotFoundError(f'Plotly JS file not found: {plotlyJSPath}')
+
+
+    html = pio.to_html(figure, full_html=fullHtml, include_plotlyjs=plotlyJsName)
     htmlHeader = '\n'.join(
         [
             _font_style_html(),

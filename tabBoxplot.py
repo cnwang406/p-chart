@@ -792,9 +792,11 @@ class TabBoxplotWidget:
     def _render_figure(self, figure) -> None:
         self.currentPlotHtml = local_plotly_html(figure, fullHtml=True)
         if not self.useExternalBrowser:
+            assetsDir = Path(__file__).resolve().parent
             html = local_plotly_html(figure, fullHtml=False)
             try:
-                self.chartView.setHtml(html, QUrl('about:blank'))
+                baseUrl = QUrl.fromLocalFile(str(assetsDir)+'/')
+                self.chartView.setHtml(html, baseUrl)
                 return
             except Exception:
                 self._switch_to_external_browser_view()

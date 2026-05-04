@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QLineEdit,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QTableWidget,
@@ -57,6 +58,28 @@ class DropFileFilter(QObject):
 
 
 class TabDataWidget:
+    _dateColumnNamePattern = re.compile(
+        r'(date|time|datetime|timestamp|dt|日期|時間|日付|年月日)',
+        re.IGNORECASE,
+    )
+    _chineseMeridiemDatePattern = re.compile(
+        r'^\s*'
+        r'(?P<date>\d{4}[/-]\d{1,2}[/-]\d{1,2})'
+        r'\s*(?P<meridiem>上午|下午)\s*'
+        r'(?P<hour>\d{1,2}):(?P<minute>\d{1,2})'
+        r'(?::(?P<second>\d{1,2}))?'
+        r'\s*$'
+    )
+    _excelZeroDatePattern = re.compile(
+        r'^\s*\d{4}[/-](?:0[/-]\d{1,2}|\d{1,2}[/-]0)'
+        r'(?:\s+\d{1,2}:\d{1,2}(?::\d{1,2})?)?\s*$'
+    )
+    _suspiciousDateValues = {
+        pd.Timestamp(1899, 12, 30).date(),
+        pd.Timestamp(1899, 12, 31).date(),
+        pd.Timestamp(1900, 1, 1).date(),
+    }
+
     def __init__(self, rootWidget: QWidget):
         self.rootWidget = rootWidget
         self.tabDataWidget = require_child(rootWidget, QWidget, 'tabData')
@@ -216,7 +239,14 @@ class TabDataWidget:
         try:
             if filePath.lower().endswith('.csv'):
                 self.loadedDataFrame = pd.read_csv(filePath)
-                self._set_status('CSV loaded successfully.')
+                normalizedColumns = self._normalize_loaded_datetime_formats(self.loadedDataFrame)
+                hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
+                statusText = 'CSV loaded successfully.'
+                if normalizedColumns:
+                    statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
+                if hasDataWarning:
+                    statusText += ' Possible date format issue found.'
+                self._set_status(statusText, error=hasDataWarning)
                 self._append_detected_stubnames()
                 self._populate_columns()
                 self._show_preview(self.loadedDataFrame)
@@ -257,13 +287,181 @@ class TabDataWidget:
         try:
             self._invalidate_melted_data()
             self.loadedDataFrame = pd.read_excel(self.loadedFilePath, sheet_name=sheetName)
+            normalizedColumns = self._normalize_loaded_datetime_formats(self.loadedDataFrame)
+            hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
             self._append_detected_stubnames()
             self._populate_columns()
             self._show_preview(self.loadedDataFrame)
             self._notify_data_changed()
-            self._set_status(f'Sheet "{sheetName}" loaded successfully.')
+            statusText = f'Sheet "{sheetName}" loaded successfully.'
+            if normalizedColumns:
+                statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
+            if hasDataWarning:
+                statusText += ' Possible date format issue found.'
+            self._set_status(statusText, error=hasDataWarning)
         except Exception as exc:
             self._set_status(f'Failed to load sheet: {exc}', error=True)
+
+    def _normalize_loaded_datetime_formats(self, dataFrame: pd.DataFrame) -> list[str]:
+        normalizedColumns = []
+        for columnName in dataFrame.columns:
+            series = dataFrame[columnName]
+            if not isinstance(series, pd.Series):
+                continue
+            normalizedSeries = self._normalize_chinese_meridiem_datetime_series(series)
+            if normalizedSeries is None:
+                continue
+            dataFrame[columnName] = normalizedSeries
+            normalizedColumns.append(str(columnName))
+        return normalizedColumns
+
+    def _normalize_chinese_meridiem_datetime_series(
+        self,
+        series: pd.Series,
+    ) -> pd.Series | None:
+        if not (
+            pd.api.types.is_object_dtype(series)
+            or pd.api.types.is_string_dtype(series)
+        ):
+            return None
+
+        nonEmptyText = series.dropna().astype(str).str.strip()
+        nonEmptyText = nonEmptyText[nonEmptyText != '']
+        if nonEmptyText.empty:
+            return None
+
+        matchedRows = nonEmptyText.str.extract(self._chineseMeridiemDatePattern)
+        matchedMask = matchedRows['date'].notna()
+        if int(matchedMask.sum()) == 0:
+            return None
+
+        normalizedText = nonEmptyText.copy()
+        normalizedText.loc[matchedMask] = [
+            self._format_chinese_meridiem_datetime(row)
+            for _, row in matchedRows.loc[matchedMask].iterrows()
+        ]
+        parsedDates = pd.to_datetime(normalizedText, errors='coerce')
+        if int(parsedDates.notna().sum()) != len(nonEmptyText):
+            return None
+
+        normalizedSeries = pd.Series(pd.NaT, index=series.index, dtype='datetime64[ns]')
+        normalizedSeries.loc[parsedDates.index] = parsedDates
+        return normalizedSeries
+
+    def _format_chinese_meridiem_datetime(self, matchedRow: pd.Series) -> str:
+        hour = int(matchedRow['hour'])
+        if matchedRow['meridiem'] == '上午':
+            hour = 0 if hour == 12 else hour
+        else:
+            hour = hour if hour == 12 else hour + 12
+
+        second = matchedRow.get('second')
+        timeText = f'{hour:02d}:{int(matchedRow["minute"]):02d}'
+        if pd.notna(second):
+            timeText += f':{int(second):02d}'
+        return f'{matchedRow["date"]} {timeText}'
+
+    def _show_loaded_data_warnings(self, dataFrame: pd.DataFrame) -> bool:
+        warnings = [
+            *self._detect_excel_zero_date_columns(dataFrame),
+            *self._detect_suspicious_date_columns(dataFrame),
+        ]
+        if not warnings:
+            return False
+
+        warningText = '\n'.join(warnings[:8])
+        if len(warnings) > 8:
+            warningText += f'\n...and {len(warnings) - 8} more columns.'
+
+        QMessageBox.warning(
+            self.rootWidget,
+            'Data format warning',
+            (
+                'Some loaded values look like suspicious date/time formats.\n\n'
+                f'{warningText}\n\n'
+                'Please check whether blank dates, invalid dates, or decimal/time '
+                'values were converted by Excel or pandas.'
+            ),
+        )
+        return True
+
+    def _detect_excel_zero_date_columns(self, dataFrame: pd.DataFrame) -> list[str]:
+        warnings = []
+        for columnName in dataFrame.columns:
+            columnText = str(columnName)
+            series = dataFrame[columnName]
+            if not isinstance(series, pd.Series):
+                continue
+            if not (
+                pd.api.types.is_object_dtype(series)
+                or pd.api.types.is_string_dtype(series)
+            ):
+                continue
+
+            textSeries = series.dropna().astype(str).str.strip()
+            textSeries = textSeries[textSeries != '']
+            if textSeries.empty:
+                continue
+
+            suspiciousMask = textSeries.str.match(self._excelZeroDatePattern)
+            suspiciousCount = int(suspiciousMask.sum())
+            if suspiciousCount == 0:
+                continue
+
+            examples = sorted(set(textSeries[suspiciousMask].head(3)))
+            warnings.append(
+                f'- {columnText}: {suspiciousCount} invalid zero-date value(s), '
+                f'e.g. {", ".join(examples)}. This may be a decimal/time value, not a date.'
+            )
+        return warnings
+
+    def _detect_suspicious_date_columns(self, dataFrame: pd.DataFrame) -> list[str]:
+        warnings = []
+        for columnName in dataFrame.columns:
+            columnText = str(columnName)
+            series = dataFrame[columnName]
+            if not isinstance(series, pd.Series):
+                continue
+            if series.empty or not self._is_date_candidate_column(columnText, series):
+                continue
+
+            parsedDates = self._parse_date_series(series)
+            if parsedDates.empty:
+                continue
+
+            dateValues = parsedDates.dt.date
+            suspiciousMask = dateValues.isin(self._suspiciousDateValues)
+            suspiciousCount = int(suspiciousMask.sum())
+            if suspiciousCount == 0:
+                continue
+
+            examples = sorted({str(value) for value in dateValues[suspiciousMask].dropna()})
+            warnings.append(
+                f'- {columnText}: {suspiciousCount} suspicious value(s), '
+                f'e.g. {", ".join(examples[:3])}'
+            )
+        return warnings
+
+    def _is_date_candidate_column(self, columnName: str, series: pd.Series) -> bool:
+        if pd.api.types.is_datetime64_any_dtype(series):
+            return True
+
+        if not self._dateColumnNamePattern.search(columnName):
+            return False
+
+        return (
+            pd.api.types.is_object_dtype(series)
+            or pd.api.types.is_string_dtype(series)
+            or pd.api.types.is_datetime64_any_dtype(series)
+        )
+
+    def _parse_date_series(self, series: pd.Series) -> pd.Series:
+        nonEmptySeries = series.dropna()
+        if nonEmptySeries.empty:
+            return pd.Series(dtype='datetime64[ns]')
+
+        parsedDates = pd.to_datetime(nonEmptySeries, errors='coerce')
+        return parsedDates.dropna()
 
     def _populate_columns(self) -> None:
         self.columnsListWidget.clear()

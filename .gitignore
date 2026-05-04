@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .Python
 *.csv
+AGENTS.md
 
 
 # Virtual environments
