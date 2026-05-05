@@ -100,12 +100,25 @@ class TabDataWidget:
         self.saveButton = require_child(rootWidget, QPushButton, 'saveButton')
         self.infoButton = require_child(rootWidget, QPushButton, 'infoButton')
         self.convertColumnButton = require_child(rootWidget, QPushButton, 'convertColumnButton')
+        self.previewFilterColumnComboBox = require_child(
+            rootWidget,
+            QComboBox,
+            'previewFilterColumnComboBox',
+        )
+        self.previewFilterLineEdit = require_child(rootWidget, QLineEdit, 'previewFilterLineEdit')
+        self.previewFilterClearButton = require_child(
+            rootWidget,
+            QPushButton,
+            'previewFilterClearButton',
+        )
         self.previewTableWidget = require_child(rootWidget, QTableWidget, 'previewTableWidget')
         self.statusLabel = require_child(rootWidget, QLabel, 'statusLabelTab1')
 
         self.loadedFilePath = ''
         self.loadedDataFrame = pd.DataFrame()
         self.meltedDataFrame = pd.DataFrame()
+        self.previewSourceDataFrame = pd.DataFrame()
+        self.previewMaxRows = 1000
         self.dataChangedCallbacks = []
         self.matchChangedCallbacks = []
         self.matchingColumnCount = 0
@@ -123,6 +136,9 @@ class TabDataWidget:
         self.saveButton.clicked.connect(self._save_melted_data)
         self.infoButton.clicked.connect(self._show_wide_to_long_info)
         self.convertColumnButton.clicked.connect(self._convert_prefixed_columns)
+        self.previewFilterLineEdit.textChanged.connect(self._refresh_preview_filter)
+        self.previewFilterColumnComboBox.currentIndexChanged.connect(self._refresh_preview_filter)
+        self.previewFilterClearButton.clicked.connect(self.previewFilterLineEdit.clear)
 
         self.columnsListWidget.setSelectionMode(QAbstractItemView.NoSelection)
         self.tabDataWidget.setAcceptDrops(True)
@@ -135,6 +151,7 @@ class TabDataWidget:
         self.previewTableWidget.horizontalHeader().setFont(previewFont)
         self.previewTableWidget.verticalHeader().setFont(previewFont)
         self.previewTableWidget.setStyleSheet('QTableWidget { color: rgba(0, 0, 0, 204); }')
+        self.previewFilterColumnComboBox.addItem('All columns')
 
         self.filePathLineEdit.textChanged.connect(self._invalidate_melted_data)
         self.stubnamesLineEdit.textChanged.connect(self._mark_matching_columns)
@@ -678,21 +695,87 @@ class TabDataWidget:
             self._set_status(f'Error reshaping data: {exc}', error=True)
 
     def _show_preview(self, dataFrame: pd.DataFrame, maxRows: int = 1000) -> None:
+        self.previewSourceDataFrame = dataFrame
+        self.previewMaxRows = maxRows
+        self._populate_preview_filter_columns(dataFrame)
+        self._refresh_preview_filter()
+
+    def _populate_preview_filter_columns(self, dataFrame: pd.DataFrame) -> None:
+        selectedColumn = self.previewFilterColumnComboBox.currentData()
+        self.previewFilterColumnComboBox.blockSignals(True)
+        self.previewFilterColumnComboBox.clear()
+        self.previewFilterColumnComboBox.addItem('All columns', '')
+        for columnName in dataFrame.columns:
+            self.previewFilterColumnComboBox.addItem(str(columnName), columnName)
+        if selectedColumn not in (None, ''):
+            selectedIndex = self.previewFilterColumnComboBox.findData(selectedColumn)
+            if selectedIndex >= 0:
+                self.previewFilterColumnComboBox.setCurrentIndex(selectedIndex)
+        self.previewFilterColumnComboBox.blockSignals(False)
+
+    def _refresh_preview_filter(self, *_args) -> None:
+        dataFrame = self.previewSourceDataFrame
         self.previewTableWidget.clear()
         self.previewTableWidget.setRowCount(0)
         self.previewTableWidget.setColumnCount(0)
         if dataFrame.empty:
             return
 
+        filteredDataFrame = self._filtered_preview_data(dataFrame)
         columns = list(dataFrame.columns)
         self.previewTableWidget.setColumnCount(len(columns))
-        self.previewTableWidget.setHorizontalHeaderLabels(columns)
-        for rowIndex, (_, row) in enumerate(dataFrame.head(maxRows).iterrows()):
+        self.previewTableWidget.setHorizontalHeaderLabels([str(column) for column in columns])
+        for rowIndex, (_, row) in enumerate(filteredDataFrame.head(self.previewMaxRows).iterrows()):
             self.previewTableWidget.insertRow(rowIndex)
             for colIndex, columnName in enumerate(columns):
-                item = QTableWidgetItem(str(row[columnName]))
-                item.setFlags(item.flags() ^ Qt.ItemIsEditable)
+                item = QTableWidgetItem(self._format_preview_value(row[columnName]))
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.previewTableWidget.setItem(rowIndex, colIndex, item)
+
+        filterText = self.previewFilterLineEdit.text().strip()
+        if filterText:
+            shownRows = min(len(filteredDataFrame), self.previewMaxRows)
+            self._set_status(
+                f'Preview filter: {len(filteredDataFrame)}/{len(dataFrame)} rows matched, '
+                f'showing {shownRows}.'
+            )
+
+    def _filtered_preview_data(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
+        filterText = self.previewFilterLineEdit.text().strip()
+        if not filterText:
+            return dataFrame
+
+        selectedColumn = self.previewFilterColumnComboBox.currentData()
+        if selectedColumn not in (None, ''):
+            if selectedColumn not in dataFrame.columns:
+                return dataFrame.iloc[0:0]
+            series = dataFrame[selectedColumn].dropna()
+            matchedIndex = series.astype(str).str.contains(
+                filterText,
+                case=False,
+                regex=False,
+                na=False,
+            ).index
+            return dataFrame.loc[matchedIndex]
+
+        matchedMask = pd.Series(False, index=dataFrame.index)
+        for columnName in dataFrame.columns:
+            series = dataFrame[columnName].dropna()
+            if series.empty:
+                continue
+            columnMask = series.astype(str).str.contains(
+                filterText,
+                case=False,
+                regex=False,
+                na=False,
+            )
+            matchedMask.loc[columnMask.index] = matchedMask.loc[columnMask.index] | columnMask
+        return dataFrame.loc[matchedMask]
+
+    def _format_preview_value(self, value) -> str:
+        if pd.isna(value):
+            return ''
+        return str(value)
 
     def _save_melted_data(self) -> None:
         if self.meltedDataFrame.empty:

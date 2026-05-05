@@ -25,6 +25,9 @@ from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
+print (QT_PLUGIN_PATH)
+print (QT_PLATFORM_PLUGIN_PATH)
+
 APP_NAME = 'p-chart'
 APP_VERSION = 'v2.2.2'
 APP_AUTHOR = 'cnwang'
@@ -185,7 +188,7 @@ class AppMain:
 
         acknowledgeTextEdit = QTextEdit()
         acknowledgeFont = acknowledgeTextEdit.font()
-        acknowledgeFont.setPointSize(14)
+        acknowledgeFont.setPointSize(12)
         acknowledgeTextEdit.setFont(acknowledgeFont)
         acknowledgeTextEdit.setTextColor(QColor('darkblue'))
         acknowledgeTextEdit.setReadOnly(True)

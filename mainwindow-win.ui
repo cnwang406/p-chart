@@ -232,9 +232,9 @@
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>310</y>
+        <y>345</y>
         <width>951</width>
-        <height>511</height>
+        <height>476</height>
        </rect>
       </property>
       <property name="font">
@@ -242,6 +242,79 @@
         <family>Cascadia Next TC</family>
         <pointsize>12</pointsize>
        </font>
+      </property>
+     </widget>
+     <widget class="QLabel" name="previewFilterLabel">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>315</y>
+        <width>86</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>14</pointsize>
+       </font>
+      </property>
+      <property name="text">
+       <string>Preview filter</string>
+      </property>
+     </widget>
+     <widget class="QComboBox" name="previewFilterColumnComboBox">
+      <property name="geometry">
+       <rect>
+        <x>120</x>
+        <y>310</y>
+        <width>231</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>14</pointsize>
+       </font>
+      </property>
+     </widget>
+     <widget class="QLineEdit" name="previewFilterLineEdit">
+      <property name="geometry">
+       <rect>
+        <x>360</x>
+        <y>314</y>
+        <width>501</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>14</pointsize>
+       </font>
+      </property>
+      <property name="placeholderText">
+       <string>type text to filter preview rows</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="previewFilterClearButton">
+      <property name="geometry">
+       <rect>
+        <x>875</x>
+        <y>310</y>
+        <width>96</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>14</pointsize>
+       </font>
+      </property>
+      <property name="text">
+       <string>Clear</string>
       </property>
      </widget>
      <widget class="QLabel" name="statusLabelTab1">

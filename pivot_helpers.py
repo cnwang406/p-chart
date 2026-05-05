@@ -170,5 +170,5 @@ def _format_cell_value(value) -> str:
     if pd.isna(value):
         return ''
     if isinstance(value, float):
-        return f'{value:.6g}'
+        return f'{value:.5g}'
     return str(value)
