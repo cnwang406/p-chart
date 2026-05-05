@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QMenu,
+    QInputDialog,
     QPushButton,
     QScrollArea,
     QTableView,
@@ -218,6 +219,7 @@ class TabDataWidget:
         self.loadedFilePath = ''
         self.loadedDataFrame = pd.DataFrame()
         self.meltedDataFrame = pd.DataFrame()
+        self.previewSourceDataFrame = pd.DataFrame()
         self.previewTableModel = PreviewTableModel()
         self.previewProxyModel = PreviewSortFilterProxyModel()
         self.previewMaxRows = 1000
@@ -259,6 +261,9 @@ class TabDataWidget:
         self.previewTableWidget.horizontalHeader().setSortIndicatorShown(True)
         self.previewTableWidget.horizontalHeader().sectionClicked.connect(
             self._show_preview_column_menu
+        )
+        self.previewTableWidget.horizontalHeader().sectionDoubleClicked.connect(
+            self._rename_preview_column
         )
 
         self.filePathLineEdit.textChanged.connect(self._invalidate_melted_data)
@@ -802,9 +807,16 @@ class TabDataWidget:
         except Exception as exc:
             self._set_status(f'Error reshaping data: {exc}', error=True)
 
-    def _show_preview(self, dataFrame: pd.DataFrame, maxRows: int = 1000) -> None:
+    def _show_preview(
+        self,
+        dataFrame: pd.DataFrame,
+        maxRows: int = 1000,
+        clearFilters: bool = True,
+    ) -> None:
         self.previewMaxRows = maxRows
-        self.previewProxyModel.clear_filters()
+        self.previewSourceDataFrame = dataFrame
+        if clearFilters:
+            self.previewProxyModel.clear_filters()
         if dataFrame.empty:
             self.previewTableModel.set_data_frame(pd.DataFrame())
             return
@@ -829,6 +841,9 @@ class TabDataWidget:
         menu.addAction(f'Filter: {columnName}').setEnabled(False)
         menu.addSeparator()
 
+        renameAction = menu.addAction('Rename column')
+        menu.addSeparator()
+
         sortAscendingAction = menu.addAction('Sort ascending')
         sortDescendingAction = menu.addAction('Sort descending')
         menu.addSeparator()
@@ -841,7 +856,7 @@ class TabDataWidget:
         valueListWidget.setMinimumWidth(260)
         valueListWidget.setMaximumHeight(320)
         selectedValues = self.previewProxyModel.columnFilters.get(columnIndex)
-        allValues = self.previewTableModel.unique_display_values(columnIndex)
+        allValues = self._unique_preview_filter_values(columnIndex)
         if selectedValues is None:
             selectedValues = set(allValues)
         for valueText in allValues:
@@ -885,7 +900,9 @@ class TabDataWidget:
         )
         selectedAction = menu.exec(menuPosition)
 
-        if selectedAction == sortAscendingAction:
+        if selectedAction == renameAction:
+            self._rename_preview_column(columnIndex)
+        elif selectedAction == sortAscendingAction:
             self.previewTableWidget.horizontalHeader().setSortIndicator(columnIndex, Qt.AscendingOrder)
             self.previewProxyModel.sort(columnIndex, Qt.AscendingOrder)
         elif selectedAction == sortDescendingAction:
@@ -894,9 +911,11 @@ class TabDataWidget:
         elif selectedAction == clearColumnAction:
             self.previewProxyModel.clear_column_filter(columnIndex)
             self._update_preview_filter_status()
+            self._notify_data_changed()
         elif selectedAction == clearAllAction:
             self.previewProxyModel.clear_filters()
             self._update_preview_filter_status()
+            self._notify_data_changed()
 
     def _set_filter_list_check_state(self, valueListWidget: QListWidget, checkState: Qt.CheckState) -> None:
         for rowIndex in range(valueListWidget.count()):
@@ -914,12 +933,13 @@ class TabDataWidget:
             if item.checkState() == Qt.Checked:
                 selectedValues.add(item.data(Qt.UserRole))
 
-        allValues = set(self.previewTableModel.unique_display_values(columnIndex))
+        allValues = set(self._unique_preview_filter_values(columnIndex))
         if selectedValues == allValues:
             self.previewProxyModel.clear_column_filter(columnIndex)
         else:
             self.previewProxyModel.set_column_filter(columnIndex, selectedValues)
         self._update_preview_filter_status()
+        self._notify_data_changed()
         menu.close()
 
     def _update_preview_filter_status(self) -> None:
@@ -927,12 +947,80 @@ class TabDataWidget:
         visibleRows = self.previewProxyModel.rowCount()
         filterCount = len(self.previewProxyModel.columnFilters)
         if filterCount:
+            sourceTotalRows = len(self.previewSourceDataFrame)
+            sourceVisibleRows = len(self.get_plot_data())
             self._set_status(
-                f'Preview filter active: {visibleRows}/{totalRows} rows shown, '
+                f'Preview filter active: {sourceVisibleRows}/{sourceTotalRows} source rows '
+                f'used for plots, {visibleRows}/{totalRows} preview rows shown, '
                 f'{filterCount} column filter(s).'
             )
         else:
             self._set_status(f'Preview filter cleared: {totalRows} rows shown.')
+
+    def _rename_preview_column(self, columnIndex: int) -> None:
+        if self.previewSourceDataFrame.empty or columnIndex >= len(self.previewSourceDataFrame.columns):
+            return
+
+        oldColumnName = str(self.previewSourceDataFrame.columns[columnIndex])
+        newColumnName, accepted = QInputDialog.getText(
+            self.rootWidget,
+            'Rename preview column',
+            'Column name:',
+            text=oldColumnName,
+        )
+        if not accepted:
+            return
+
+        newColumnName = newColumnName.strip()
+        if not newColumnName:
+            self._set_status('Column name cannot be empty.', error=True)
+            return
+
+        existingColumns = [str(columnName) for columnName in self.previewSourceDataFrame.columns]
+        if newColumnName != oldColumnName and newColumnName in existingColumns:
+            self._set_status(f'Column "{newColumnName}" already exists.', error=True)
+            return
+
+        renamedColumns = list(self.previewSourceDataFrame.columns)
+        renamedColumns[columnIndex] = newColumnName
+        self.previewSourceDataFrame.columns = renamedColumns
+
+        if self.previewSourceDataFrame is self.loadedDataFrame:
+            self._invalidate_melted_data()
+            self._populate_columns()
+
+        self._show_preview(self.previewSourceDataFrame, self.previewMaxRows, clearFilters=False)
+        self._notify_data_changed()
+        self._set_status(f'Renamed column "{oldColumnName}" to "{newColumnName}".')
+
+    def _unique_preview_filter_values(self, columnIndex: int) -> list[str]:
+        if (
+            self.previewSourceDataFrame.empty
+            or columnIndex < 0
+            or columnIndex >= len(self.previewSourceDataFrame.columns)
+        ):
+            return []
+
+        series = self.previewSourceDataFrame.iloc[:, columnIndex]
+        return sorted(
+            {self.previewTableModel._format_preview_value(value) for value in series},
+            key=str.lower,
+        )
+
+    def _filter_dataframe_by_preview_filters(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
+        if dataFrame.empty or not self.previewProxyModel.columnFilters:
+            return dataFrame.copy()
+
+        filteredDataFrame = dataFrame
+        for columnIndex, selectedValues in self.previewProxyModel.columnFilters.items():
+            if columnIndex < 0 or columnIndex >= len(filteredDataFrame.columns):
+                continue
+
+            seriesText = filteredDataFrame.iloc[:, columnIndex].map(
+                self.previewTableModel._format_preview_value
+            )
+            filteredDataFrame = filteredDataFrame.loc[seriesText.isin(selectedValues)]
+        return filteredDataFrame.copy()
 
     def _save_melted_data(self) -> None:
         if self.meltedDataFrame.empty:
@@ -973,7 +1061,9 @@ class TabDataWidget:
         return self.meltedDataFrame.copy()
 
     def get_plot_data(self) -> pd.DataFrame:
-        return self.get_melted_data()
+        if self.meltedDataFrame.empty:
+            return self._filter_dataframe_by_preview_filters(self.loadedDataFrame)
+        return self._filter_dataframe_by_preview_filters(self.meltedDataFrame)
 
     def has_loaded_data(self) -> bool:
         return not self.loadedDataFrame.empty
