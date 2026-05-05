@@ -2,10 +2,19 @@ import os
 import re
 
 import pandas as pd
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QEvent,
+    QModelIndex,
+    QObject,
+    QPoint,
+    QSortFilterProxyModel,
+    Qt,
+)
 from PySide6.QtGui import QColor, QBrush, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QHBoxLayout,
     QDialog,
     QFileDialog,
     QComboBox,
@@ -14,12 +23,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QLabel,
     QMessageBox,
+    QMenu,
     QPushButton,
     QScrollArea,
-    QTableWidget,
-    QTableWidgetItem,
+    QTableView,
     QTextEdit,
     QVBoxLayout,
+    QWidgetAction,
     QWidget,
     QGroupBox,
 )
@@ -55,6 +65,108 @@ class DropFileFilter(QObject):
             if filePath.lower().endswith(('.csv', '.xls', '.xlsx')):
                 return filePath
         return ''
+
+
+class PreviewTableModel(QAbstractTableModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.dataFrame = pd.DataFrame()
+        self.columns = []
+
+    def set_data_frame(self, dataFrame: pd.DataFrame) -> None:
+        self.beginResetModel()
+        self.dataFrame = dataFrame.reset_index(drop=True)
+        self.columns = list(self.dataFrame.columns)
+        self.endResetModel()
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        if parent.isValid():
+            return 0
+        return len(self.dataFrame)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        if parent.isValid():
+            return 0
+        return len(self.columns)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
+        if not index.isValid() or role not in (Qt.DisplayRole, Qt.UserRole):
+            return None
+
+        value = self.raw_value(index.row(), index.column())
+        if role == Qt.UserRole:
+            return value
+        return self._format_preview_value(value)
+
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        if orientation == Qt.Horizontal and 0 <= section < len(self.columns):
+            return str(self.columns[section])
+        if orientation == Qt.Vertical:
+            return str(section + 1)
+        return None
+
+    def raw_value(self, rowIndex: int, columnIndex: int):
+        if self.dataFrame.empty:
+            return None
+        return self.dataFrame.iat[rowIndex, columnIndex]
+
+    def unique_display_values(self, columnIndex: int) -> list[str]:
+        if self.dataFrame.empty or columnIndex < 0 or columnIndex >= len(self.columns):
+            return []
+
+        series = self.dataFrame.iloc[:, columnIndex]
+        values = sorted({self._format_preview_value(value) for value in series}, key=str.lower)
+        return values
+
+    def _format_preview_value(self, value) -> str:
+        if pd.isna(value):
+            return ''
+        return str(value)
+
+
+class PreviewSortFilterProxyModel(QSortFilterProxyModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.columnFilters: dict[int, set[str]] = {}
+
+    def set_column_filter(self, columnIndex: int, selectedValues: set[str]) -> None:
+        self.columnFilters[columnIndex] = selectedValues
+        self.invalidateFilter()
+
+    def clear_column_filter(self, columnIndex: int) -> None:
+        self.columnFilters.pop(columnIndex, None)
+        self.invalidateFilter()
+
+    def clear_filters(self) -> None:
+        self.columnFilters.clear()
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, sourceRow: int, sourceParent: QModelIndex) -> bool:
+        sourceModel = self.sourceModel()
+        if sourceModel is None:
+            return True
+
+        for columnIndex, selectedValues in self.columnFilters.items():
+            index = sourceModel.index(sourceRow, columnIndex, sourceParent)
+            valueText = sourceModel.data(index, Qt.DisplayRole)
+            if valueText not in selectedValues:
+                return False
+        return True
+
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
+        leftValue = left.data(Qt.UserRole)
+        rightValue = right.data(Qt.UserRole)
+
+        if pd.isna(leftValue):
+            return False
+        if pd.isna(rightValue):
+            return True
+        try:
+            return leftValue < rightValue
+        except TypeError:
+            return str(leftValue).lower() < str(rightValue).lower()
 
 
 class TabDataWidget:
@@ -100,12 +212,15 @@ class TabDataWidget:
         self.saveButton = require_child(rootWidget, QPushButton, 'saveButton')
         self.infoButton = require_child(rootWidget, QPushButton, 'infoButton')
         self.convertColumnButton = require_child(rootWidget, QPushButton, 'convertColumnButton')
-        self.previewTableWidget = require_child(rootWidget, QTableWidget, 'previewTableWidget')
+        self.previewTableWidget = require_child(rootWidget, QTableView, 'previewTableWidget')
         self.statusLabel = require_child(rootWidget, QLabel, 'statusLabelTab1')
 
         self.loadedFilePath = ''
         self.loadedDataFrame = pd.DataFrame()
         self.meltedDataFrame = pd.DataFrame()
+        self.previewTableModel = PreviewTableModel()
+        self.previewProxyModel = PreviewSortFilterProxyModel()
+        self.previewMaxRows = 1000
         self.dataChangedCallbacks = []
         self.matchChangedCallbacks = []
         self.matchingColumnCount = 0
@@ -134,7 +249,17 @@ class TabDataWidget:
         self.previewTableWidget.setFont(previewFont)
         self.previewTableWidget.horizontalHeader().setFont(previewFont)
         self.previewTableWidget.verticalHeader().setFont(previewFont)
-        self.previewTableWidget.setStyleSheet('QTableWidget { color: rgba(0, 0, 0, 204); }')
+        self.previewTableWidget.setStyleSheet('QTableView { color: rgba(0, 0, 0, 204); }')
+        self.previewProxyModel.setSourceModel(self.previewTableModel)
+        self.previewTableWidget.setModel(self.previewProxyModel)
+        self.previewTableWidget.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.previewTableWidget.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.previewTableWidget.setAlternatingRowColors(True)
+        self.previewTableWidget.horizontalHeader().setSectionsClickable(True)
+        self.previewTableWidget.horizontalHeader().setSortIndicatorShown(True)
+        self.previewTableWidget.horizontalHeader().sectionClicked.connect(
+            self._show_preview_column_menu
+        )
 
         self.filePathLineEdit.textChanged.connect(self._invalidate_melted_data)
         self.stubnamesLineEdit.textChanged.connect(self._mark_matching_columns)
@@ -678,21 +803,136 @@ class TabDataWidget:
             self._set_status(f'Error reshaping data: {exc}', error=True)
 
     def _show_preview(self, dataFrame: pd.DataFrame, maxRows: int = 1000) -> None:
-        self.previewTableWidget.clear()
-        self.previewTableWidget.setRowCount(0)
-        self.previewTableWidget.setColumnCount(0)
+        self.previewMaxRows = maxRows
+        self.previewProxyModel.clear_filters()
         if dataFrame.empty:
+            self.previewTableModel.set_data_frame(pd.DataFrame())
             return
 
-        columns = list(dataFrame.columns)
-        self.previewTableWidget.setColumnCount(len(columns))
-        self.previewTableWidget.setHorizontalHeaderLabels(columns)
-        for rowIndex, (_, row) in enumerate(dataFrame.head(maxRows).iterrows()):
-            self.previewTableWidget.insertRow(rowIndex)
-            for colIndex, columnName in enumerate(columns):
-                item = QTableWidgetItem(str(row[columnName]))
-                item.setFlags(item.flags() ^ Qt.ItemIsEditable)
-                self.previewTableWidget.setItem(rowIndex, colIndex, item)
+        previewDataFrame = dataFrame.head(maxRows).copy()
+        self.previewTableModel.set_data_frame(previewDataFrame)
+        self.previewTableWidget.resizeColumnsToContents()
+        shownRows = len(previewDataFrame)
+        if len(dataFrame) > shownRows:
+            self._set_status(f'Preview showing first {shownRows}/{len(dataFrame)} rows.')
+
+    def _show_preview_column_menu(self, columnIndex: int) -> None:
+        if self.previewTableModel.columnCount() == 0:
+            return
+
+        menu = QMenu(self.previewTableWidget)
+        columnName = self.previewTableModel.headerData(
+            columnIndex,
+            Qt.Horizontal,
+            Qt.DisplayRole,
+        )
+        menu.addAction(f'Filter: {columnName}').setEnabled(False)
+        menu.addSeparator()
+
+        sortAscendingAction = menu.addAction('Sort ascending')
+        sortDescendingAction = menu.addAction('Sort descending')
+        menu.addSeparator()
+
+        clearColumnAction = menu.addAction('Clear this filter')
+        clearAllAction = menu.addAction('Clear all filters')
+        menu.addSeparator()
+
+        valueListWidget = QListWidget()
+        valueListWidget.setMinimumWidth(260)
+        valueListWidget.setMaximumHeight(320)
+        selectedValues = self.previewProxyModel.columnFilters.get(columnIndex)
+        allValues = self.previewTableModel.unique_display_values(columnIndex)
+        if selectedValues is None:
+            selectedValues = set(allValues)
+        for valueText in allValues:
+            item = QListWidgetItem(valueText if valueText else '(blank)')
+            item.setData(Qt.UserRole, valueText)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if valueText in selectedValues else Qt.Unchecked)
+            valueListWidget.addItem(item)
+
+        valueListAction = QWidgetAction(menu)
+        valueListAction.setDefaultWidget(valueListWidget)
+        menu.addAction(valueListAction)
+
+        buttonWidget = QWidget()
+        buttonLayout = QHBoxLayout(buttonWidget)
+        buttonLayout.setContentsMargins(6, 6, 6, 6)
+        selectAllButton = QPushButton('All')
+        selectNoneButton = QPushButton('None')
+        applyButton = QPushButton('Apply')
+        buttonLayout.addWidget(selectAllButton)
+        buttonLayout.addWidget(selectNoneButton)
+        buttonLayout.addWidget(applyButton)
+
+        buttonAction = QWidgetAction(menu)
+        buttonAction.setDefaultWidget(buttonWidget)
+        menu.addAction(buttonAction)
+
+        selectAllButton.clicked.connect(
+            lambda: self._set_filter_list_check_state(valueListWidget, Qt.Checked)
+        )
+        selectNoneButton.clicked.connect(
+            lambda: self._set_filter_list_check_state(valueListWidget, Qt.Unchecked)
+        )
+        applyButton.clicked.connect(
+            lambda: self._apply_preview_column_filter(columnIndex, valueListWidget, menu)
+        )
+
+        header = self.previewTableWidget.horizontalHeader()
+        menuPosition = header.mapToGlobal(
+            QPoint(header.sectionViewportPosition(columnIndex), header.height())
+        )
+        selectedAction = menu.exec(menuPosition)
+
+        if selectedAction == sortAscendingAction:
+            self.previewTableWidget.horizontalHeader().setSortIndicator(columnIndex, Qt.AscendingOrder)
+            self.previewProxyModel.sort(columnIndex, Qt.AscendingOrder)
+        elif selectedAction == sortDescendingAction:
+            self.previewTableWidget.horizontalHeader().setSortIndicator(columnIndex, Qt.DescendingOrder)
+            self.previewProxyModel.sort(columnIndex, Qt.DescendingOrder)
+        elif selectedAction == clearColumnAction:
+            self.previewProxyModel.clear_column_filter(columnIndex)
+            self._update_preview_filter_status()
+        elif selectedAction == clearAllAction:
+            self.previewProxyModel.clear_filters()
+            self._update_preview_filter_status()
+
+    def _set_filter_list_check_state(self, valueListWidget: QListWidget, checkState: Qt.CheckState) -> None:
+        for rowIndex in range(valueListWidget.count()):
+            valueListWidget.item(rowIndex).setCheckState(checkState)
+
+    def _apply_preview_column_filter(
+        self,
+        columnIndex: int,
+        valueListWidget: QListWidget,
+        menu: QMenu,
+    ) -> None:
+        selectedValues = set()
+        for rowIndex in range(valueListWidget.count()):
+            item = valueListWidget.item(rowIndex)
+            if item.checkState() == Qt.Checked:
+                selectedValues.add(item.data(Qt.UserRole))
+
+        allValues = set(self.previewTableModel.unique_display_values(columnIndex))
+        if selectedValues == allValues:
+            self.previewProxyModel.clear_column_filter(columnIndex)
+        else:
+            self.previewProxyModel.set_column_filter(columnIndex, selectedValues)
+        self._update_preview_filter_status()
+        menu.close()
+
+    def _update_preview_filter_status(self) -> None:
+        totalRows = self.previewTableModel.rowCount()
+        visibleRows = self.previewProxyModel.rowCount()
+        filterCount = len(self.previewProxyModel.columnFilters)
+        if filterCount:
+            self._set_status(
+                f'Preview filter active: {visibleRows}/{totalRows} rows shown, '
+                f'{filterCount} column filter(s).'
+            )
+        else:
+            self._set_status(f'Preview filter cleared: {totalRows} rows shown.')
 
     def _save_melted_data(self) -> None:
         if self.meltedDataFrame.empty:
