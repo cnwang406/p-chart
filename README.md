@@ -3,7 +3,7 @@
 `p-chart` is a PySide6 desktop tool for reshaping CSV/Excel data with
 `pandas.wide_to_long` and creating interactive Plotly scatter and box plots.
 
-Version: `v2.2.2`  
+Version: `v2.3`  
 Author: `cnwang`  
 License: MIT
 

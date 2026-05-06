@@ -34,7 +34,7 @@ from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.2.2'
+APP_VERSION = 'v2.3'
 APP_AUTHOR = 'cnwang'
 APP_DATE = '2024/04'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
