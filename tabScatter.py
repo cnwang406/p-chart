@@ -27,7 +27,7 @@ import warnings
 
 from qt_helpers import require_child
 from pivot_helpers import build_pivot_table, show_pivot_dialog
-from plot_templates import CUSTOM_TEMPLATE_NAME
+from plot_templates import CUSTOM_TEMPLATE_NAME, FOR_PPT_TEMPLATE_NAME
 from plotly_local import local_plotly_html
 
 try:
@@ -185,6 +185,7 @@ class TabScatterWidget:
             'xgridoff',
             'ygridoff',
             'gridon',
+            FOR_PPT_TEMPLATE_NAME,
             CUSTOM_TEMPLATE_NAME,
             'none',
         ])

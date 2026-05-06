@@ -4,6 +4,7 @@ import plotly.io as pio
 from plotly_local import PLOTLY_FONT_STACK
 
 CUSTOM_TEMPLATE_NAME = 'customized'
+FOR_PPT_TEMPLATE_NAME = 'for_ppt'
 
 
 def register_custom_template() -> None:
@@ -48,4 +49,31 @@ def register_custom_template() -> None:
     pio.templates[CUSTOM_TEMPLATE_NAME] = customTemplate
 
 
+def register_for_ppt_template() -> None:
+    forPptTemplate = go.layout.Template(pio.templates['plotly'])
+
+    forPptTemplate.layout.update(
+        font=dict(
+            family='Cascadia Code Next TC',
+        ),
+        legend=dict(
+            font=dict(
+                family='Cascadia Code Next TC',
+                size=10,
+            ),
+        ),
+    )
+    forPptTemplate.data.scatter = [
+        go.Scatter(marker=dict(size=7)),
+    ]
+    forPptTemplate.data.scattergl = [
+        go.Scattergl(marker=dict(size=7)),
+    ]
+    forPptTemplate.data.box = [
+        go.Box(marker=dict(size=7)),
+    ]
+    pio.templates[FOR_PPT_TEMPLATE_NAME] = forPptTemplate
+
+
 register_custom_template()
+register_for_ppt_template()

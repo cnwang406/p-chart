@@ -6,6 +6,8 @@ __pycache__/
 .Python
 *.csv
 AGENTS.md
+test*.*
+
 
 
 # Virtual environments
