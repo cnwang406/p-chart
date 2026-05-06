@@ -19,7 +19,7 @@ def register_custom_template() -> None:
         paper_bgcolor='#1e1e2e',
         plot_bgcolor='#1e1e2e',
         title_font_color='#FFFFFF',
-        title_x=0,
+        title_x=0.1,
         xaxis=dict(
             showgrid=True,
             gridcolor='#44475a',
@@ -36,7 +36,7 @@ def register_custom_template() -> None:
         ),
         legend=dict(
             bgcolor='rgba(0,0,0,0)',
-            font=dict(color="#111010",
+            font=dict(color="#E7E1E1",
                 family='Cascadia Code Next TC',
                 size=10,
             ),
@@ -60,7 +60,7 @@ def register_for_ppt_template() -> None:
         font=dict(
             family=PLOTLY_FONT_STACK,
             size=12,
-            color='#E6E6E6',
+            color="#0C0C0C",
         ),
         legend=dict(
             font=dict(

@@ -122,7 +122,7 @@ def _linear_regression_stats(
 def show_pivot_dialog(parent: QWidget, title: str, pivotData: pd.DataFrame) -> None:
     dialog = QDialog(parent)
     dialog.setWindowTitle(title)
-    dialog.resize(1000, 520)
+    dialog.resize(1100, 520)
     pivotFont = QFont('Cascadia Next TC', 10)
     dialog.setFont(pivotFont)
 
