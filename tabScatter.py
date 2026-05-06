@@ -27,7 +27,7 @@ import warnings
 
 from qt_helpers import require_child
 from pivot_helpers import build_pivot_table, show_pivot_dialog
-from plot_templates import CUSTOM_TEMPLATE_NAME
+from plot_templates import CUSTOM_TEMPLATE_NAME, FOR_PPT_TEMPLATE_NAME
 from plotly_local import local_plotly_html
 
 try:
@@ -182,9 +182,10 @@ class TabScatterWidget:
             'seaborn',
             'simple_white',
             'presentation',
-            'xgridoff',
-            'ygridoff',
+#           'xgridoff',
+#           'ygridoff',
             'gridon',
+            FOR_PPT_TEMPLATE_NAME,
             CUSTOM_TEMPLATE_NAME,
             'none',
         ])
@@ -222,7 +223,7 @@ class TabScatterWidget:
     def _sync_x_format_from_column(self, columnName: str) -> None:
         if self.tabDataWidget is None:
             return
-        dataFrame = self.tabDataWidget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_plot_data()
         columnName = columnName.strip()
         if not columnName or columnName not in dataFrame.columns:
             return
@@ -271,7 +272,7 @@ class TabScatterWidget:
         if self.tabDataWidget is None:
             return
 
-        dataFrame = self.tabDataWidget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_plot_data()
         if dataFrame.empty:
             return
 
@@ -289,7 +290,7 @@ class TabScatterWidget:
         if self.tabDataWidget is None:
             return
 
-        dataFrame = self.tabDataWidget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_plot_data()
         xColumn = self.xComboBox.currentText().strip()
         yColumn = self.yComboBox.currentText().strip()
         if dataFrame.empty or not yColumn or yColumn not in dataFrame.columns:
@@ -321,8 +322,8 @@ class TabScatterWidget:
         if self.tabDataWidget is None:
             return
 
-        dataFrame = self.tabDataWidget.get_melted_data()
-        columnNames = list(dataFrame.columns.astype(str)) if not dataFrame.empty else []
+        dataFrame = self.tabDataWidget.get_plot_data()
+        columnNames = list(dataFrame.columns.astype(str))
         for combo in [
             self.xComboBox,
             self.yComboBox,
@@ -339,6 +340,7 @@ class TabScatterWidget:
             if currentText in columnNames:
                 combo.setCurrentText(currentText)
         self._update_plot_title()
+        self._redraw_existing_plot()
 
     def _parse_range(self, value: str) -> tuple | None:
         if not value:
@@ -575,7 +577,7 @@ class TabScatterWidget:
             self._set_status('No data source attached to plot tab.', error=True)
             return
 
-        dataFrame = self.tabDataWidget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_plot_data()
         if dataFrame.empty:
             self._set_status('No reshaped data available. Run wide_to_long first.', error=True)
             return
@@ -675,7 +677,7 @@ class TabScatterWidget:
             self._set_status('No data source attached to plot tab.', error=True)
             return
 
-        dataFrame = self.tabDataWidget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_plot_data()
         xColumn = self.xComboBox.currentText().strip()
         yColumn = self.yComboBox.currentText().strip()
         if dataFrame.empty:
@@ -722,7 +724,7 @@ class TabScatterWidget:
             self._set_status('No data source attached to plot tab.', error=True)
             return
 
-        dataFrame = self.tabDataWidget.get_melted_data()
+        dataFrame = self.tabDataWidget.get_plot_data()
         if dataFrame.empty:
             self._set_status('No reshaped data available. Run wide_to_long first.', error=True)
             return
@@ -827,7 +829,7 @@ class TabScatterWidget:
                     y=1,
                     x=1.16,
                     title_text='Legend',
-                    bgcolor='rgba(255,255,255,0.92)',
+#                    bgcolor='rgba(255,255,255,0.92)',
                     bordercolor='rgba(0,0,0,0.15)',
                     borderwidth=1,
                 ),

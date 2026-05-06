@@ -228,7 +228,7 @@
        <layout class="QHBoxLayout" name="horizontalLayout_columns"/>
       </widget>
      </widget>
-     <widget class="QTableWidget" name="previewTableWidget">
+     <widget class="QTableView" name="previewTableWidget">
       <property name="geometry">
        <rect>
         <x>20</x>

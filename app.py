@@ -1,6 +1,14 @@
 import os
 import sys
+import os
 
+for key in [
+    "QT_PLUGIN_PATH",
+    "QT_QPA_PLATFORM_PLUGIN_PATH",
+    "DYLD_LIBRARY_PATH",
+    "DYLD_FRAMEWORK_PATH",
+]:
+    os.environ.pop(key, None)
 import PySide6
 from PySide6.QtCore import QCoreApplication, QFile
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QColor
@@ -178,14 +186,14 @@ class AppMain:
 
         titleLabel = QLabel(f'{APP_NAME} {APP_VERSION}\nby {APP_AUTHOR}, {APP_DATE}')
         titleFont = titleLabel.font()
-        titleFont.setPointSize(16)
+        titleFont.setPointSize(12)
         titleLabel.setFont(titleFont)
         headerLayout.addWidget(titleLabel, 1)
         dialogLayout.addLayout(headerLayout)
 
         acknowledgeTextEdit = QTextEdit()
         acknowledgeFont = acknowledgeTextEdit.font()
-        acknowledgeFont.setPointSize(14)
+        acknowledgeFont.setPointSize(12)
         acknowledgeTextEdit.setFont(acknowledgeFont)
         acknowledgeTextEdit.setTextColor(QColor('darkblue'))
         acknowledgeTextEdit.setReadOnly(True)
