@@ -42,6 +42,7 @@ class TabBoxplotWidget:
         self.preferWebEngine = preferWebEngine
         self.useExternalBrowser = True
         self.currentPlotHtml = ''
+        self.currentPlotFigure = None
         self.currentPlotFilePath = ''
         self.currentViewerFilePath = ''
         self._browserViewerOpened = False
@@ -93,6 +94,7 @@ class TabBoxplotWidget:
         self.plotButton = require_child(rootWidget, QPushButton, 'boxPlotButton')
         self.boxplotPivotButton = require_child(rootWidget, QPushButton, 'boxplotPivotButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'boxDownloadHtmlButton')
+        self.downloadPngButton = require_child(rootWidget, QPushButton, 'boxDownloadPngButton')
         self.statisticLabel = require_child(rootWidget, QLabel, 'boxStatisticLabel')
         self.plotAreaWidget = require_child(rootWidget, QWidget, 'boxPlotAreaWidget')
         self.statusLabel = require_child(rootWidget, QLabel, 'boxStatusLabel')
@@ -136,6 +138,7 @@ class TabBoxplotWidget:
         self.plotButton.clicked.connect(self._draw_plot)
         self.boxplotPivotButton.clicked.connect(self._show_pivot_table)
         self.downloadHtmlButton.clicked.connect(self._download_html)
+        self.downloadPngButton.clicked.connect(self._download_png)
         self.autoStatsButton.clicked.connect(self._auto_fill_plot_stats)
         self.lineColorButton.clicked.connect(self._pick_line_color)
         self.annotationColorButton.clicked.connect(self._pick_annotation_color)
@@ -792,6 +795,7 @@ class TabBoxplotWidget:
             self._set_status(f'Failed to draw boxplot: {exc}', error=True)
 
     def _render_figure(self, figure) -> None:
+        self.currentPlotFigure = figure
         self.currentPlotHtml = local_plotly_html(figure, fullHtml=True)
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
@@ -870,6 +874,28 @@ class TabBoxplotWidget:
             self._set_status(f'Boxplot HTML saved to {selectedFile}.')
         except Exception as exc:
             self._set_status(f'Failed to save Plotly HTML: {exc}', error=True)
+
+    def _download_png(self) -> None:
+        if self.currentPlotFigure is None:
+            self._set_status('No boxplot available. Draw a boxplot first.', error=True)
+            return
+
+        selectedFile, _ = QFileDialog.getSaveFileName(
+            self.rootWidget,
+            'Download Plotly PNG',
+            'boxplot.png',
+            'PNG Files (*.png);;All Files (*)',
+        )
+        if not selectedFile:
+            return
+        if not selectedFile.lower().endswith('.png'):
+            selectedFile = f'{selectedFile}.png'
+
+        try:
+            self.currentPlotFigure.write_image(selectedFile, format='png')
+            self._set_status(f'Boxplot PNG saved to {selectedFile}.')
+        except Exception as exc:
+            self._set_status(f'Failed to save Plotly PNG: {exc}', error=True)
 
     def _set_status(self, message: str, error: bool = False) -> None:
         self.statusLabel.setText(message)

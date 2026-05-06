@@ -31,7 +31,7 @@
      </font>
     </property>
     <property name="currentIndex">
-     <number>1</number>
+     <number>2</number>
     </property>
     <widget class="QWidget" name="tabData">
      <attribute name="title">
@@ -1453,6 +1453,19 @@
        <number>500</number>
       </property>
      </widget>
+     <widget class="QPushButton" name="scatterDownloadPngButton">
+      <property name="geometry">
+       <rect>
+        <x>870</x>
+        <y>260</y>
+        <width>100</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>download PNG</string>
+      </property>
+     </widget>
     </widget>
     <widget class="QWidget" name="tabBoxplot">
      <attribute name="title">
@@ -1637,7 +1650,7 @@
       <widget class="QPushButton" name="boxDownloadHtmlButton">
        <property name="geometry">
         <rect>
-         <x>300</x>
+         <x>600</x>
          <y>244</y>
          <width>121</width>
          <height>32</height>
@@ -1881,7 +1894,7 @@
          <rect>
           <x>860</x>
           <y>23</y>
-          <width>51</width>
+          <width>30</width>
           <height>21</height>
          </rect>
         </property>
@@ -2182,6 +2195,19 @@
          <string>pivot</string>
         </property>
        </widget>
+      </widget>
+      <widget class="QPushButton" name="boxDownloadPngButton">
+       <property name="geometry">
+        <rect>
+         <x>760</x>
+         <y>244</y>
+         <width>121</width>
+         <height>32</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>download PNG</string>
+       </property>
       </widget>
      </widget>
      <widget class="QLabel" name="boxStatisticLabel">

@@ -16,6 +16,7 @@ datas = [
     ('AppIcon.appiconset/icon-ios-marketing-1024x1024-1x.png', 'AppIcon.appiconset'),
 ]
 datas += collect_data_files('plotly')
+datas += collect_data_files('kaleido')
 
 hiddenimports = [
     'PySide6.QtWebEngineWidgets',
@@ -23,6 +24,7 @@ hiddenimports = [
     'PySide6.QtWebEngineQuick',
 ]
 hiddenimports += collect_submodules('plotly')
+hiddenimports += collect_submodules('kaleido')
 hiddenimports += collect_submodules('openpyxl')
 
 

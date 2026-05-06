@@ -74,6 +74,7 @@ class TabScatterWidget:
         self.plotButton = require_child(rootWidget, QPushButton, 'plotButton')
         self.scatterPivotButton = require_child(rootWidget, QPushButton, 'scatterPivotButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'downloadHtmlButton')
+        self.downloadPngButton = require_child(rootWidget, QPushButton, 'scatterDownloadPngButton')
         self.plotlyThemeComboBox = require_child(rootWidget, QComboBox, 'plotlyThemeComboBox')
         self.plotWidthSpinBox = require_child(rootWidget, QSpinBox, 'plotWidthSpinBox')
         self.plotHeightSpinBox = require_child(rootWidget, QSpinBox, 'plotHeightSpinBox')
@@ -82,6 +83,7 @@ class TabScatterWidget:
         self.statusLabel = require_child(rootWidget, QLabel, 'statusLabelTab2')
 
         self.currentPlotHtml = ''
+        self.currentPlotFigure = None
         self.currentPlotFilePath = ''
         self.currentViewerFilePath = ''
         self._browserViewerOpened = False
@@ -125,6 +127,7 @@ class TabScatterWidget:
         self.plotButton.clicked.connect(self._draw_plot)
         self.scatterPivotButton.clicked.connect(self._show_pivot_table)
         self.downloadHtmlButton.clicked.connect(self._download_html)
+        self.downloadPngButton.clicked.connect(self._download_png)
         self.autoStatsButton.clicked.connect(self._auto_fill_plot_stats)
         self.lineColorButton.clicked.connect(self._pick_line_color)
         self.plotlyThemeComboBox.currentTextChanged.connect(self._redraw_existing_plot)
@@ -911,6 +914,7 @@ class TabScatterWidget:
         )
 
     def _render_figure(self, figure) -> None:
+        self.currentPlotFigure = figure
         self.currentPlotHtml = local_plotly_html(figure, fullHtml=True)
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
@@ -989,6 +993,28 @@ class TabScatterWidget:
             self._set_status(f'Plot HTML saved to {selectedFile}.')
         except Exception as exc:
             self._set_status(f'Failed to save Plotly HTML: {exc}', error=True)
+
+    def _download_png(self) -> None:
+        if self.currentPlotFigure is None:
+            self._set_status('No plot available. Draw a plot first.', error=True)
+            return
+
+        selectedFile, _ = QFileDialog.getSaveFileName(
+            self.rootWidget,
+            'Download Plotly PNG',
+            'plot.png',
+            'PNG Files (*.png);;All Files (*)',
+        )
+        if not selectedFile:
+            return
+        if not selectedFile.lower().endswith('.png'):
+            selectedFile = f'{selectedFile}.png'
+
+        try:
+            self.currentPlotFigure.write_image(selectedFile, format='png')
+            self._set_status(f'Plot PNG saved to {selectedFile}.')
+        except Exception as exc:
+            self._set_status(f'Failed to save Plotly PNG: {exc}', error=True)
 
     def _set_status(self, message: str, error: bool = False) -> None:
         self.statusLabel.setText(message)

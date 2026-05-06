@@ -31,7 +31,7 @@
      </font>
     </property>
     <property name="currentIndex">
-     <number>2</number>
+     <number>1</number>
     </property>
     <widget class="QWidget" name="tabData">
      <attribute name="title">
@@ -1632,9 +1632,9 @@ here.</string>
      <widget class="QPushButton" name="downloadHtmlButton">
       <property name="geometry">
        <rect>
-        <x>194</x>
+        <x>740</x>
         <y>261</y>
-        <width>131</width>
+        <width>110</width>
         <height>32</height>
        </rect>
       </property>
@@ -1651,7 +1651,7 @@ here.</string>
      <widget class="QLabel" name="plotlyThemeLabel">
       <property name="geometry">
        <rect>
-        <x>339</x>
+        <x>170</x>
         <y>267</y>
         <width>46</width>
         <height>16</height>
@@ -1672,7 +1672,7 @@ here.</string>
        <rect>
         <x>21</x>
         <y>261</y>
-        <width>161</width>
+        <width>100</width>
         <height>32</height>
        </rect>
       </property>
@@ -1689,9 +1689,9 @@ here.</string>
      <widget class="QComboBox" name="plotlyThemeComboBox">
       <property name="geometry">
        <rect>
-        <x>390</x>
+        <x>220</x>
         <y>260</y>
-        <width>103</width>
+        <width>150</width>
         <height>32</height>
        </rect>
       </property>
@@ -1705,7 +1705,7 @@ here.</string>
      <widget class="QLabel" name="plotWidthLabel">
       <property name="geometry">
        <rect>
-        <x>510</x>
+        <x>390</x>
         <y>267</y>
         <width>45</width>
         <height>16</height>
@@ -1724,7 +1724,7 @@ here.</string>
      <widget class="QSpinBox" name="plotWidthSpinBox">
       <property name="geometry">
        <rect>
-        <x>560</x>
+        <x>440</x>
         <y>260</y>
         <width>91</width>
         <height>32</height>
@@ -1752,7 +1752,7 @@ here.</string>
      <widget class="QLabel" name="plotHeightLabel">
       <property name="geometry">
        <rect>
-        <x>670</x>
+        <x>550</x>
         <y>267</y>
         <width>51</width>
         <height>16</height>
@@ -1771,7 +1771,7 @@ here.</string>
      <widget class="QSpinBox" name="plotHeightSpinBox">
       <property name="geometry">
        <rect>
-        <x>730</x>
+        <x>610</x>
         <y>260</y>
         <width>91</width>
         <height>32</height>
@@ -1794,6 +1794,19 @@ here.</string>
       </property>
       <property name="value">
        <number>500</number>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="scatterDownloadPngButton">
+      <property name="geometry">
+       <rect>
+        <x>870</x>
+        <y>261</y>
+        <width>100</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>download PNG</string>
       </property>
      </widget>
     </widget>
@@ -1980,7 +1993,7 @@ here.</string>
       <widget class="QPushButton" name="boxDownloadHtmlButton">
        <property name="geometry">
         <rect>
-         <x>310</x>
+         <x>690</x>
          <y>244</y>
          <width>121</width>
          <height>32</height>
@@ -2008,7 +2021,7 @@ here.</string>
         <rect>
          <x>200</x>
          <y>244</y>
-         <width>101</width>
+         <width>140</width>
          <height>32</height>
         </rect>
        </property>
@@ -2171,7 +2184,7 @@ here.</string>
        <widget class="QLineEdit" name="boxAnnotationFormatLineEdit">
         <property name="geometry">
          <rect>
-          <x>890</x>
+          <x>880</x>
           <y>20</y>
           <width>51</width>
           <height>24</height>
@@ -2538,6 +2551,19 @@ table</string>
          <string>pivot</string>
         </property>
        </widget>
+      </widget>
+      <widget class="QPushButton" name="boxDownloadPngButton">
+       <property name="geometry">
+        <rect>
+         <x>830</x>
+         <y>244</y>
+         <width>121</width>
+         <height>32</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>download PNG</string>
+       </property>
       </widget>
      </widget>
      <widget class="QLabel" name="boxStatisticLabel">
