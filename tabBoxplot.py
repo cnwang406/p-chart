@@ -747,7 +747,7 @@ class TabBoxplotWidget:
                     y=1,
                     x=1.02,
                     title_text='Legend',
-                    bgcolor='rgba(255,255,255,0.92)',
+#                    bgcolor='rgba(255,255,255,0.92)',
                     bordercolor='rgba(0,0,0,0.15)',
                     borderwidth=1,
                 ),

@@ -13,12 +13,13 @@ def register_custom_template() -> None:
     customTemplate.layout.update(
         font=dict(
             family=PLOTLY_FONT_STACK,
-            size=14,
+            size=12,
             color='#E6E6E6',
         ),
         paper_bgcolor='#1e1e2e',
         plot_bgcolor='#1e1e2e',
         title_font_color='#FFFFFF',
+        title_x=0,
         xaxis=dict(
             showgrid=True,
             gridcolor='#44475a',
@@ -35,7 +36,10 @@ def register_custom_template() -> None:
         ),
         legend=dict(
             bgcolor='rgba(0,0,0,0)',
-            font=dict(color="#111010"),
+            font=dict(color="#111010",
+                family='Cascadia Code Next TC',
+                size=10,
+            ),
         ),
     )
     customTemplate.layout.colorway = [
@@ -45,7 +49,7 @@ def register_custom_template() -> None:
     '#FFD93D',  # 黃（highlight）
     '#C77DFF',  # 紫（分類）
     '#FF9F1C',  # 橘（補充）
-]
+    ]
     pio.templates[CUSTOM_TEMPLATE_NAME] = customTemplate
 
 
@@ -54,7 +58,9 @@ def register_for_ppt_template() -> None:
 
     forPptTemplate.layout.update(
         font=dict(
-            family='Cascadia Code Next TC',
+            family=PLOTLY_FONT_STACK,
+            size=12,
+            color='#E6E6E6',
         ),
         legend=dict(
             font=dict(
@@ -71,6 +77,14 @@ def register_for_ppt_template() -> None:
     ]
     forPptTemplate.data.box = [
         go.Box(marker=dict(size=7)),
+    ]
+    forPptTemplate.layout.colorway = [
+    '#FF6B6B',  # 紅（醒目）
+    '#4D96FF',  # 藍（主力）
+    '#6BCB77',  # 綠（穩定）
+    '#FFD93D',  # 黃（highlight）
+    '#C77DFF',  # 紫（分類）
+    '#FF9F1C',  # 橘（補充）
     ]
     pio.templates[FOR_PPT_TEMPLATE_NAME] = forPptTemplate
 

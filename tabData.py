@@ -324,7 +324,7 @@ class TabDataWidget:
 
         infoTextEdit = QTextEdit()
         infoFont = infoTextEdit.font()
-        infoFont.setPointSize(16)
+        infoFont.setPointSize(12)
         infoTextEdit.setFont(infoFont)
         infoTextEdit.setReadOnly(True)
         infoTextEdit.setStyleSheet('QTextEdit { color: rgba(0, 0, 0, 204); }')
