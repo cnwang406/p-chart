@@ -7,8 +7,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1018</width>
-    <height>942</height>
+    <width>1045</width>
+    <height>820</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -31,7 +31,7 @@
      </font>
     </property>
     <property name="currentIndex">
-     <number>2</number>
+     <number>1</number>
     </property>
     <widget class="QWidget" name="tabData">
      <attribute name="title">
@@ -1556,7 +1556,7 @@ table</string>
       <property name="geometry">
        <rect>
         <x>20</x>
-        <y>319</y>
+        <y>326</y>
         <width>961</width>
         <height>520</height>
        </rect>
@@ -1589,18 +1589,21 @@ table</string>
        <rect>
         <x>20</x>
         <y>290</y>
-        <width>941</width>
-        <height>24</height>
+        <width>791</width>
+        <height>36</height>
        </rect>
       </property>
       <property name="font">
        <font>
         <family>Cascadia Next TC</family>
-        <pointsize>10</pointsize>
+        <pointsize>9</pointsize>
        </font>
       </property>
       <property name="text">
        <string>Statistics appear here.</string>
+      </property>
+      <property name="wordWrap">
+       <bool>true</bool>
       </property>
       <property name="textInteractionFlags">
        <set>Qt::TextInteractionFlag::TextSelectableByKeyboard|Qt::TextInteractionFlag::TextSelectableByMouse</set>
@@ -1812,7 +1815,7 @@ here.</string>
      <widget class="QCheckBox" name="scatterFilterAnnotationCheckBox">
       <property name="geometry">
        <rect>
-        <x>740</x>
+        <x>820</x>
         <y>290</y>
         <width>151</width>
         <height>20</height>
@@ -2710,11 +2713,14 @@ table</string>
       <property name="font">
        <font>
         <family>Cascadia Next TC</family>
-        <pointsize>10</pointsize>
+        <pointsize>9</pointsize>
        </font>
       </property>
       <property name="text">
        <string>Statistics appear here.</string>
+      </property>
+      <property name="wordWrap">
+       <bool>true</bool>
       </property>
       <property name="textInteractionFlags">
        <set>Qt::TextInteractionFlag::TextSelectableByKeyboard|Qt::TextInteractionFlag::TextSelectableByMouse</set>

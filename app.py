@@ -1,7 +1,16 @@
 import os
 import sys
-import os
+import importlib.util
+# 找 PySide6 path（還沒 import Qt）
+spec = importlib.util.find_spec("PySide6")
+print (f'PySide6 found at: {spec.origin}')
+baseDir = os.path.dirname(spec.origin)
+qtDir = os.path.join(baseDir, "Qt")
 
+pluginPath = os.path.join(qtDir, "plugins")
+frameworkPath = os.path.join(qtDir, "lib")
+print (f'QT_PLUGIN_PATH: {pluginPath}')
+print (f'QT_FRAMEWORK_PATH: {frameworkPath}')   
 for key in [
     "QT_PLUGIN_PATH",
     "QT_QPA_PLATFORM_PLUGIN_PATH",
@@ -9,6 +18,16 @@ for key in [
     "DYLD_FRAMEWORK_PATH",
 ]:
     os.environ.pop(key, None)
+
+# 🔥 鎖死 Qt
+os.environ["QT_PLUGIN_PATH"] = pluginPath
+os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = os.path.join(pluginPath, "platforms")
+os.environ["DYLD_FRAMEWORK_PATH"] = frameworkPath
+
+# 🔥 可選：關掉 designer plugin 掃描
+os.environ["PYSIDE_DESIGNER_PLUGINS"] = ""
+
+
 import PySide6
 from PySide6.QtCore import QCoreApplication, QFile
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QColor
