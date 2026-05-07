@@ -1030,14 +1030,15 @@ class TabScatterWidget:
             'plot.png',
             'PNG Files (*.png);;All Files (*)',
         )
-        if not selectedFile:
-            return
-        if not selectedFile.lower().endswith('.png'):
+        if selectedFile and not selectedFile.lower().endswith('.png'):
             selectedFile = f'{selectedFile}.png'
 
         try:
             save_plotly_png_and_copy_to_clipboard(self.currentPlotFigure, selectedFile)
-            self._set_status(f'Plot PNG saved to {selectedFile}, and copied to clipboard.')
+            if selectedFile:
+                self._set_status(f'Plot PNG saved to {selectedFile}, and copied to clipboard.')
+            else:
+                self._set_status('Plot PNG copied to clipboard.')
         except Exception as exc:
             self._set_status(f'Failed to save Plotly PNG: {exc}', error=True)
 
