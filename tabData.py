@@ -387,9 +387,10 @@ class TabDataWidget:
                 self.sheetComboBox.setEnabled(False)
                 self.loadButton.setEnabled(False)
             else:
-                excelReader = pd.ExcelFile(filePath)
+                with pd.ExcelFile(filePath) as excelReader:
+                    sheetNames = excelReader.sheet_names
                 self.sheetComboBox.clear()
-                self.sheetComboBox.addItems(excelReader.sheet_names)
+                self.sheetComboBox.addItems(sheetNames)
                 self.sheetComboBox.setEnabled(True)
                 self.loadButton.setEnabled(True)
                 self._set_status('Excel workbook loaded. Choose a sheet and press Load.')
@@ -417,7 +418,8 @@ class TabDataWidget:
     def _load_sheet_data(self, sheetName: str) -> None:
         try:
             self._invalidate_melted_data()
-            self.loadedDataFrame = pd.read_excel(self.loadedFilePath, sheet_name=sheetName)
+            with pd.ExcelFile(self.loadedFilePath) as excelReader:
+                self.loadedDataFrame = pd.read_excel(excelReader, sheet_name=sheetName)
             normalizedColumns = self._normalize_loaded_datetime_formats(self.loadedDataFrame)
             hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
             self._append_detected_stubnames()
