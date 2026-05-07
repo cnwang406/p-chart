@@ -1085,7 +1085,7 @@ class TabDataWidget:
             allValues = self._unique_preview_filter_values(columnIndex)
             selectedValueTexts = sorted(selectedValues, key=str.lower)
             shownValues = ', '.join(
-                escape(valueText if valueText else '(blank)')
+                escape(valueText.strip() if valueText else '(blank)')
                 for valueText in selectedValueTexts[:5]
             )
             hiddenCount = max(0, len(selectedValueTexts) - 5)
