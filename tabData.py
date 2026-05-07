@@ -1,5 +1,6 @@
 import os
 import re
+from html import escape
 
 import pandas as pd
 from PySide6.QtCore import (
@@ -1064,6 +1065,34 @@ class TabDataWidget:
         if self.meltedDataFrame.empty:
             return self._filter_dataframe_by_preview_filters(self.loadedDataFrame)
         return self._filter_dataframe_by_preview_filters(self.meltedDataFrame)
+
+    def preview_filter_annotation_text(self) -> str:
+        if not self.previewProxyModel.columnFilters:
+            return ''
+
+        sourceTotalRows = len(self.previewSourceDataFrame)
+        sourceVisibleRows = len(self.get_plot_data())
+        filterLines = [
+            f'Preview filter: {sourceVisibleRows}/{sourceTotalRows} rows used'
+        ]
+        for columnIndex, selectedValues in self.previewProxyModel.columnFilters.items():
+            if columnIndex < 0 or columnIndex >= len(self.previewSourceDataFrame.columns):
+                continue
+
+            columnName = escape(str(self.previewSourceDataFrame.columns[columnIndex]))
+            allValues = self._unique_preview_filter_values(columnIndex)
+            selectedValueTexts = sorted(selectedValues, key=str.lower)
+            shownValues = ', '.join(
+                escape(valueText if valueText else '(blank)')
+                for valueText in selectedValueTexts[:5]
+            )
+            hiddenCount = max(0, len(selectedValueTexts) - 5)
+            if hiddenCount:
+                shownValues = f'{shownValues}, ... +{hiddenCount}'
+            filterLines.append(
+                f'{columnName}: {shownValues} ({len(selectedValues)}/{len(allValues)} selected)'
+            )
+        return '<br>'.join(filterLines)
 
     def has_loaded_data(self) -> bool:
         return not self.loadedDataFrame.empty

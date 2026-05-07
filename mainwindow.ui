@@ -1025,6 +1025,25 @@
         <bool>true</bool>
        </property>
       </widget>
+      <widget class="QCheckBox" name="scatterFilterAnnotationCheckBox">
+       <property name="geometry">
+        <rect>
+         <x>210</x>
+         <y>123</y>
+         <width>151</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>Show preview filter condition on plot.</string>
+       </property>
+       <property name="text">
+        <string>Show filter note</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
       <widget class="QPushButton" name="autoStatsButton">
        <property name="geometry">
         <rect>
@@ -1466,6 +1485,41 @@
        <string>download PNG</string>
       </property>
      </widget>
+     <widget class="QLabel" name="scatterLegendFontSizeLabel">
+      <property name="geometry">
+       <rect>
+        <x>700</x>
+        <y>299</y>
+        <width>51</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>legend</string>
+      </property>
+     </widget>
+     <widget class="QSpinBox" name="scatterLegendFontSizeSpinButton">
+      <property name="geometry">
+       <rect>
+        <x>760</x>
+        <y>292</y>
+        <width>51</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="minimum">
+       <number>9</number>
+      </property>
+      <property name="maximum">
+       <number>16</number>
+      </property>
+      <property name="singleStep">
+       <number>1</number>
+      </property>
+      <property name="value">
+       <number>12</number>
+      </property>
+     </widget>
     </widget>
     <widget class="QWidget" name="tabBoxplot">
      <attribute name="title">
@@ -1629,6 +1683,25 @@
        </property>
        <property name="text">
         <string>Show legend</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+      <widget class="QCheckBox" name="boxFilterAnnotationCheckBox">
+       <property name="geometry">
+        <rect>
+         <x>750</x>
+         <y>92</y>
+         <width>151</width>
+         <height>24</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>Show preview filter condition on plot.</string>
+       </property>
+       <property name="text">
+        <string>Show filter note</string>
        </property>
        <property name="checked">
         <bool>true</bool>
@@ -2205,8 +2278,43 @@
          <height>32</height>
         </rect>
        </property>
+      <property name="text">
+       <string>download PNG</string>
+      </property>
+     </widget>
+      <widget class="QLabel" name="boxplotLegendFontSizeLabel">
+       <property name="geometry">
+        <rect>
+         <x>650</x>
+         <y>248</y>
+         <width>51</width>
+         <height>16</height>
+        </rect>
+       </property>
        <property name="text">
-        <string>download PNG</string>
+        <string>legend</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="boxplotLegendFontSizeButton">
+       <property name="geometry">
+        <rect>
+         <x>710</x>
+         <y>240</y>
+         <width>51</width>
+         <height>32</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <number>9</number>
+       </property>
+       <property name="maximum">
+        <number>16</number>
+       </property>
+       <property name="singleStep">
+        <number>1</number>
+       </property>
+       <property name="value">
+        <number>12</number>
        </property>
       </widget>
      </widget>

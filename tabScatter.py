@@ -27,6 +27,8 @@ import warnings
 
 from qt_helpers import require_child
 from pivot_helpers import build_pivot_table, show_pivot_dialog
+from plot_annotation_helpers import add_preview_filter_annotation
+from plot_export_helpers import save_plotly_png_and_copy_to_clipboard
 from plot_templates import CUSTOM_TEMPLATE_NAME, FOR_PPT_TEMPLATE_NAME
 from plotly_local import local_plotly_html
 
@@ -66,6 +68,11 @@ class TabScatterWidget:
         self.xFormatLineEdit = require_child(rootWidget, QLineEdit, 'xFormatLineEdit')
         self.yFormatLineEdit = require_child(rootWidget, QLineEdit, 'yFormatLineEdit')
         self.legendCheckBox = require_child(rootWidget, QCheckBox, 'legendCheckBox')
+        self.filterAnnotationCheckBox = require_child(
+            rootWidget,
+            QCheckBox,
+            'scatterFilterAnnotationCheckBox',
+        )
         self.autoStatsButton = require_child(rootWidget, QPushButton, 'autoStatsButton')
         self.hlineLineEdit = require_child(rootWidget, QLineEdit, 'hlineLineEdit')
         self.vlineLineEdit = require_child(rootWidget, QLineEdit, 'vlineLineEdit')
@@ -78,6 +85,11 @@ class TabScatterWidget:
         self.plotlyThemeComboBox = require_child(rootWidget, QComboBox, 'plotlyThemeComboBox')
         self.plotWidthSpinBox = require_child(rootWidget, QSpinBox, 'plotWidthSpinBox')
         self.plotHeightSpinBox = require_child(rootWidget, QSpinBox, 'plotHeightSpinBox')
+        self.legendFontSizeSpinBox = require_child(
+            rootWidget,
+            QSpinBox,
+            'scatterLegendFontSizeSpinButton',
+        )
         self.plotAreaWidget = require_child(rootWidget, QWidget, 'plotAreaWidget')
         self.statisticLabel = require_child(rootWidget, QLabel, 'statisticLabel')
         self.statusLabel = require_child(rootWidget, QLabel, 'statusLabelTab2')
@@ -129,11 +141,13 @@ class TabScatterWidget:
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.downloadPngButton.clicked.connect(self._download_png)
         self.autoStatsButton.clicked.connect(self._auto_fill_plot_stats)
+        self.filterAnnotationCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.lineColorButton.clicked.connect(self._pick_line_color)
         self.plotlyThemeComboBox.currentTextChanged.connect(self._redraw_existing_plot)
         self.lineWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotHeightSpinBox.valueChanged.connect(self._redraw_existing_plot)
+        self.legendFontSizeSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotTitleLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
         self.xTitleLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
         self.yTitleLineEdit.editingFinished.connect(self._draw_plot_when_xy_ready)
@@ -177,6 +191,8 @@ class TabScatterWidget:
         self.plotHeightSpinBox.setSingleStep(50)
         if self.plotHeightSpinBox.value() <= 200:
             self.plotHeightSpinBox.setValue(max(200, self.plotAreaWidget.height()))
+        self.legendFontSizeSpinBox.setRange(6, 32)
+        self.legendFontSizeSpinBox.setValue(self.legendFontSizeSpinBox.value() or 12)
         self.plotlyThemeComboBox.addItems([
             'plotly',
             'plotly_white',
@@ -767,6 +783,7 @@ class TabScatterWidget:
         lineColorWithOpacity = self._line_color_with_opacity(lineWidth)
         plotWidth = self.plotWidthSpinBox.value()
         plotHeight = self.plotHeightSpinBox.value()
+        legendFontSize = self.legendFontSizeSpinBox.value()
 
         plotData = dataFrame.copy()
         if xIsDate:
@@ -832,6 +849,8 @@ class TabScatterWidget:
                     y=1,
                     x=1.16,
                     title_text='Legend',
+                    font=dict(size=legendFontSize),
+                    title_font=dict(size=legendFontSize),
 #                    bgcolor='rgba(255,255,255,0.92)',
                     bordercolor='rgba(0,0,0,0.15)',
                     borderwidth=1,
@@ -882,6 +901,12 @@ class TabScatterWidget:
                         annotation_position='top right',
                         annotation_font_color=lineColorWithOpacity,
                     )
+
+            if self.filterAnnotationCheckBox.isChecked():
+                add_preview_filter_annotation(
+                    fig,
+                    self.tabDataWidget.preview_filter_annotation_text(),
+                )
 
             self._render_figure(fig)
             self._set_status('Plot created successfully.')
@@ -1011,8 +1036,8 @@ class TabScatterWidget:
             selectedFile = f'{selectedFile}.png'
 
         try:
-            self.currentPlotFigure.write_image(selectedFile, format='png')
-            self._set_status(f'Plot PNG saved to {selectedFile}.')
+            save_plotly_png_and_copy_to_clipboard(self.currentPlotFigure, selectedFile)
+            self._set_status(f'Plot PNG saved to {selectedFile}, and copied to clipboard.')
         except Exception as exc:
             self._set_status(f'Failed to save Plotly PNG: {exc}', error=True)
 

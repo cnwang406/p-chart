@@ -31,7 +31,7 @@
      </font>
     </property>
     <property name="currentIndex">
-     <number>1</number>
+     <number>2</number>
     </property>
     <widget class="QWidget" name="tabData">
      <attribute name="title">
@@ -1421,10 +1421,10 @@ target</string>
       <widget class="QLabel" name="attachLabel_3">
        <property name="geometry">
         <rect>
-         <x>210</x>
+         <x>230</x>
          <y>130</y>
          <width>288</width>
-         <height>11</height>
+         <height>20</height>
         </rect>
        </property>
        <property name="font">
@@ -1558,7 +1558,7 @@ table</string>
         <x>20</x>
         <y>319</y>
         <width>961</width>
-        <height>501</height>
+        <height>520</height>
        </rect>
       </property>
       <property name="sizePolicy">
@@ -1632,9 +1632,9 @@ here.</string>
      <widget class="QPushButton" name="downloadHtmlButton">
       <property name="geometry">
        <rect>
-        <x>740</x>
+        <x>840</x>
         <y>261</y>
-        <width>110</width>
+        <width>70</width>
         <height>32</height>
        </rect>
       </property>
@@ -1645,7 +1645,7 @@ here.</string>
        </font>
       </property>
       <property name="text">
-       <string>Download HTML</string>
+       <string>D/L HTML</string>
       </property>
      </widget>
      <widget class="QLabel" name="plotlyThemeLabel">
@@ -1799,14 +1799,80 @@ here.</string>
      <widget class="QPushButton" name="scatterDownloadPngButton">
       <property name="geometry">
        <rect>
-        <x>870</x>
+        <x>920</x>
         <y>261</y>
-        <width>100</width>
+        <width>60</width>
         <height>32</height>
        </rect>
       </property>
       <property name="text">
-       <string>download PNG</string>
+       <string>D/L PNG</string>
+      </property>
+     </widget>
+     <widget class="QCheckBox" name="scatterFilterAnnotationCheckBox">
+      <property name="geometry">
+       <rect>
+        <x>740</x>
+        <y>290</y>
+        <width>151</width>
+        <height>20</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Show preview filter condition on plot.</string>
+      </property>
+      <property name="text">
+       <string>Show filter note</string>
+      </property>
+      <property name="checked">
+       <bool>true</bool>
+      </property>
+     </widget>
+     <widget class="QSpinBox" name="scatterLegendFontSizeSpinButton">
+      <property name="geometry">
+       <rect>
+        <x>800</x>
+        <y>260</y>
+        <width>40</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>10</pointsize>
+       </font>
+      </property>
+      <property name="minimum">
+       <number>9</number>
+      </property>
+      <property name="maximum">
+       <number>16</number>
+      </property>
+      <property name="singleStep">
+       <number>1</number>
+      </property>
+      <property name="value">
+       <number>12</number>
+      </property>
+     </widget>
+     <widget class="QLabel" name="plotHeightLabel_2">
+      <property name="geometry">
+       <rect>
+        <x>750</x>
+        <y>270</y>
+        <width>51</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>10</pointsize>
+       </font>
+      </property>
+      <property name="text">
+       <string>legend</string>
       </property>
      </widget>
     </widget>
@@ -1993,14 +2059,14 @@ here.</string>
       <widget class="QPushButton" name="boxDownloadHtmlButton">
        <property name="geometry">
         <rect>
-         <x>690</x>
+         <x>780</x>
          <y>244</y>
-         <width>121</width>
+         <width>80</width>
          <height>32</height>
         </rect>
        </property>
        <property name="text">
-        <string>download HTML</string>
+        <string>D/L HTML</string>
        </property>
       </widget>
       <widget class="QLabel" name="boxThemeLabel">
@@ -2555,14 +2621,80 @@ table</string>
       <widget class="QPushButton" name="boxDownloadPngButton">
        <property name="geometry">
         <rect>
-         <x>830</x>
+         <x>870</x>
          <y>244</y>
-         <width>121</width>
+         <width>80</width>
          <height>32</height>
         </rect>
        </property>
        <property name="text">
-        <string>download PNG</string>
+        <string>D/L PNG</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="boxplotLegendFontSizeButton">
+       <property name="geometry">
+        <rect>
+         <x>740</x>
+         <y>244</y>
+         <width>40</width>
+         <height>32</height>
+        </rect>
+       </property>
+       <property name="font">
+        <font>
+         <family>Cascadia Next TC</family>
+         <pointsize>10</pointsize>
+        </font>
+       </property>
+       <property name="minimum">
+        <number>9</number>
+       </property>
+       <property name="maximum">
+        <number>16</number>
+       </property>
+       <property name="singleStep">
+        <number>1</number>
+       </property>
+       <property name="value">
+        <number>12</number>
+       </property>
+      </widget>
+      <widget class="QLabel" name="plotHeightLabel_3">
+       <property name="geometry">
+        <rect>
+         <x>680</x>
+         <y>250</y>
+         <width>51</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="font">
+        <font>
+         <family>Cascadia Next TC</family>
+         <pointsize>10</pointsize>
+        </font>
+       </property>
+       <property name="text">
+        <string>legend</string>
+       </property>
+      </widget>
+      <widget class="QCheckBox" name="boxFilterAnnotationCheckBox">
+       <property name="geometry">
+        <rect>
+         <x>540</x>
+         <y>250</y>
+         <width>151</width>
+         <height>24</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>Show preview filter condition on plot.</string>
+       </property>
+       <property name="text">
+        <string>Show filter note</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
        </property>
       </widget>
      </widget>

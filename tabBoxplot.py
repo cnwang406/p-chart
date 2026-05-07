@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
 
 from qt_helpers import require_child
 from pivot_helpers import build_pivot_table, show_pivot_dialog
+from plot_annotation_helpers import add_preview_filter_annotation
+from plot_export_helpers import save_plotly_png_and_copy_to_clipboard
 from plot_templates import CUSTOM_TEMPLATE_NAME, FOR_PPT_TEMPLATE_NAME
 from plotly_local import local_plotly_html
 
@@ -85,12 +87,22 @@ class TabBoxplotWidget:
         self.yRangeLineEdit = require_child(rootWidget, QLineEdit, 'boxYRangeLineEdit')
         self.hlineLineEdit = require_child(rootWidget, QLineEdit, 'boxYLinesLineEdit')
         self.legendCheckBox = require_child(rootWidget, QCheckBox, 'boxLegendCheckBox')
+        self.filterAnnotationCheckBox = require_child(
+            rootWidget,
+            QCheckBox,
+            'boxFilterAnnotationCheckBox',
+        )
         self.autoStatsButton = require_child(rootWidget, QPushButton, 'boxAutoStatsButton')
         self.lineColorButton = require_child(rootWidget, QPushButton, 'boxLineColorButton')
         self.lineWidthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'boxLineWidthSpinBox')
         self.plotlyThemeComboBox = require_child(rootWidget, QComboBox, 'boxPlotlyThemeComboBox')
         self.plotWidthSpinBox = require_child(rootWidget, QSpinBox, 'boxPlotWidthSpinBox')
         self.plotHeightSpinBox = require_child(rootWidget, QSpinBox, 'boxPlotHeightSpinBox')
+        self.legendFontSizeSpinBox = require_child(
+            rootWidget,
+            QSpinBox,
+            'boxplotLegendFontSizeButton',
+        )
         self.plotButton = require_child(rootWidget, QPushButton, 'boxPlotButton')
         self.boxplotPivotButton = require_child(rootWidget, QPushButton, 'boxplotPivotButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'boxDownloadHtmlButton')
@@ -143,6 +155,7 @@ class TabBoxplotWidget:
         self.lineColorButton.clicked.connect(self._pick_line_color)
         self.annotationColorButton.clicked.connect(self._pick_annotation_color)
         self.legendCheckBox.stateChanged.connect(self._redraw_existing_plot)
+        self.filterAnnotationCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.pointsComboBox.currentTextChanged.connect(self._redraw_existing_plot)
         for _statName, annotationCheckBox in self.annotationCheckBoxes:
             annotationCheckBox.stateChanged.connect(self._redraw_existing_plot)
@@ -153,6 +166,7 @@ class TabBoxplotWidget:
         self.lineWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotHeightSpinBox.valueChanged.connect(self._redraw_existing_plot)
+        self.legendFontSizeSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotTitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
         self.yTitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
         self.yRangeLineEdit.editingFinished.connect(self._draw_plot_when_ready)
@@ -197,6 +211,8 @@ class TabBoxplotWidget:
         self.plotHeightSpinBox.setRange(200, 5000)
         self.plotHeightSpinBox.setSingleStep(50)
         self.plotHeightSpinBox.setValue(500)
+        self.legendFontSizeSpinBox.setRange(6, 32)
+        self.legendFontSizeSpinBox.setValue(self.legendFontSizeSpinBox.value() or 12)
         self.plotlyThemeComboBox.addItems([
             'plotly',
             'plotly_white',
@@ -701,6 +717,7 @@ class TabBoxplotWidget:
         lineColorWithOpacity = self._line_color_with_opacity(lineWidth)
         pointsMode, jitterValue = self._plotly_points_mode()
         selectedAnnotationStats = self._selected_annotation_stats()
+        legendFontSize = self.legendFontSizeSpinBox.value()
 
         plotData = dataFrame.copy()
         plotData[yColumn] = pd.to_numeric(plotData[yColumn], errors='coerce')
@@ -750,6 +767,8 @@ class TabBoxplotWidget:
                     y=1,
                     x=1.02,
                     title_text='Legend',
+                    font=dict(size=legendFontSize),
+                    title_font=dict(size=legendFontSize),
 #                    bgcolor='rgba(255,255,255,0.92)',
                     bordercolor='rgba(0,0,0,0.15)',
                     borderwidth=1,
@@ -787,6 +806,12 @@ class TabBoxplotWidget:
                     annotation_position='top right',
                     annotation_font_color=lineColorWithOpacity,
                     annotation_font_size=10,
+                )
+
+            if self.filterAnnotationCheckBox.isChecked():
+                add_preview_filter_annotation(
+                    fig,
+                    self.tabDataWidget.preview_filter_annotation_text(),
                 )
 
             self._render_figure(fig)
@@ -892,8 +917,8 @@ class TabBoxplotWidget:
             selectedFile = f'{selectedFile}.png'
 
         try:
-            self.currentPlotFigure.write_image(selectedFile, format='png')
-            self._set_status(f'Boxplot PNG saved to {selectedFile}.')
+            save_plotly_png_and_copy_to_clipboard(self.currentPlotFigure, selectedFile)
+            self._set_status(f'Boxplot PNG saved to {selectedFile}, and copied to clipboard.')
         except Exception as exc:
             self._set_status(f'Failed to save Plotly PNG: {exc}', error=True)
 
