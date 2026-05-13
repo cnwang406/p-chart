@@ -879,6 +879,32 @@
         <string>還能設定透明度</string>
        </property>
       </widget>
+      <widget class="QCheckBox" name="scatterPlotRegressionCheckBox">
+       <property name="geometry">
+        <rect>
+         <x>760</x>
+         <y>30</y>
+         <width>86</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>regress line</string>
+       </property>
+      </widget>
+      <widget class="QCheckBox" name="scatterPlotRegressionAnnCheckBox">
+       <property name="geometry">
+        <rect>
+         <x>850</x>
+         <y>30</y>
+         <width>86</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>annot. reg.</string>
+       </property>
+      </widget>
      </widget>
      <widget class="QGroupBox" name="layoutGroupBox">
       <property name="geometry">

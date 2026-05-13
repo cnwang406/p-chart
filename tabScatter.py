@@ -68,6 +68,16 @@ class TabScatterWidget:
         self.xFormatLineEdit = require_child(rootWidget, QLineEdit, 'xFormatLineEdit')
         self.yFormatLineEdit = require_child(rootWidget, QLineEdit, 'yFormatLineEdit')
         self.legendCheckBox = require_child(rootWidget, QCheckBox, 'legendCheckBox')
+        self.regressionCheckBox = require_child(
+            rootWidget,
+            QCheckBox,
+            'scatterPlotRegressionCheckBox',
+        )
+        self.regressionAnnotationCheckBox = require_child(
+            rootWidget,
+            QCheckBox,
+            'scatterPlotRegressionAnnCheckBox',
+        )
         self.filterAnnotationCheckBox = require_child(
             rootWidget,
             QCheckBox,
@@ -142,6 +152,8 @@ class TabScatterWidget:
         self.downloadPngButton.clicked.connect(self._download_png)
         self.autoStatsButton.clicked.connect(self._auto_fill_plot_stats)
         self.filterAnnotationCheckBox.stateChanged.connect(self._redraw_existing_plot)
+        self.regressionCheckBox.stateChanged.connect(self._redraw_existing_plot)
+        self.regressionAnnotationCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.lineColorButton.clicked.connect(self._pick_line_color)
         self.plotlyThemeComboBox.currentTextChanged.connect(self._redraw_existing_plot)
         self.lineWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
@@ -843,6 +855,16 @@ class TabScatterWidget:
             if opacityColumn:
                 self._add_reference_trace(fig, f'Opacity: {opacityColumn}')
 
+            if self.regressionCheckBox.isChecked():
+                self._add_regression_lines(
+                    fig,
+                    plotData,
+                    xColumn,
+                    yColumn,
+                    seriesColumn,
+                    xIsDate,
+                )
+
             fig.update_layout(
                 legend=dict(
                     orientation='v',
@@ -937,6 +959,222 @@ class TabScatterWidget:
                 hoverinfo='skip',
             )
         )
+
+    def _add_regression_lines(
+        self,
+        figure,
+        plotData: pd.DataFrame,
+        xColumn: str,
+        yColumn: str,
+        seriesColumn: str | None,
+        xIsDate: bool,
+    ) -> None:
+        lineInputs = self._regression_line_inputs(
+            figure,
+            plotData,
+            xColumn,
+            yColumn,
+            seriesColumn,
+        )
+        annotationBgColor = self._paper_bgcolor_with_opacity(figure, 0.5)
+        showAnnotation = self.regressionAnnotationCheckBox.isChecked()
+
+        for lineInput in lineInputs:
+            lineData = lineInput['data']
+            if xIsDate:
+                xFit = pd.to_datetime(lineData[xColumn], errors='coerce').astype('int64') / 1_000_000_000
+            else:
+                xFit = pd.to_numeric(lineData[xColumn], errors='coerce')
+            yFit = pd.to_numeric(lineData[yColumn], errors='coerce')
+            validMask = xFit.notna() & yFit.notna()
+            xFit = xFit[validMask]
+            yFit = yFit[validMask]
+            if len(xFit) < 2:
+                continue
+
+            xMean = float(xFit.mean())
+            yMean = float(yFit.mean())
+            xCentered = xFit - xMean
+            xVariance = float((xCentered ** 2).sum())
+            if xVariance == 0:
+                continue
+
+            slope = float((xCentered * (yFit - yMean)).sum() / xVariance)
+            intercept = yMean - slope * xMean
+            predictedY = slope * xFit + intercept
+            totalSumSquares = float(((yFit - yMean) ** 2).sum())
+            residualSumSquares = float(((yFit - predictedY) ** 2).sum())
+            rSquare = 1 - residualSumSquares / totalSumSquares if totalSumSquares else 1.0
+            xStart = float(xFit.min())
+            xEnd = float(xFit.max())
+            yStart = slope * xStart + intercept
+            yEnd = slope * xEnd + intercept
+            if xIsDate:
+                lineX = [
+                    pd.to_datetime(xStart, unit='s').to_pydatetime(),
+                    pd.to_datetime(xEnd, unit='s').to_pydatetime(),
+                ]
+            else:
+                lineX = [xStart, xEnd]
+
+            lineColor = lineInput['color']
+            figure.add_trace(
+                go.Scatter(
+                    x=lineX,
+                    y=[yStart, yEnd],
+                    mode='lines',
+                    line=dict(color=lineColor, width=0.5, dash='dash'),
+                    name=f"{lineInput['name']} regression",
+                    showlegend=False,
+                    hoverinfo='skip',
+                )
+            )
+            if showAnnotation:
+                figure.add_annotation(
+                    x=lineX[-1],
+                    y=yEnd,
+                    xref='x',
+                    yref='y',
+                    text=self._format_regression_equation(slope, intercept, rSquare),
+                    showarrow=False,
+                    xanchor='left',
+                    yanchor='middle',
+                    xshift=6,
+                    font=dict(color=lineColor),
+                    bgcolor=annotationBgColor,
+                    bordercolor=lineColor,
+                    borderwidth=0.5,
+                )
+
+    def _regression_line_inputs(
+        self,
+        figure,
+        plotData: pd.DataFrame,
+        xColumn: str,
+        yColumn: str,
+        seriesColumn: str | None,
+    ) -> list[dict]:
+        if seriesColumn and seriesColumn in plotData.columns:
+            traceColorBySeries = self._trace_color_by_series(figure, plotData, seriesColumn)
+            inputs = []
+            for seriesValue, seriesData in plotData.groupby(seriesColumn, dropna=False, sort=False):
+                seriesName = str(seriesValue)
+                seriesKey = self._series_key(seriesValue)
+                inputs.append({
+                    'name': seriesName,
+                    'color': traceColorBySeries.get(seriesKey, '#1f77b4'),
+                    'data': seriesData[[xColumn, yColumn]],
+                })
+            return inputs
+
+        inputs = []
+        for traceIndex, trace in enumerate(list(figure.data)):
+            customData = getattr(trace, 'customdata', None)
+            if customData is None:
+                continue
+            rowIds = [int(rowData[0]) for rowData in customData]
+            traceName = str(getattr(trace, 'name', '') or 'all')
+            inputs.append({
+                'name': traceName,
+                'color': self._trace_color(trace, traceIndex),
+                'data': plotData.iloc[rowIds][[xColumn, yColumn]],
+            })
+        if inputs:
+            return inputs
+        return [{
+            'name': 'all',
+            'color': '#1f77b4',
+            'data': plotData[[xColumn, yColumn]],
+        }]
+
+    def _trace_color_by_series(
+        self,
+        figure,
+        plotData: pd.DataFrame,
+        seriesColumn: str,
+    ) -> dict:
+        traceColorBySeries = {}
+        for traceIndex, trace in enumerate(list(figure.data)):
+            customData = getattr(trace, 'customdata', None)
+            if customData is None:
+                continue
+            rowIds = [int(rowData[0]) for rowData in customData]
+            if not rowIds:
+                continue
+            seriesValue = plotData.iloc[rowIds[0]][seriesColumn]
+            traceColorBySeries.setdefault(
+                self._series_key(seriesValue),
+                self._trace_color(trace, traceIndex),
+            )
+        return traceColorBySeries
+
+    def _series_key(self, value) -> str:
+        if pd.isna(value):
+            return '<NA>'
+        return str(value)
+
+    def _trace_color(self, trace, traceIndex: int) -> str:
+        marker = getattr(trace, 'marker', None)
+        markerColor = getattr(marker, 'color', None)
+        if isinstance(markerColor, str):
+            return markerColor
+        line = getattr(trace, 'line', None)
+        lineColor = getattr(line, 'color', None)
+        if isinstance(lineColor, str):
+            return lineColor
+        palette = px.colors.qualitative.Plotly
+        return palette[traceIndex % len(palette)]
+
+    def _format_regression_equation(
+        self,
+        slope: float,
+        intercept: float,
+        rSquare: float,
+    ) -> str:
+        slopeText = self._format_regression_value(slope)
+        interceptText = self._format_regression_value(abs(intercept))
+        rSquareText = self._format_regression_value(rSquare)
+        signText = '-' if intercept < 0 else '+'
+        return f'y={slopeText}x{signText}{interceptText}<br>R2={rSquareText}'
+
+    def _format_regression_value(self, value: float) -> str:
+        for digitCount in range(5, 0, -1):
+            text = f'{value:.{digitCount}g}'
+            text = text.replace('e+0', 'e').replace('e+', 'e').replace('e-0', 'e-')
+            if len(text) <= 5:
+                return text
+        return text[:5]
+
+    def _paper_bgcolor_with_opacity(self, figure, opacity: float) -> str:
+        colorText = figure.layout.paper_bgcolor
+        if not colorText and figure.layout.template:
+            colorText = figure.layout.template.layout.paper_bgcolor
+        colorText = str(colorText or '#ffffff').strip()
+        opacity = max(0.0, min(1.0, opacity))
+
+        if colorText.startswith('#') and len(colorText) in [4, 7]:
+            if len(colorText) == 4:
+                red = int(colorText[1] * 2, 16)
+                green = int(colorText[2] * 2, 16)
+                blue = int(colorText[3] * 2, 16)
+            else:
+                red = int(colorText[1:3], 16)
+                green = int(colorText[3:5], 16)
+                blue = int(colorText[5:7], 16)
+            return f'rgba({red},{green},{blue},{opacity:.3g})'
+
+        rgbMatch = re.match(r'rgba?\(([^)]+)\)', colorText)
+        if rgbMatch:
+            parts = [part.strip() for part in rgbMatch.group(1).split(',')]
+            if len(parts) >= 3:
+                return f'rgba({parts[0]},{parts[1]},{parts[2]},{opacity:.3g})'
+
+        namedColors = {
+            'white': (255, 255, 255),
+            'black': (0, 0, 0),
+        }
+        red, green, blue = namedColors.get(colorText.lower(), (255, 255, 255))
+        return f'rgba({red},{green},{blue},{opacity:.3g})'
 
     def _render_figure(self, figure) -> None:
         self.currentPlotFigure = figure
