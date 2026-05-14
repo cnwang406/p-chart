@@ -1,4 +1,7 @@
+import json
 import os
+from pathlib import Path
+import re
 import sys
 import importlib.util
 # 找 PySide6 path（還沒 import Qt）
@@ -53,7 +56,7 @@ from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.4'
+APP_VERSION = 'v2.4.1'
 APP_AUTHOR = 'cnwang'
 APP_DATE = '2024/04'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
@@ -62,6 +65,12 @@ APP_ICON_FILENAME = os.path.join(
     'icon-ios-marketing-1024x1024-1x.png',
 )
 NO_WEBENGINE_ARGS = {'--no-webengine', '-W'}
+REC_DIRECTORY_CANDIDATES = [
+    Path(r'z:\9630\pchart.rec'),
+    Path.home() / 'Document' / 'py' / 'pchart_sa.rec',
+    Path.home() / 'Documents' / 'py' / 'pchart_sa.rec',
+]
+REC_INFO_FILENAME = 'info.json'
 
 
 def resource_path(filename: str) -> str:
@@ -88,6 +97,80 @@ def is_remote_desktop_session() -> bool:
     return sessionName.startswith('rdp-') or sessionName.startswith('rdp')
 
 
+def find_existing_rec_directory() -> Path | None:
+    for recDirectory in REC_DIRECTORY_CANDIDATES:
+        if recDirectory.exists() and recDirectory.is_dir():
+            return recDirectory
+    return None
+
+
+def version_key(versionText: str) -> tuple[int, ...]:
+    versionNumbers = re.findall(r'\d+', str(versionText))
+    return tuple(int(versionNumber) for versionNumber in versionNumbers)
+
+
+def is_newer_version(candidateVersion: str, currentVersion: str) -> bool:
+    candidateKey = version_key(candidateVersion)
+    currentKey = version_key(currentVersion)
+    if not candidateKey or not currentKey:
+        return str(currentVersion) < str(candidateVersion)
+
+    maxLength = max(len(candidateKey), len(currentKey))
+    candidateKey += (0,) * (maxLength - len(candidateKey))
+    currentKey += (0,) * (maxLength - len(currentKey))
+    return currentKey < candidateKey
+
+
+def read_launch_info() -> dict[str, str] | None:
+    recDirectory = find_existing_rec_directory()
+    if recDirectory is None:
+        return None
+
+    infoPath = recDirectory / REC_INFO_FILENAME
+    defaultInfo = {
+        'version': APP_VERSION,
+        'launch': '1',
+        'release_note': '',
+    }
+    if not infoPath.exists():
+        write_launch_info(infoPath, defaultInfo)
+        return defaultInfo
+
+    try:
+        launchInfo = json.loads(infoPath.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        launchInfo = {}
+    if not isinstance(launchInfo, dict):
+        launchInfo = {}
+
+    launchCount = 0
+    try:
+        launchCount = int(launchInfo.get('launch', 0))
+    except (TypeError, ValueError):
+        launchCount = 0
+
+    savedVersion = str(launchInfo.get('version') or APP_VERSION)
+    launchInfo['version'] = (
+        APP_VERSION
+        if is_newer_version(APP_VERSION, savedVersion)
+        else savedVersion
+    )
+    launchInfo['launch'] = str(launchCount + 1)
+    launchInfo['release_note'] = str(launchInfo.get('release_note') or '')
+    write_launch_info(infoPath, launchInfo)
+    return launchInfo
+
+
+def write_launch_info(infoPath: Path, launchInfo: dict[str, str]) -> None:
+    try:
+        infoPath.write_text(
+            json.dumps(launchInfo, ensure_ascii=False, indent=2),
+            encoding='utf-8',
+        )
+    except OSError:
+        return
+
+
 class AppMain:
     def __init__(self) -> None:
         self.runtimeOptions = remove_runtime_args()
@@ -99,6 +182,7 @@ class AppMain:
         self._configure_application_metadata()
         self._configure_application_icon()
         self._load_application_font()
+        self.launchInfo = read_launch_info()
         self.ui = self._load_ui(self._platform_ui_filename())
         self.ui.setWindowTitle(WINDOW_TITLE)
         if not self.app.windowIcon().isNull():
@@ -122,6 +206,7 @@ class AppMain:
         self.tabWidget.setCurrentIndex(0)
         self._center_window()
         self.ui.show()
+        self._show_new_version_notice()
 
     def _configure_application_metadata(self) -> None:
         self.app.setApplicationName(APP_NAME)
@@ -190,6 +275,25 @@ class AppMain:
         else:
             messageBox.setIcon(QMessageBox.Icon.Warning)
         messageBox.exec()
+
+    def _show_new_version_notice(self) -> None:
+        if not self.launchInfo:
+            return
+
+        latestVersion = self.launchInfo.get('version', '')
+        if not is_newer_version(latestVersion, APP_VERSION):
+            return
+
+        releaseNote = str(self.launchInfo.get('release_note') or '').strip()
+        message = f'好像有新版本, {latestVersion}, 可以問我看看有什麼新功能'
+        if releaseNote:
+            message = f'{message}\n\nRelease note:\n{releaseNote}'
+
+        QMessageBox.information(
+            self.ui,
+            'New Version',
+            message,
+        )
 
     def _show_about_dialog(self) -> None:
         dialog = QDialog(self.ui)
