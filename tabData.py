@@ -1,3 +1,4 @@
+import csv
 import os
 import re
 from html import escape
@@ -230,6 +231,8 @@ class TabDataWidget:
         self.matchChangedCallbacks = []
         self.matchingColumnCount = 0
         self.totalColumnCount = 0
+        self.autoDetectedSkipRows = None
+        self.settingSkipRowsFromAutoDetect = False
         self._matchedColumnColor = QBrush(QColor(208, 245, 216))
         self.dropFileFilter = DropFileFilter(self._load_dropped_file)
 
@@ -270,7 +273,7 @@ class TabDataWidget:
         )
 
         self.filePathLineEdit.textChanged.connect(self._invalidate_melted_data)
-        self.skipRowsSpinBox.valueChanged.connect(self._invalidate_melted_data)
+        self.skipRowsSpinBox.valueChanged.connect(self._on_skip_rows_changed)
         self.stubnamesLineEdit.textChanged.connect(self._mark_matching_columns)
         self.stubnamesLineEdit.textChanged.connect(self._invalidate_melted_data)
         self.suffixLineEdit.textChanged.connect(self._mark_matching_columns)
@@ -286,6 +289,7 @@ class TabDataWidget:
     def _load_dropped_file(self, filePath: str) -> None:
         self._invalidate_melted_data()
         self.filePathLineEdit.setText(filePath)
+        self.autoDetectedSkipRows = None
         self._load_file()
 
     def _browse_file(self) -> None:
@@ -298,7 +302,13 @@ class TabDataWidget:
         if selectedFile:
             self._invalidate_melted_data()
             self.filePathLineEdit.setText(selectedFile)
+            self.autoDetectedSkipRows = None
             self._load_file()
+
+    def _on_skip_rows_changed(self, *_args) -> None:
+        if not self.settingSkipRowsFromAutoDetect:
+            self.autoDetectedSkipRows = None
+        self._invalidate_melted_data()
 
     def _browse_save_path(self) -> None:
         defaultPath = self.loadedFilePath if self.loadedFilePath else os.getcwd()
@@ -372,10 +382,13 @@ class TabDataWidget:
         self.loadedFilePath = filePath
         try:
             if filePath.lower().endswith('.csv'):
-                self.loadedDataFrame = pd.read_csv(filePath, skiprows=self.get_skip_rows())
+                skipRows = self._resolve_skip_rows_for_file(filePath)
+                self.loadedDataFrame = pd.read_csv(filePath, skiprows=skipRows)
                 normalizedColumns = self._normalize_loaded_datetime_formats(self.loadedDataFrame)
                 hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
                 statusText = 'CSV loaded successfully.'
+                if skipRows:
+                    statusText += f' skiprows={skipRows}.'
                 if normalizedColumns:
                     statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
                 if hasDataWarning:
@@ -421,11 +434,12 @@ class TabDataWidget:
     def _load_sheet_data(self, sheetName: str) -> None:
         try:
             self._invalidate_melted_data()
+            skipRows = self._resolve_skip_rows_for_file(self.loadedFilePath, sheetName=sheetName)
             with pd.ExcelFile(self.loadedFilePath) as excelReader:
                 self.loadedDataFrame = pd.read_excel(
                     excelReader,
                     sheet_name=sheetName,
-                    skiprows=self.get_skip_rows(),
+                    skiprows=skipRows,
                 )
             normalizedColumns = self._normalize_loaded_datetime_formats(self.loadedDataFrame)
             hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
@@ -434,6 +448,8 @@ class TabDataWidget:
             self._show_preview(self.loadedDataFrame)
             self._notify_data_changed()
             statusText = f'Sheet "{sheetName}" loaded successfully.'
+            if skipRows:
+                statusText += f' skiprows={skipRows}.'
             if normalizedColumns:
                 statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
             if hasDataWarning:
@@ -1077,6 +1093,132 @@ class TabDataWidget:
 
     def get_skip_rows(self) -> int:
         return int(self.skipRowsSpinBox.value())
+
+    def _resolve_skip_rows_for_file(self, filePath: str, sheetName: str | None = None) -> int:
+        currentSkipRows = self.get_skip_rows()
+        canAutoDetect = (
+            currentSkipRows == 0
+            or self.autoDetectedSkipRows is not None
+            and currentSkipRows == self.autoDetectedSkipRows
+        )
+        if not canAutoDetect:
+            return currentSkipRows
+
+        detectedSkipRows = self._detect_skip_rows(filePath, sheetName=sheetName)
+        if detectedSkipRows != currentSkipRows:
+            self.settingSkipRowsFromAutoDetect = True
+            try:
+                self.skipRowsSpinBox.setValue(detectedSkipRows)
+            finally:
+                self.settingSkipRowsFromAutoDetect = False
+        self.autoDetectedSkipRows = detectedSkipRows
+        return detectedSkipRows
+
+    def _detect_skip_rows(self, filePath: str, sheetName: str | None = None) -> int:
+        try:
+            if filePath.lower().endswith('.csv'):
+                previewRows = self._read_csv_preview_rows(filePath)
+                previewDf = pd.DataFrame(previewRows)
+            else:
+                previewDf = pd.read_excel(
+                    filePath,
+                    sheet_name=sheetName,
+                    header=None,
+                    nrows=30,
+                    dtype=object,
+                    keep_default_na=False,
+                )
+        except Exception:
+            return self.get_skip_rows()
+
+        if previewDf.empty:
+            return 0
+
+        bestRowIndex = 0
+        bestScore = float('-inf')
+        maxCandidateRows = min(len(previewDf), 20)
+        for rowIndex in range(maxCandidateRows):
+            score = self._score_header_row(previewDf, rowIndex)
+            if score > bestScore:
+                bestScore = score
+                bestRowIndex = rowIndex
+
+        return int(bestRowIndex) if bestScore >= 4.0 else 0
+
+    def _read_csv_preview_rows(self, filePath: str, maxRows: int = 30) -> list[list[str]]:
+        rows = []
+        with open(filePath, newline='', encoding='utf-8-sig') as csvFile:
+            reader = csv.reader(csvFile)
+            for rowIndex, row in enumerate(reader):
+                if rowIndex >= maxRows:
+                    break
+                rows.append(row)
+        return rows
+
+    def _score_header_row(self, previewDf: pd.DataFrame, rowIndex: int) -> float:
+        rowTexts = self._row_text_values(previewDf.iloc[rowIndex])
+        nonEmptyTexts = [text for text in rowTexts if text]
+        nonEmptyCount = len(nonEmptyTexts)
+        if nonEmptyCount < 2:
+            return -10.0
+
+        uniqueCount = len({text.lower() for text in nonEmptyTexts})
+        duplicatePenalty = max(0, nonEmptyCount - uniqueCount) * 1.5
+        textLikeCount = sum(1 for text in nonEmptyTexts if self._looks_like_header_text(text))
+        numericLikeCount = sum(1 for text in nonEmptyTexts if self._looks_like_number(text))
+        nextRowsScore = self._score_rows_after_header(previewDf, rowIndex, nonEmptyCount)
+        leadingPenalty = rowIndex * 0.15
+
+        return (
+            nonEmptyCount * 0.8
+            + textLikeCount * 1.2
+            + nextRowsScore
+            - numericLikeCount * 0.7
+            - duplicatePenalty
+            - leadingPenalty
+        )
+
+    def _score_rows_after_header(
+        self,
+        previewDf: pd.DataFrame,
+        rowIndex: int,
+        headerNonEmptyCount: int,
+    ) -> float:
+        nextRows = previewDf.iloc[rowIndex + 1:rowIndex + 6]
+        if nextRows.empty:
+            return -2.0
+
+        score = 0.0
+        usedRows = 0
+        for _, row in nextRows.iterrows():
+            rowTexts = self._row_text_values(row)
+            nonEmptyCount = sum(1 for text in rowTexts if text)
+            if nonEmptyCount == 0:
+                continue
+            usedRows += 1
+            fillRatio = min(nonEmptyCount / max(headerNonEmptyCount, 1), 1.0)
+            numericCount = sum(1 for text in rowTexts if text and self._looks_like_number(text))
+            score += fillRatio * 1.3 + min(numericCount, headerNonEmptyCount) * 0.2
+
+        return score if usedRows else -2.0
+
+    def _row_text_values(self, row: pd.Series) -> list[str]:
+        return [
+            '' if pd.isna(value) else str(value).strip()
+            for value in row.tolist()
+        ]
+
+    def _looks_like_header_text(self, text: str) -> bool:
+        if not text or self._looks_like_number(text):
+            return False
+        return any(char.isalpha() for char in text) or '_' in text or '-' in text
+
+    def _looks_like_number(self, text: str) -> bool:
+        try:
+            float(text.replace(',', ''))
+            return True
+        except ValueError:
+            return False
 
     def preview_filter_annotation_text(self) -> str:
         if not self.previewProxyModel.columnFilters:
