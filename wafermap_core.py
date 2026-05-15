@@ -901,6 +901,7 @@ def render_figure(
     markerLengthMm: float = 11.0,
     laserMarkPositionDeg: float = 0.0,
     laserMarkColor: str = "#00aa44",
+    infoPanelFontSize: int = 6,
 ) -> plt.Figure:
     radius = np.max(np.linalg.norm(waferOutline, axis=1))
     hasPoints = not pointsDf.empty
@@ -1060,7 +1061,7 @@ def render_figure(
             infoPanelText,
             ha="left",
             va="center",
-            fontsize=8.0,
+            fontsize=infoPanelFontSize,
             color="#2f2f2f",
             linespacing=1.25,
             bbox={

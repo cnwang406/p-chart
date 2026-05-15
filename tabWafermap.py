@@ -12,13 +12,17 @@ os.environ.setdefault('MPLCONFIGDIR', tempfile.gettempdir())
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.colors import Normalize
+from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -53,6 +57,10 @@ class TabWafermapWidget:
         self.tabDataWidget = None
         self.currentFigure = None
         self.currentHtml = ''
+        self.currentTitle = ''
+        self._isApplyingConfig = False
+        self._geometryCacheKey = None
+        self._geometryCacheData = None
 
         self.tabWidget = require_child(rootWidget, QWidget, 'tabWafermap')
         self.xComboBox = require_child(rootWidget, QComboBox, 'xColComboBox')
@@ -94,6 +102,10 @@ class TabWafermapWidget:
         self.fontSizeSpinBox = require_child(rootWidget, QSpinBox, 'fontSizeSpinBox')
 
         self.canvas = FigureCanvas()
+        self.redrawTimer = QTimer(self.rootWidget)
+        self.redrawTimer.setSingleShot(True)
+        self.redrawTimer.setInterval(120)
+        self.redrawTimer.timeout.connect(self._draw_plot_when_ready)
         self.plotLayout = QVBoxLayout(self.plotAreaWidget)
         self.plotLayout.setContentsMargins(0, 0, 0, 0)
         self.plotLayout.addWidget(self.canvas)
@@ -106,16 +118,20 @@ class TabWafermapWidget:
         self.saveJsonButton.clicked.connect(self._save_config)
         self.loadJsonButton.clicked.connect(self._load_config)
         self.refreshButton.clicked.connect(self._draw_plot_when_ready)
+        self._configure_color_label(self.frameLineColorLabel, '#f4a3a3')
+        self._configure_color_label(self.dieLineColorLabel, '#ececec')
+        self._configure_color_label(self.effectiveEdgeColorLabel, '#f4a3a3')
+        self._configure_color_label(self.waferEdgeColorLabel, '#000000')
 
+        for comboBox in [self.xComboBox, self.yComboBox]:
+            comboBox.currentTextChanged.connect(self._mark_plot_dirty)
         for comboBox in [
-            self.xComboBox,
-            self.yComboBox,
             self.zComboBox,
             self.waferDiameterComboBox,
             self.waferFlatComboBox,
             self.heatMapOrContourComboBox,
         ]:
-            comboBox.currentTextChanged.connect(self._mark_plot_dirty)
+            comboBox.currentTextChanged.connect(self._redraw_after_change)
         for spinBox in [
             self.arrayXSpinBox,
             self.arrayYSpinBox,
@@ -126,13 +142,13 @@ class TabWafermapWidget:
             self.laserPosSpinBox,
             self.fontSizeSpinBox,
         ]:
-            spinBox.valueChanged.connect(self._mark_plot_dirty)
+            spinBox.valueChanged.connect(self._redraw_after_change)
         for checkBox in [
             self.enableLaserMarkCheckBox,
             self.showDetailCheckBox,
             self.showDieRCCheckBox,
         ]:
-            checkBox.stateChanged.connect(self._mark_plot_dirty)
+            checkBox.stateChanged.connect(self._redraw_after_change)
         for lineEdit in [
             self.stepXLineEdit,
             self.stepYLineEdit,
@@ -144,7 +160,7 @@ class TabWafermapWidget:
             self.siteOffsetYLineEdit,
             self.mapTitleLineEdit,
         ]:
-            lineEdit.editingFinished.connect(self._mark_plot_dirty)
+            lineEdit.editingFinished.connect(self._redraw_after_change)
 
         if not self.mapTitleLineEdit.text().strip():
             self.mapTitleLineEdit.setText('wafer_frame_preview')
@@ -180,7 +196,17 @@ class TabWafermapWidget:
             self._set_status(f'Wafer map error: {exc}', error=True)
 
     def _mark_plot_dirty(self, *_args) -> None:
+        self.redrawTimer.stop()
         self._set_status('Wafer map settings changed. Press refresh to redraw.')
+
+    def _redraw_after_change(self, *_args) -> None:
+        if self._isApplyingConfig:
+            return
+        if self.currentFigure is None:
+            self._mark_plot_dirty()
+            return
+        self._set_status('Wafer map settings changed. Redrawing...')
+        self.redrawTimer.start()
 
     def draw_plot(self) -> None:
         params = self._read_parameters()
@@ -200,43 +226,13 @@ class TabWafermapWidget:
         isHeatMap = self._is_heatmap_mode()
         contourStyle = 'die rectangle heatmap' if isHeatMap else 'filled + lines'
 
-        waferOutline = build_wafer_outline(
-            diameterMm=params['diameterMm'],
-            flatOption=params['flatOption'],
-        )
-        effectiveOutline = build_effective_outline(
-            waferOutline=waferOutline,
-            edgeExcludeMm=params['edgeExcludeMm'],
-        )
-        if len(effectiveOutline) < 3:
-            raise ValueError('edge exclude 太大，已無可用 wafer 區域。')
-
-        centerReferenceX = (float(waferOutline[:, 0].min()) + float(waferOutline[:, 0].max())) / 2.0
-        topReferenceY = top_y_at_x(waferOutline, centerReferenceX)
-        bottomReferenceY = float(waferOutline[:, 1].min())
-
-        completeFrames = build_complete_frame_rectangles(
-            outline=effectiveOutline,
-            stepXUm=params['stepXUm'],
-            stepYUm=params['stepYUm'],
-            frameOffsetXUm=params['frameOffsetXUm'],
-            frameOffsetYUm=params['frameOffsetYUm'],
-            topMm=params['topMm'],
-            bottomMm=params['bottomMm'],
-            topReferenceY=topReferenceY,
-            bottomReferenceY=bottomReferenceY,
-        )
-        completeDies = build_complete_die_rectangles(
-            outline=effectiveOutline,
-            stepXUm=params['stepXUm'],
-            stepYUm=params['stepYUm'],
-            arrayX=params['arrayX'],
-            arrayY=params['arrayY'],
-            frameOffsetXUm=params['frameOffsetXUm'],
-            frameOffsetYUm=params['frameOffsetYUm'],
-            topMm=params['topMm'],
-            topReferenceY=topReferenceY,
-        )
+        geometry = self._build_geometry(params)
+        waferOutline = geometry['waferOutline']
+        effectiveOutline = geometry['effectiveOutline']
+        topReferenceY = geometry['topReferenceY']
+        bottomReferenceY = geometry['bottomReferenceY']
+        completeFrames = geometry['completeFrames']
+        completeDies = geometry['completeDies']
         frameBottomGapMm = min((frame[1] for frame in completeFrames), default=float('nan')) - bottomReferenceY
         if not completeFrames:
             frameBottomGapMm = -1.0
@@ -291,6 +287,7 @@ class TabWafermapWidget:
             charHeightMm=float(self.laserHeightSpinBox.value()),
             markerLengthMm=float(self.laserLengthSpinBox.value()),
             laserMarkPositionDeg=float(self.laserPosSpinBox.value()),
+            infoPanelFontSize=5,
         )
         heatmapMissCount = 0
         if isHeatMap and not dieValueDf.empty:
@@ -305,8 +302,9 @@ class TabWafermapWidget:
 
         self.currentFigure = figure
         self._replace_canvas(figure)
-        self.canvas.draw()
-        self.currentHtml = self._figure_html(figure, params['title'])
+        self.canvas.draw_idle()
+        self.currentHtml = ''
+        self.currentTitle = params['title']
 
         statusParts = [f'Wafer map updated. frames={len(completeFrames)}, dies={len(completeDies)}']
         if isHeatMap:
@@ -524,7 +522,7 @@ class TabWafermapWidget:
                 text.set_alpha(WAFERMAP_TEXT_ALPHA)
         for text in figure.texts:
             text.set_fontfamily(WAFERMAP_FONT_FAMILY)
-            text.set_fontsize(WAFERMAP_FONT_SIZE)
+            text.set_fontsize(5 if '\n' in text.get_text() else WAFERMAP_FONT_SIZE)
             text.set_alpha(WAFERMAP_TEXT_ALPHA)
 
     def _wafer_value_font_size(self) -> int:
@@ -547,6 +545,71 @@ class TabWafermapWidget:
             'siteOffsetXUm': self._float_line_edit(self.siteOffsetXLineEdit, 0.0),
             'siteOffsetYUm': self._float_line_edit(self.siteOffsetYLineEdit, 0.0),
         }
+
+    def _build_geometry(self, params: dict[str, object]) -> dict[str, object]:
+        cacheKey = (
+            round(float(params['diameterMm']), 6),
+            str(params['flatOption']),
+            round(float(params['edgeExcludeMm']), 6),
+            round(float(params['stepXUm']), 6),
+            round(float(params['stepYUm']), 6),
+            round(float(params['frameOffsetXUm']), 6),
+            round(float(params['frameOffsetYUm']), 6),
+            round(float(params['topMm']), 6),
+            round(float(params['bottomMm']), 6),
+            int(params['arrayX']),
+            int(params['arrayY']),
+        )
+        if cacheKey == self._geometryCacheKey and self._geometryCacheData is not None:
+            return self._geometryCacheData
+
+        waferOutline = build_wafer_outline(
+            diameterMm=params['diameterMm'],
+            flatOption=params['flatOption'],
+        )
+        effectiveOutline = build_effective_outline(
+            waferOutline=waferOutline,
+            edgeExcludeMm=params['edgeExcludeMm'],
+        )
+        if len(effectiveOutline) < 3:
+            raise ValueError('edge exclude 太大，已無可用 wafer 區域。')
+
+        centerReferenceX = (float(waferOutline[:, 0].min()) + float(waferOutline[:, 0].max())) / 2.0
+        topReferenceY = top_y_at_x(waferOutline, centerReferenceX)
+        bottomReferenceY = float(waferOutline[:, 1].min())
+        completeFrames = build_complete_frame_rectangles(
+            outline=effectiveOutline,
+            stepXUm=params['stepXUm'],
+            stepYUm=params['stepYUm'],
+            frameOffsetXUm=params['frameOffsetXUm'],
+            frameOffsetYUm=params['frameOffsetYUm'],
+            topMm=params['topMm'],
+            bottomMm=params['bottomMm'],
+            topReferenceY=topReferenceY,
+            bottomReferenceY=bottomReferenceY,
+        )
+        completeDies = build_complete_die_rectangles(
+            outline=effectiveOutline,
+            stepXUm=params['stepXUm'],
+            stepYUm=params['stepYUm'],
+            arrayX=params['arrayX'],
+            arrayY=params['arrayY'],
+            frameOffsetXUm=params['frameOffsetXUm'],
+            frameOffsetYUm=params['frameOffsetYUm'],
+            topMm=params['topMm'],
+            topReferenceY=topReferenceY,
+        )
+        geometry = {
+            'waferOutline': waferOutline,
+            'effectiveOutline': effectiveOutline,
+            'topReferenceY': topReferenceY,
+            'bottomReferenceY': bottomReferenceY,
+            'completeFrames': completeFrames,
+            'completeDies': completeDies,
+        }
+        self._geometryCacheKey = cacheKey
+        self._geometryCacheData = geometry
+        return geometry
 
     def _build_info_panel_text(
         self,
@@ -626,6 +689,43 @@ class TabWafermapWidget:
             return hexMatch.group(0)
         return fallbackColor
 
+    def _configure_color_label(self, label: QLabel, fallbackColor: str) -> None:
+        self._set_label_color(label, self._label_color(label, fallbackColor))
+        label.setCursor(Qt.PointingHandCursor)
+        label.setToolTip('Select color')
+        label.installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        colorLabels = {
+            self.frameLineColorLabel,
+            self.dieLineColorLabel,
+            self.effectiveEdgeColorLabel,
+            self.waferEdgeColorLabel,
+        }
+        if watched in colorLabels and event.type() == QEvent.MouseButtonRelease:
+            if event.button() == Qt.LeftButton:
+                self._choose_label_color(watched)
+                return True
+        return False
+
+    def _choose_label_color(self, label: QLabel) -> None:
+        currentColor = QColor(self._label_color(label, '#000000'))
+        selectedColor = QColorDialog.getColor(
+            currentColor,
+            self.rootWidget,
+            'Select color',
+            QColorDialog.DontUseNativeDialog,
+        )
+        if not selectedColor.isValid():
+            return
+        self._set_label_color(label, selectedColor.name())
+        self._redraw_after_change()
+
+    def _set_label_color(self, label: QLabel, colorText: str) -> None:
+        label.setStyleSheet(
+            f'QLabel {{ background-color: {colorText}; border: 1px solid #8a8a8a; min-width: 24px; }}'
+        )
+
     def _config(self) -> dict[str, object]:
         params = self._read_parameters()
         params.update({
@@ -645,47 +745,51 @@ class TabWafermapWidget:
         return params
 
     def _apply_config(self, config: dict[str, object]) -> None:
-        lineEditMap = {
-            'title': self.mapTitleLineEdit,
-            'stepXUm': self.stepXLineEdit,
-            'stepYUm': self.stepYLineEdit,
-            'frameOffsetXUm': self.frameOffsetXLineEdit,
-            'frameOffsetYUm': self.frameOffsetYLineEdit,
-            'topMm': self.topLineEdit,
-            'bottomMm': self.bottomLineEdit,
-            'siteOffsetXUm': self.siteOffsetXLineEdit,
-            'siteOffsetYUm': self.siteOffsetYLineEdit,
-        }
-        for key, lineEdit in lineEditMap.items():
-            if key in config:
-                lineEdit.setText(str(config[key]))
+        self._isApplyingConfig = True
+        try:
+            lineEditMap = {
+                'title': self.mapTitleLineEdit,
+                'stepXUm': self.stepXLineEdit,
+                'stepYUm': self.stepYLineEdit,
+                'frameOffsetXUm': self.frameOffsetXLineEdit,
+                'frameOffsetYUm': self.frameOffsetYLineEdit,
+                'topMm': self.topLineEdit,
+                'bottomMm': self.bottomLineEdit,
+                'siteOffsetXUm': self.siteOffsetXLineEdit,
+                'siteOffsetYUm': self.siteOffsetYLineEdit,
+            }
+            for key, lineEdit in lineEditMap.items():
+                if key in config:
+                    lineEdit.setText(str(config[key]))
 
-        if 'arrayX' in config:
-            self.arrayXSpinBox.setValue(max(1, int(config['arrayX'])))
-        if 'arrayY' in config:
-            self.arrayYSpinBox.setValue(max(1, int(config['arrayY'])))
-        if 'edgeExcludeMm' in config:
-            self.edgeExcludeSpinBox.setValue(float(config['edgeExcludeMm']))
-        if 'laserMarkEdgeToTopMm' in config:
-            self.laserEdgeToTopSpinBox.setValue(float(config['laserMarkEdgeToTopMm']))
-        if 'laserMarkCharHeightMm' in config:
-            self.laserHeightSpinBox.setValue(float(config['laserMarkCharHeightMm']))
-        if 'laserMarkLengthMm' in config:
-            self.laserLengthSpinBox.setValue(float(config['laserMarkLengthMm']))
-        if 'laserMarkPositionDeg' in config:
-            self.laserPosSpinBox.setValue(int(config['laserMarkPositionDeg']))
-        if 'fontSize' in config:
-            self.fontSizeSpinBox.setValue(max(1, int(config['fontSize'])))
+            if 'arrayX' in config:
+                self.arrayXSpinBox.setValue(max(1, int(config['arrayX'])))
+            if 'arrayY' in config:
+                self.arrayYSpinBox.setValue(max(1, int(config['arrayY'])))
+            if 'edgeExcludeMm' in config:
+                self.edgeExcludeSpinBox.setValue(float(config['edgeExcludeMm']))
+            if 'laserMarkEdgeToTopMm' in config:
+                self.laserEdgeToTopSpinBox.setValue(float(config['laserMarkEdgeToTopMm']))
+            if 'laserMarkCharHeightMm' in config:
+                self.laserHeightSpinBox.setValue(float(config['laserMarkCharHeightMm']))
+            if 'laserMarkLengthMm' in config:
+                self.laserLengthSpinBox.setValue(float(config['laserMarkLengthMm']))
+            if 'laserMarkPositionDeg' in config:
+                self.laserPosSpinBox.setValue(int(config['laserMarkPositionDeg']))
+            if 'fontSize' in config:
+                self.fontSizeSpinBox.setValue(max(1, int(config['fontSize'])))
 
-        self._set_combo_text(self.waferDiameterComboBox, str(config.get('diameterMm', '')))
-        self._set_combo_text(self.waferFlatComboBox, str(config.get('flatOption', '')).replace('-', ' '))
-        self._set_combo_text(self.xComboBox, str(config.get('xColumn', '')))
-        self._set_combo_text(self.yComboBox, str(config.get('yColumn', '')))
-        self._set_combo_text(self.zComboBox, str(config.get('zColumn', '')))
-        self._set_combo_text(self.heatMapOrContourComboBox, str(config.get('mode', '')))
-        self.showDetailCheckBox.setChecked(bool(config.get('showDetail', False)))
-        self.showDieRCCheckBox.setChecked(bool(config.get('showDieRC', False)))
-        self.enableLaserMarkCheckBox.setChecked(bool(config.get('showLaserMark', False)))
+            self._set_combo_text(self.waferDiameterComboBox, str(config.get('diameterMm', '')))
+            self._set_combo_text(self.waferFlatComboBox, str(config.get('flatOption', '')).replace('-', ' '))
+            self._set_combo_text(self.xComboBox, str(config.get('xColumn', '')))
+            self._set_combo_text(self.yComboBox, str(config.get('yColumn', '')))
+            self._set_combo_text(self.zComboBox, str(config.get('zColumn', '')))
+            self._set_combo_text(self.heatMapOrContourComboBox, str(config.get('mode', '')))
+            self.showDetailCheckBox.setChecked(bool(config.get('showDetail', False)))
+            self.showDieRCCheckBox.setChecked(bool(config.get('showDieRC', False)))
+            self.enableLaserMarkCheckBox.setChecked(bool(config.get('showLaserMark', False)))
+        finally:
+            self._isApplyingConfig = False
         self._draw_plot_when_ready()
 
     def _set_combo_text(self, comboBox: QComboBox, text: str) -> None:
@@ -712,6 +816,10 @@ class TabWafermapWidget:
         self._set_status(f'Wafermap config saved: {selectedFile}')
 
     def _load_config(self) -> None:
+        if self._plot_data().empty:
+            QMessageBox.warning(self.rootWidget, 'Wafermap', '請先載入資料')
+            self._set_status('請先載入資料', error=True)
+            return
         selectedFile, _ = QFileDialog.getOpenFileName(
             self.rootWidget,
             'Load wafermap config',
@@ -742,7 +850,7 @@ class TabWafermapWidget:
         self._set_status(f'Wafermap image saved: {selectedFile}')
 
     def _download_html(self) -> None:
-        if not self.currentHtml:
+        if self.currentFigure is None:
             self._set_status('No wafer map to save yet.', error=True)
             return
         selectedFile, _ = QFileDialog.getSaveFileName(
@@ -753,6 +861,11 @@ class TabWafermapWidget:
         )
         if not selectedFile:
             return
+        if not self.currentHtml:
+            self.currentHtml = self._figure_html(
+                self.currentFigure,
+                self.currentTitle or self.mapTitleLineEdit.text().strip() or 'wafer_frame_preview',
+            )
         Path(selectedFile).write_text(self.currentHtml, encoding='utf-8')
         self._set_status(f'Wafermap HTML saved: {selectedFile}')
 

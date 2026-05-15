@@ -3634,7 +3634,7 @@ here.</string>
      <widget class="QComboBox" name="heatMapOrContourComboBox">
       <property name="geometry">
        <rect>
-        <x>540</x>
+        <x>520</x>
         <y>90</y>
         <width>101</width>
         <height>32</height>
@@ -3654,7 +3654,7 @@ here.</string>
      <widget class="QLabel" name="label_20">
       <property name="geometry">
        <rect>
-        <x>510</x>
+        <x>490</x>
         <y>100</y>
         <width>40</width>
         <height>16</height>
@@ -3733,7 +3733,7 @@ here.</string>
       <property name="geometry">
        <rect>
         <x>671</x>
-        <y>90</y>
+        <y>95</y>
         <width>41</width>
         <height>22</height>
        </rect>
@@ -3749,6 +3749,19 @@ here.</string>
       </property>
       <property name="value">
        <number>8</number>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label_22">
+      <property name="geometry">
+       <rect>
+        <x>620</x>
+        <y>100</y>
+        <width>40</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>font size</string>
       </property>
      </widget>
     </widget>
