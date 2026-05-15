@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QTableView,
     QTextEdit,
     QVBoxLayout,
@@ -200,6 +201,7 @@ class TabDataWidget:
         self.filePathLineEdit = require_child(rootWidget, QLineEdit, 'filePathLineEdit')
         self.browseFileButton = require_child(rootWidget, QPushButton, 'browseFileButton')
         self.loadButton = require_child(rootWidget, QPushButton, 'loadButton')
+        self.skipRowsSpinBox = require_child(rootWidget, QSpinBox, 'skipRowsSpinBox')
         self.sheetComboBox = require_child(rootWidget, QComboBox, 'sheetComboBox')
         self.sheetGroupBox = require_child(rootWidget, QGroupBox, 'sheetGroupBox')
         self.columnsListWidget = require_child(rootWidget, QListWidget, 'columnsListWidget')
@@ -268,6 +270,7 @@ class TabDataWidget:
         )
 
         self.filePathLineEdit.textChanged.connect(self._invalidate_melted_data)
+        self.skipRowsSpinBox.valueChanged.connect(self._invalidate_melted_data)
         self.stubnamesLineEdit.textChanged.connect(self._mark_matching_columns)
         self.stubnamesLineEdit.textChanged.connect(self._invalidate_melted_data)
         self.suffixLineEdit.textChanged.connect(self._mark_matching_columns)
@@ -369,7 +372,7 @@ class TabDataWidget:
         self.loadedFilePath = filePath
         try:
             if filePath.lower().endswith('.csv'):
-                self.loadedDataFrame = pd.read_csv(filePath)
+                self.loadedDataFrame = pd.read_csv(filePath, skiprows=self.get_skip_rows())
                 normalizedColumns = self._normalize_loaded_datetime_formats(self.loadedDataFrame)
                 hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
                 statusText = 'CSV loaded successfully.'
@@ -419,7 +422,11 @@ class TabDataWidget:
         try:
             self._invalidate_melted_data()
             with pd.ExcelFile(self.loadedFilePath) as excelReader:
-                self.loadedDataFrame = pd.read_excel(excelReader, sheet_name=sheetName)
+                self.loadedDataFrame = pd.read_excel(
+                    excelReader,
+                    sheet_name=sheetName,
+                    skiprows=self.get_skip_rows(),
+                )
             normalizedColumns = self._normalize_loaded_datetime_formats(self.loadedDataFrame)
             hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
             self._append_detected_stubnames()
@@ -1067,6 +1074,9 @@ class TabDataWidget:
         if self.meltedDataFrame.empty:
             return self._filter_dataframe_by_preview_filters(self.loadedDataFrame)
         return self._filter_dataframe_by_preview_filters(self.meltedDataFrame)
+
+    def get_skip_rows(self) -> int:
+        return int(self.skipRowsSpinBox.value())
 
     def preview_filter_annotation_text(self) -> str:
         if not self.previewProxyModel.columnFilters:

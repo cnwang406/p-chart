@@ -1,0 +1,790 @@
+import base64
+import os
+import json
+import re
+import tempfile
+from pathlib import Path
+
+import pandas as pd
+
+os.environ.setdefault('MPLCONFIGDIR', tempfile.gettempdir())
+
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.colors import Normalize
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
+
+from qt_helpers import require_child
+from wafermap_core import (
+    build_complete_die_rectangles,
+    build_complete_frame_rectangles,
+    build_effective_outline,
+    build_interpolated_grid,
+    build_wafer_outline,
+    calculate_positions,
+    collapse_duplicate_points,
+    count_points_outside_outline,
+    figure_to_jpg_bytes,
+    render_figure,
+    top_y_at_x,
+    validate_parameters,
+)
+
+
+WAFERMAP_FONT_FAMILY = 'Cascadia Next TC'
+WAFERMAP_FONT_SIZE = 10
+WAFERMAP_TEXT_ALPHA = 0.5
+
+
+class TabWafermapWidget:
+    def __init__(self, rootWidget: QWidget):
+        self.rootWidget = rootWidget
+        self.tabDataWidget = None
+        self.currentFigure = None
+        self.currentHtml = ''
+
+        self.tabWidget = require_child(rootWidget, QWidget, 'tabWafermap')
+        self.xComboBox = require_child(rootWidget, QComboBox, 'xColComboBox')
+        self.yComboBox = require_child(rootWidget, QComboBox, 'yColComboBox')
+        self.zComboBox = require_child(rootWidget, QComboBox, 'zColComboBox')
+        self.stepXLineEdit = require_child(rootWidget, QLineEdit, 'stepXLineEdit')
+        self.stepYLineEdit = require_child(rootWidget, QLineEdit, 'stepYLineEdit')
+        self.frameOffsetXLineEdit = require_child(rootWidget, QLineEdit, 'offsetXLineEdit')
+        self.frameOffsetYLineEdit = require_child(rootWidget, QLineEdit, 'offsetYLineEdit')
+        self.arrayXSpinBox = require_child(rootWidget, QSpinBox, 'arrayXspinBox')
+        self.arrayYSpinBox = require_child(rootWidget, QSpinBox, 'arrayYspinBox')
+        self.frameLineColorLabel = require_child(rootWidget, QLabel, 'frameLineColorLabel')
+        self.dieLineColorLabel = require_child(rootWidget, QLabel, 'dieLineColorLabel')
+        self.waferDiameterComboBox = require_child(rootWidget, QComboBox, 'waferDiameterComboBox')
+        self.edgeExcludeSpinBox = require_child(rootWidget, QDoubleSpinBox, 'waferEdgeExcludeDoubleSpinBox')
+        self.waferFlatComboBox = require_child(rootWidget, QComboBox, 'waferFlatComboBox')
+        self.topLineEdit = require_child(rootWidget, QLineEdit, 'stepXLineEdit_2')
+        self.bottomLineEdit = require_child(rootWidget, QLineEdit, 'stepYLineEdit_2')
+        self.effectiveEdgeColorLabel = require_child(rootWidget, QLabel, 'effectEdgeColorLabel')
+        self.waferEdgeColorLabel = require_child(rootWidget, QLabel, 'waferEdgeColorLabel')
+        self.enableLaserMarkCheckBox = require_child(rootWidget, QCheckBox, 'enableLaserMarkCheckBox')
+        self.laserEdgeToTopSpinBox = require_child(rootWidget, QDoubleSpinBox, 'waferEdgeExcludeDoubleSpinBox_2')
+        self.laserHeightSpinBox = require_child(rootWidget, QDoubleSpinBox, 'laserMarkHeightDoubleSpinBox')
+        self.laserLengthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'laserMarkLengthDoubleSpinBox')
+        self.laserPosSpinBox = require_child(rootWidget, QSpinBox, 'laserMarkPosSpinBox')
+        self.siteOffsetXLineEdit = require_child(rootWidget, QLineEdit, 'siteOffsetXLineEdit')
+        self.siteOffsetYLineEdit = require_child(rootWidget, QLineEdit, 'siteOffsetYLineEdit')
+        self.plotAreaWidget = require_child(rootWidget, QWidget, 'waferMapPlotAreaWidget')
+        self.statusLabel = require_child(rootWidget, QLabel, 'waferMapStatusLabelx')
+        self.mapTitleLineEdit = require_child(rootWidget, QLineEdit, 'mapTitleLineEdit')
+        self.showDetailCheckBox = require_child(rootWidget, QCheckBox, 'showDetailCheckBox')
+        self.showDieRCCheckBox = require_child(rootWidget, QCheckBox, 'showDieRCCheckBox')
+        self.heatMapOrContourComboBox = require_child(rootWidget, QComboBox, 'heatMapOrContourComboBox')
+        self.saveJsonButton = require_child(rootWidget, QPushButton, 'saveJsonButton')
+        self.loadJsonButton = require_child(rootWidget, QPushButton, 'loadJsonButton')
+        self.downloadPngButton = require_child(rootWidget, QPushButton, 'waferMapDownloadPngButton')
+        self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'waferMapDownloadHtmlButton')
+        self.refreshButton = require_child(rootWidget, QPushButton, 'refreshButton')
+        self.fontSizeSpinBox = require_child(rootWidget, QSpinBox, 'fontSizeSpinBox')
+
+        self.canvas = FigureCanvas()
+        self.plotLayout = QVBoxLayout(self.plotAreaWidget)
+        self.plotLayout.setContentsMargins(0, 0, 0, 0)
+        self.plotLayout.addWidget(self.canvas)
+
+        self._configure_widgets()
+
+    def _configure_widgets(self) -> None:
+        self.downloadPngButton.clicked.connect(self._download_png)
+        self.downloadHtmlButton.clicked.connect(self._download_html)
+        self.saveJsonButton.clicked.connect(self._save_config)
+        self.loadJsonButton.clicked.connect(self._load_config)
+        self.refreshButton.clicked.connect(self._draw_plot_when_ready)
+
+        for comboBox in [
+            self.xComboBox,
+            self.yComboBox,
+            self.zComboBox,
+            self.waferDiameterComboBox,
+            self.waferFlatComboBox,
+            self.heatMapOrContourComboBox,
+        ]:
+            comboBox.currentTextChanged.connect(self._mark_plot_dirty)
+        for spinBox in [
+            self.arrayXSpinBox,
+            self.arrayYSpinBox,
+            self.edgeExcludeSpinBox,
+            self.laserEdgeToTopSpinBox,
+            self.laserHeightSpinBox,
+            self.laserLengthSpinBox,
+            self.laserPosSpinBox,
+            self.fontSizeSpinBox,
+        ]:
+            spinBox.valueChanged.connect(self._mark_plot_dirty)
+        for checkBox in [
+            self.enableLaserMarkCheckBox,
+            self.showDetailCheckBox,
+            self.showDieRCCheckBox,
+        ]:
+            checkBox.stateChanged.connect(self._mark_plot_dirty)
+        for lineEdit in [
+            self.stepXLineEdit,
+            self.stepYLineEdit,
+            self.frameOffsetXLineEdit,
+            self.frameOffsetYLineEdit,
+            self.topLineEdit,
+            self.bottomLineEdit,
+            self.siteOffsetXLineEdit,
+            self.siteOffsetYLineEdit,
+            self.mapTitleLineEdit,
+        ]:
+            lineEdit.editingFinished.connect(self._mark_plot_dirty)
+
+        if not self.mapTitleLineEdit.text().strip():
+            self.mapTitleLineEdit.setText('wafer_frame_preview')
+
+    def set_tab_data(self, tabDataWidget) -> None:
+        self.tabDataWidget = tabDataWidget
+        self.tabDataWidget.add_data_changed_callback(self._on_data_changed)
+        self._on_data_changed()
+
+    def _on_data_changed(self) -> None:
+        dataFrame = self._plot_data()
+        columnNames = list(dataFrame.columns.astype(str)) if not dataFrame.empty else []
+        for comboBox in [self.xComboBox, self.yComboBox, self.zComboBox]:
+            currentText = comboBox.currentText().strip()
+            comboBox.blockSignals(True)
+            comboBox.clear()
+            comboBox.addItem('')
+            comboBox.addItems(columnNames)
+            if currentText in columnNames:
+                comboBox.setCurrentText(currentText)
+            comboBox.blockSignals(False)
+        self._mark_plot_dirty()
+
+    def _plot_data(self) -> pd.DataFrame:
+        if self.tabDataWidget is None:
+            return pd.DataFrame()
+        return self.tabDataWidget.get_plot_data()
+
+    def _draw_plot_when_ready(self, *_args) -> None:
+        try:
+            self.draw_plot()
+        except Exception as exc:
+            self._set_status(f'Wafer map error: {exc}', error=True)
+
+    def _mark_plot_dirty(self, *_args) -> None:
+        self._set_status('Wafer map settings changed. Press refresh to redraw.')
+
+    def draw_plot(self) -> None:
+        params = self._read_parameters()
+        validate_parameters(
+            params['stepXUm'],
+            params['stepYUm'],
+            params['siteOffsetXUm'],
+            params['siteOffsetYUm'],
+            params['diameterMm'],
+        )
+
+        dataFrame = self._plot_data()
+        pointsDf, valueLabel, coordinateMode, duplicateCount = self._build_points(dataFrame, params)
+        dieValueDf = self._build_die_value_data(dataFrame) if self._is_heatmap_mode() else pd.DataFrame()
+        hasPoints = not pointsDf.empty
+        contourGrid = None
+        isHeatMap = self._is_heatmap_mode()
+        contourStyle = 'die rectangle heatmap' if isHeatMap else 'filled + lines'
+
+        waferOutline = build_wafer_outline(
+            diameterMm=params['diameterMm'],
+            flatOption=params['flatOption'],
+        )
+        effectiveOutline = build_effective_outline(
+            waferOutline=waferOutline,
+            edgeExcludeMm=params['edgeExcludeMm'],
+        )
+        if len(effectiveOutline) < 3:
+            raise ValueError('edge exclude 太大，已無可用 wafer 區域。')
+
+        centerReferenceX = (float(waferOutline[:, 0].min()) + float(waferOutline[:, 0].max())) / 2.0
+        topReferenceY = top_y_at_x(waferOutline, centerReferenceX)
+        bottomReferenceY = float(waferOutline[:, 1].min())
+
+        completeFrames = build_complete_frame_rectangles(
+            outline=effectiveOutline,
+            stepXUm=params['stepXUm'],
+            stepYUm=params['stepYUm'],
+            frameOffsetXUm=params['frameOffsetXUm'],
+            frameOffsetYUm=params['frameOffsetYUm'],
+            topMm=params['topMm'],
+            bottomMm=params['bottomMm'],
+            topReferenceY=topReferenceY,
+            bottomReferenceY=bottomReferenceY,
+        )
+        completeDies = build_complete_die_rectangles(
+            outline=effectiveOutline,
+            stepXUm=params['stepXUm'],
+            stepYUm=params['stepYUm'],
+            arrayX=params['arrayX'],
+            arrayY=params['arrayY'],
+            frameOffsetXUm=params['frameOffsetXUm'],
+            frameOffsetYUm=params['frameOffsetYUm'],
+            topMm=params['topMm'],
+            topReferenceY=topReferenceY,
+        )
+        frameBottomGapMm = min((frame[1] for frame in completeFrames), default=float('nan')) - bottomReferenceY
+        if not completeFrames:
+            frameBottomGapMm = -1.0
+
+        outsideCount = count_points_outside_outline(pointsDf, effectiveOutline) if hasPoints and not isHeatMap else 0
+        showContour = hasPoints and not isHeatMap
+        if showContour:
+            contourGrid = build_interpolated_grid(pointsDf, effectiveOutline)
+
+        infoPanelText = self._build_info_panel_text(
+            params=params,
+            valueLabel=valueLabel,
+            coordinateMode=coordinateMode,
+            totalFrames=len(completeFrames),
+            totalDies=len(completeDies),
+            frameBottomGapMm=frameBottomGapMm,
+            showContour=(not isHeatMap) and showContour and contourGrid is not None,
+            contourStyle=contourStyle,
+        )
+
+        figure = render_figure(
+            pd.DataFrame() if isHeatMap else pointsDf,
+            waferOutline,
+            effectiveOutline,
+            params['title'],
+            None if isHeatMap else contourGrid,
+            valueLabel=valueLabel,
+            stepXUm=params['stepXUm'],
+            stepYUm=params['stepYUm'],
+            arrayX=params['arrayX'],
+            arrayY=params['arrayY'],
+            frameOffsetXUm=params['frameOffsetXUm'],
+            frameOffsetYUm=params['frameOffsetYUm'],
+            topMm=params['topMm'],
+            bottomMm=params['bottomMm'],
+            topReferenceY=topReferenceY,
+            bottomReferenceY=bottomReferenceY,
+            showContour=(not isHeatMap) and showContour and contourGrid is not None,
+            contourStyle=contourStyle,
+            showContourGrid=False,
+            showInfoPanel=self.showDetailCheckBox.isChecked(),
+            showDieLabels=self.showDieRCCheckBox.isChecked(),
+            infoPanelText=infoPanelText,
+            signatureText='by cnwang',
+            frameLineColor=self._label_color(self.frameLineColorLabel, '#f4a3a3'),
+            dieLineColor=self._label_color(self.dieLineColorLabel, '#ececec'),
+            effectiveEdgeColor=self._label_color(self.effectiveEdgeColorLabel, '#f4a3a3'),
+            waferEdgeColor=self._label_color(self.waferEdgeColorLabel, '#000000'),
+            contourGridColor='#d9d9d9',
+            showLaserMark=self.enableLaserMarkCheckBox.isChecked(),
+            edgeToMarkTopMm=float(self.laserEdgeToTopSpinBox.value()),
+            charHeightMm=float(self.laserHeightSpinBox.value()),
+            markerLengthMm=float(self.laserLengthSpinBox.value()),
+            laserMarkPositionDeg=float(self.laserPosSpinBox.value()),
+        )
+        heatmapMissCount = 0
+        if isHeatMap and not dieValueDf.empty:
+            heatmapMissCount = self._overlay_die_rect_heatmap(
+                figure,
+                dieValueDf,
+                completeDies,
+                params,
+                valueLabel,
+            )
+        self._apply_wafermap_font_style(figure, self._wafer_value_font_size())
+
+        self.currentFigure = figure
+        self._replace_canvas(figure)
+        self.canvas.draw()
+        self.currentHtml = self._figure_html(figure, params['title'])
+
+        statusParts = [f'Wafer map updated. frames={len(completeFrames)}, dies={len(completeDies)}']
+        if isHeatMap:
+            statusParts.append(f'heatmap cells={len(dieValueDf)}')
+        elif hasPoints:
+            statusParts.append(f'points={len(pointsDf)}')
+        if duplicateCount:
+            statusParts.append(f'duplicates collapsed={duplicateCount}')
+        if outsideCount:
+            statusParts.append(f'outside wafer={outsideCount}')
+        if heatmapMissCount:
+            statusParts.append(f'unmatched cells={heatmapMissCount}')
+        if not isHeatMap and hasPoints and contourGrid is None:
+            statusParts.append('contour skipped: insufficient points')
+        self._set_status(', '.join(statusParts))
+
+    def _build_points(
+        self,
+        dataFrame: pd.DataFrame,
+        params: dict[str, object],
+    ) -> tuple[pd.DataFrame, str, str, int]:
+        xColumn = self.xComboBox.currentText().strip()
+        yColumn = self.yComboBox.currentText().strip()
+        zColumn = self.zComboBox.currentText().strip()
+        if (
+            dataFrame.empty
+            or not xColumn
+            or not yColumn
+            or not zColumn
+            or xColumn not in dataFrame.columns
+            or yColumn not in dataFrame.columns
+            or zColumn not in dataFrame.columns
+        ):
+            return pd.DataFrame(), zColumn or 'thickness', 'index', 0
+
+        sourceDf = dataFrame[[xColumn, yColumn, zColumn]].copy()
+        sourceDf.columns = ['siteX', 'siteY', 'thickness']
+        sourceDf = sourceDf.apply(pd.to_numeric, errors='coerce')
+        sourceDf = sourceDf.dropna(subset=['siteX', 'siteY', 'thickness']).reset_index(drop=True)
+        if sourceDf.empty:
+            return pd.DataFrame(), zColumn, 'index', 0
+
+        hasFloatingCoord = (
+            ((sourceDf['siteX'] - sourceDf['siteX'].round()).abs() > 1e-9).any()
+            or ((sourceDf['siteY'] - sourceDf['siteY'].round()).abs() > 1e-9).any()
+        )
+        coordinateMode = 'mm' if hasFloatingCoord else 'index'
+        calculatedDf = calculate_positions(
+            sourceDf,
+            stepXUm=params['stepXUm'],
+            stepYUm=params['stepYUm'],
+            offsetXUm=params['siteOffsetXUm'],
+            offsetYUm=params['siteOffsetYUm'],
+            coordinateMode=coordinateMode,
+            indexBaseYUm=(params['topMm'] - params['edgeExcludeMm']) * 1000.0,
+        )
+        plotDf, duplicateCount = collapse_duplicate_points(calculatedDf)
+        return plotDf, zColumn, coordinateMode, duplicateCount
+
+    def _build_die_value_data(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
+        xColumn = self.xComboBox.currentText().strip()
+        yColumn = self.yComboBox.currentText().strip()
+        zColumn = self.zComboBox.currentText().strip()
+        if (
+            dataFrame.empty
+            or not xColumn
+            or not yColumn
+            or not zColumn
+            or xColumn not in dataFrame.columns
+            or yColumn not in dataFrame.columns
+            or zColumn not in dataFrame.columns
+        ):
+            return pd.DataFrame(columns=['dieX', 'dieY', 'value'])
+
+        dieValueDf = dataFrame[[xColumn, yColumn, zColumn]].copy()
+        # Heat map follows the original Plotly KGD convention:
+        # X = chip/die column, Y = chip/die row, and map (1, 1) is bottom-left.
+        # Data coordinates are shifted so min(col/row) becomes 1 on the map.
+        dieValueDf.columns = ['dieX', 'dieY', 'value']
+        dieValueDf = dieValueDf.apply(pd.to_numeric, errors='coerce')
+        dieValueDf = dieValueDf.dropna(subset=['dieX', 'dieY', 'value']).reset_index(drop=True)
+        if dieValueDf.empty:
+            return pd.DataFrame(columns=['dieX', 'dieY', 'value'])
+
+        dieValueDf['dieX'] = self._map_data_index_to_die_index(dieValueDf['dieX'])
+        dieValueDf['dieY'] = self._map_data_index_to_die_index(dieValueDf['dieY'])
+        return (
+            dieValueDf.groupby(['dieX', 'dieY'], as_index=False)
+            .agg(value=('value', 'mean'))
+            .sort_values(['dieY', 'dieX'])
+            .reset_index(drop=True)
+        )
+
+    def _map_data_index_to_die_index(self, series: pd.Series) -> pd.Series:
+        indexSeries = series.astype(float).round().astype(int)
+        if indexSeries.empty:
+            return indexSeries
+        return indexSeries - int(indexSeries.min()) + 1
+
+    def _overlay_die_rect_heatmap(
+        self,
+        figure,
+        dieValueDf: pd.DataFrame,
+        completeDies: list[tuple[float, float, float, float]],
+        params: dict[str, object],
+        valueLabel: str,
+    ) -> int:
+        if dieValueDf.empty or not completeDies:
+            return len(dieValueDf)
+
+        ax = figure.gca()
+        dieMap = self._die_rect_by_label(completeDies, params)
+        values = pd.to_numeric(dieValueDf['value'], errors='coerce').dropna()
+        if values.empty:
+            return len(dieValueDf)
+
+        valueMin = float(values.min())
+        valueMax = float(values.max())
+        if valueMin == valueMax:
+            valueMin -= 1.0
+            valueMax += 1.0
+        cmap = plt.get_cmap('RdYlGn_r')
+        norm = Normalize(vmin=valueMin, vmax=valueMax)
+        missCount = 0
+
+        for row in dieValueDf.itertuples(index=False):
+            dieX = int(row.dieX)
+            dieY = int(row.dieY)
+            value = float(row.value)
+            rect = dieMap.get((dieX, dieY))
+            if rect is None:
+                missCount += 1
+                continue
+
+            dieLeft, dieBottom, dieRight, dieTop = rect
+            color = cmap(norm(value))
+            patch = plt.Rectangle(
+                (dieLeft, dieBottom),
+                dieRight - dieLeft,
+                dieTop - dieBottom,
+                facecolor=color,
+                edgecolor='none',
+                linewidth=0,
+                alpha=1.0,
+                zorder=1.2,
+            )
+            ax.add_patch(patch)
+
+            centerX = (dieLeft + dieRight) / 2.0
+            centerY = (dieBottom + dieTop) / 2.0
+            ax.text(
+                centerX,
+                centerY,
+                f'{value:.1f}',
+                ha='center',
+                va='center',
+                fontsize=self._wafer_value_font_size(),
+                fontfamily=WAFERMAP_FONT_FAMILY,
+                color=(0, 0, 0, WAFERMAP_TEXT_ALPHA),
+                zorder=5,
+                bbox={'boxstyle': 'round,pad=0.1', 'fc': color, 'ec': 'none', 'alpha': WAFERMAP_TEXT_ALPHA},
+            )
+
+        scalarMappable = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        scalarMappable.set_array([])
+        colorbar = figure.colorbar(scalarMappable, ax=ax, fraction=0.046, pad=0.04)
+        colorbar.set_label(valueLabel)
+        colorbar.ax.yaxis.label.set_fontfamily(WAFERMAP_FONT_FAMILY)
+        colorbar.ax.yaxis.label.set_fontsize(WAFERMAP_FONT_SIZE)
+        colorbar.ax.yaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
+        colorbar.ax.tick_params(labelsize=WAFERMAP_FONT_SIZE)
+        for tickLabel in colorbar.ax.get_yticklabels():
+            tickLabel.set_fontfamily(WAFERMAP_FONT_FAMILY)
+            tickLabel.set_alpha(WAFERMAP_TEXT_ALPHA)
+        return missCount
+
+    def _die_rect_by_label(
+        self,
+        completeDies: list[tuple[float, float, float, float]],
+        params: dict[str, object],
+    ) -> dict[tuple[int, int], tuple[float, float, float, float]]:
+        minDieLeft = min(die[0] for die in completeDies)
+        minDieBottom = min(die[1] for die in completeDies)
+        stepXMm = params['stepXUm'] / 1000.0
+        stepYMm = params['stepYUm'] / 1000.0
+        dieWidthMm = stepXMm / max(int(params['arrayX']), 1)
+        dieHeightMm = stepYMm / max(int(params['arrayY']), 1)
+
+        dieMap: dict[tuple[int, int], tuple[float, float, float, float]] = {}
+        for dieLeft, dieBottom, dieRight, dieTop in completeDies:
+            xIndex = int(round((dieLeft - minDieLeft) / dieWidthMm))
+            yIndex = int(round((dieBottom - minDieBottom) / dieHeightMm))
+            dieMap[(xIndex + 1, yIndex + 1)] = (dieLeft, dieBottom, dieRight, dieTop)
+        return dieMap
+
+    def _apply_wafermap_font_style(self, figure, waferValueFontSize: int) -> None:
+        for ax in figure.axes:
+            title = ax.title
+            title.set_fontfamily(WAFERMAP_FONT_FAMILY)
+            title.set_fontsize(WAFERMAP_FONT_SIZE)
+            title.set_alpha(WAFERMAP_TEXT_ALPHA)
+            ax.xaxis.label.set_fontfamily(WAFERMAP_FONT_FAMILY)
+            ax.xaxis.label.set_fontsize(WAFERMAP_FONT_SIZE)
+            ax.xaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
+            ax.yaxis.label.set_fontfamily(WAFERMAP_FONT_FAMILY)
+            ax.yaxis.label.set_fontsize(WAFERMAP_FONT_SIZE)
+            ax.yaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
+            for tickLabel in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
+                tickLabel.set_fontfamily(WAFERMAP_FONT_FAMILY)
+                tickLabel.set_fontsize(WAFERMAP_FONT_SIZE)
+                tickLabel.set_alpha(WAFERMAP_TEXT_ALPHA)
+            for text in ax.texts:
+                text.set_fontfamily(WAFERMAP_FONT_FAMILY)
+                text.set_fontsize(waferValueFontSize)
+                text.set_alpha(WAFERMAP_TEXT_ALPHA)
+        for text in figure.texts:
+            text.set_fontfamily(WAFERMAP_FONT_FAMILY)
+            text.set_fontsize(WAFERMAP_FONT_SIZE)
+            text.set_alpha(WAFERMAP_TEXT_ALPHA)
+
+    def _wafer_value_font_size(self) -> int:
+        return max(1, int(self.fontSizeSpinBox.value()))
+
+    def _read_parameters(self) -> dict[str, object]:
+        return {
+            'title': self.mapTitleLineEdit.text().strip() or 'wafer_frame_preview',
+            'stepXUm': self._float_line_edit(self.stepXLineEdit, 10000.0),
+            'stepYUm': self._float_line_edit(self.stepYLineEdit, 10000.0),
+            'frameOffsetXUm': self._float_line_edit(self.frameOffsetXLineEdit, 0.0),
+            'frameOffsetYUm': self._float_line_edit(self.frameOffsetYLineEdit, 0.0),
+            'arrayX': max(1, int(self.arrayXSpinBox.value())),
+            'arrayY': max(1, int(self.arrayYSpinBox.value())),
+            'diameterMm': self._combo_float(self.waferDiameterComboBox, 150.0),
+            'edgeExcludeMm': float(self.edgeExcludeSpinBox.value()),
+            'flatOption': self._flat_option(),
+            'topMm': self._float_line_edit(self.topLineEdit, 10.0),
+            'bottomMm': self._float_line_edit(self.bottomLineEdit, 3.0),
+            'siteOffsetXUm': self._float_line_edit(self.siteOffsetXLineEdit, 0.0),
+            'siteOffsetYUm': self._float_line_edit(self.siteOffsetYLineEdit, 0.0),
+        }
+
+    def _build_info_panel_text(
+        self,
+        params: dict[str, object],
+        valueLabel: str,
+        coordinateMode: str,
+        totalFrames: int,
+        totalDies: int,
+        frameBottomGapMm: float,
+        showContour: bool,
+        contourStyle: str,
+    ) -> str:
+        skipRows = self.tabDataWidget.get_skip_rows() if self.tabDataWidget is not None else 0
+        return '\n'.join([
+            f"title: {params['title']}",
+            f"skip rows: {skipRows}",
+            f"value: {valueLabel}",
+            f"coord mode: {coordinateMode}",
+            "",
+            f"frame W: {params['stepXUm']:.1f} um",
+            f"frame H: {params['stepYUm']:.1f} um",
+            f"arrayX: {params['arrayX']}",
+            f"arrayY: {params['arrayY']}",
+            f"frameOffsetX: {params['frameOffsetXUm']:.1f} um",
+            f"frameOffsetY: {params['frameOffsetYUm']:.1f} um",
+            f"top: {params['topMm']:.2f} mm",
+            f"bottom: {params['bottomMm']:.2f} mm",
+            f"total frames: {totalFrames}",
+            f"total dies: {totalDies}",
+            f"frame bottom gap: {frameBottomGapMm:.2f} mm" if frameBottomGapMm >= 0 else "frame bottom gap: N/A",
+            "",
+            f"site offset X: {params['siteOffsetXUm']:.1f} um",
+            f"site offset Y: {params['siteOffsetYUm']:.1f} um",
+            "",
+            f"diameter: {params['diameterMm']:.1f} mm",
+            f"flat: {params['flatOption']}",
+            f"edge exclude: {params['edgeExcludeMm']:.2f} mm",
+            "",
+            f"contour map: {'ON' if showContour else 'OFF'}",
+            f"contour style: {contourStyle}",
+        ])
+
+    def _float_line_edit(self, lineEdit: QLineEdit, defaultValue: float) -> float:
+        try:
+            return float(lineEdit.text().strip())
+        except ValueError:
+            lineEdit.setText(str(defaultValue))
+            return defaultValue
+
+    def _combo_float(self, comboBox: QComboBox, defaultValue: float) -> float:
+        try:
+            return float(comboBox.currentText().strip())
+        except ValueError:
+            return defaultValue
+
+    def _flat_option(self) -> str:
+        text = self.waferFlatComboBox.currentText().strip().lower()
+        if '47.5' in text:
+            return '47.5 mm'
+        if 'notch' in text and '135' in text:
+            return 'notch-135'
+        if 'notch' in text:
+            return 'notch-180'
+        return '57.5 mm'
+
+    def _is_heatmap_mode(self) -> bool:
+        return 'heat' in self.heatMapOrContourComboBox.currentText().strip().lower()
+
+    def _label_color(self, label: QLabel, fallbackColor: str) -> str:
+        styleSheet = label.styleSheet()
+        rgbMatch = re.search(r'rgb\((\d+),\s*(\d+),\s*(\d+)\)', styleSheet)
+        if rgbMatch:
+            red, green, blue = (int(rgbMatch.group(index)) for index in range(1, 4))
+            return f'#{red:02x}{green:02x}{blue:02x}'
+        hexMatch = re.search(r'#[0-9a-fA-F]{6}', styleSheet)
+        if hexMatch:
+            return hexMatch.group(0)
+        return fallbackColor
+
+    def _config(self) -> dict[str, object]:
+        params = self._read_parameters()
+        params.update({
+            'xColumn': self.xComboBox.currentText().strip(),
+            'yColumn': self.yComboBox.currentText().strip(),
+            'zColumn': self.zComboBox.currentText().strip(),
+            'showDetail': self.showDetailCheckBox.isChecked(),
+            'showDieRC': self.showDieRCCheckBox.isChecked(),
+            'mode': self.heatMapOrContourComboBox.currentText().strip(),
+            'showLaserMark': self.enableLaserMarkCheckBox.isChecked(),
+            'laserMarkEdgeToTopMm': float(self.laserEdgeToTopSpinBox.value()),
+            'laserMarkCharHeightMm': float(self.laserHeightSpinBox.value()),
+            'laserMarkLengthMm': float(self.laserLengthSpinBox.value()),
+            'laserMarkPositionDeg': int(self.laserPosSpinBox.value()),
+            'fontSize': self._wafer_value_font_size(),
+        })
+        return params
+
+    def _apply_config(self, config: dict[str, object]) -> None:
+        lineEditMap = {
+            'title': self.mapTitleLineEdit,
+            'stepXUm': self.stepXLineEdit,
+            'stepYUm': self.stepYLineEdit,
+            'frameOffsetXUm': self.frameOffsetXLineEdit,
+            'frameOffsetYUm': self.frameOffsetYLineEdit,
+            'topMm': self.topLineEdit,
+            'bottomMm': self.bottomLineEdit,
+            'siteOffsetXUm': self.siteOffsetXLineEdit,
+            'siteOffsetYUm': self.siteOffsetYLineEdit,
+        }
+        for key, lineEdit in lineEditMap.items():
+            if key in config:
+                lineEdit.setText(str(config[key]))
+
+        if 'arrayX' in config:
+            self.arrayXSpinBox.setValue(max(1, int(config['arrayX'])))
+        if 'arrayY' in config:
+            self.arrayYSpinBox.setValue(max(1, int(config['arrayY'])))
+        if 'edgeExcludeMm' in config:
+            self.edgeExcludeSpinBox.setValue(float(config['edgeExcludeMm']))
+        if 'laserMarkEdgeToTopMm' in config:
+            self.laserEdgeToTopSpinBox.setValue(float(config['laserMarkEdgeToTopMm']))
+        if 'laserMarkCharHeightMm' in config:
+            self.laserHeightSpinBox.setValue(float(config['laserMarkCharHeightMm']))
+        if 'laserMarkLengthMm' in config:
+            self.laserLengthSpinBox.setValue(float(config['laserMarkLengthMm']))
+        if 'laserMarkPositionDeg' in config:
+            self.laserPosSpinBox.setValue(int(config['laserMarkPositionDeg']))
+        if 'fontSize' in config:
+            self.fontSizeSpinBox.setValue(max(1, int(config['fontSize'])))
+
+        self._set_combo_text(self.waferDiameterComboBox, str(config.get('diameterMm', '')))
+        self._set_combo_text(self.waferFlatComboBox, str(config.get('flatOption', '')).replace('-', ' '))
+        self._set_combo_text(self.xComboBox, str(config.get('xColumn', '')))
+        self._set_combo_text(self.yComboBox, str(config.get('yColumn', '')))
+        self._set_combo_text(self.zComboBox, str(config.get('zColumn', '')))
+        self._set_combo_text(self.heatMapOrContourComboBox, str(config.get('mode', '')))
+        self.showDetailCheckBox.setChecked(bool(config.get('showDetail', False)))
+        self.showDieRCCheckBox.setChecked(bool(config.get('showDieRC', False)))
+        self.enableLaserMarkCheckBox.setChecked(bool(config.get('showLaserMark', False)))
+        self._draw_plot_when_ready()
+
+    def _set_combo_text(self, comboBox: QComboBox, text: str) -> None:
+        if not text:
+            return
+        for index in range(comboBox.count()):
+            if comboBox.itemText(index).strip().lower() == text.strip().lower():
+                comboBox.setCurrentIndex(index)
+                return
+
+    def _save_config(self) -> None:
+        selectedFile, _ = QFileDialog.getSaveFileName(
+            self.rootWidget,
+            'Save wafermap config',
+            'wafermap_config.json',
+            'JSON Files (*.json);;All Files (*)',
+        )
+        if not selectedFile:
+            return
+        Path(selectedFile).write_text(
+            json.dumps(self._config(), ensure_ascii=False, indent=2),
+            encoding='utf-8',
+        )
+        self._set_status(f'Wafermap config saved: {selectedFile}')
+
+    def _load_config(self) -> None:
+        selectedFile, _ = QFileDialog.getOpenFileName(
+            self.rootWidget,
+            'Load wafermap config',
+            '',
+            'JSON Files (*.json);;All Files (*)',
+        )
+        if not selectedFile:
+            return
+        config = json.loads(Path(selectedFile).read_text(encoding='utf-8'))
+        if not isinstance(config, dict):
+            raise ValueError('Config JSON must be an object.')
+        self._apply_config(config)
+        self._set_status(f'Wafermap config loaded: {selectedFile}')
+
+    def _download_png(self) -> None:
+        if self.currentFigure is None:
+            self._set_status('No wafer map to save yet.', error=True)
+            return
+        selectedFile, _ = QFileDialog.getSaveFileName(
+            self.rootWidget,
+            'Save wafermap PNG',
+            'wafermap.png',
+            'PNG Files (*.png);;JPEG Files (*.jpg);;All Files (*)',
+        )
+        if not selectedFile:
+            return
+        self.currentFigure.savefig(selectedFile, dpi=300, bbox_inches='tight', facecolor='white')
+        self._set_status(f'Wafermap image saved: {selectedFile}')
+
+    def _download_html(self) -> None:
+        if not self.currentHtml:
+            self._set_status('No wafer map to save yet.', error=True)
+            return
+        selectedFile, _ = QFileDialog.getSaveFileName(
+            self.rootWidget,
+            'Save wafermap HTML',
+            'wafermap.html',
+            'HTML Files (*.html);;All Files (*)',
+        )
+        if not selectedFile:
+            return
+        Path(selectedFile).write_text(self.currentHtml, encoding='utf-8')
+        self._set_status(f'Wafermap HTML saved: {selectedFile}')
+
+    def _figure_html(self, figure, title: str) -> str:
+        imageBytes = figure_to_jpg_bytes(figure)
+        imageBase64 = base64.b64encode(imageBytes).decode('ascii')
+        escapedTitle = title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        return f'''<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{escapedTitle}</title>
+  <style>
+    body {{ margin: 0; background: #ffffff; }}
+    img {{ display: block; max-width: 100%; height: auto; margin: 0 auto; }}
+  </style>
+</head>
+<body>
+  <img alt="{escapedTitle}" src="data:image/jpeg;base64,{imageBase64}">
+</body>
+</html>
+'''
+
+    def _replace_canvas(self, figure) -> None:
+        oldCanvas = self.canvas
+        self.plotLayout.removeWidget(oldCanvas)
+        oldCanvas.setParent(None)
+        oldCanvas.deleteLater()
+        self.canvas = FigureCanvas(figure)
+        self.plotLayout.addWidget(self.canvas)
+
+    def _set_status(self, message: str, error: bool = False) -> None:
+        self.statusLabel.setText(message)
+        color = 'rgb(190, 20, 20)' if error else 'rgba(0, 0, 0, 204)'
+        self.statusLabel.setStyleSheet(f'QLabel {{ color: {color}; }}')
