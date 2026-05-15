@@ -12,7 +12,7 @@ os.environ.setdefault('MPLCONFIGDIR', tempfile.gettempdir())
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.colors import Normalize
-from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -51,8 +51,9 @@ WAFERMAP_FONT_SIZE = 10
 WAFERMAP_TEXT_ALPHA = 0.5
 
 
-class TabWafermapWidget:
+class TabWafermapWidget(QObject):
     def __init__(self, rootWidget: QWidget):
+        super().__init__(rootWidget)
         self.rootWidget = rootWidget
         self.tabDataWidget = None
         self.currentFigure = None
