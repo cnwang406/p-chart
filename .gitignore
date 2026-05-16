@@ -47,3 +47,5 @@ htmlcov/
 plot.html
 test*
 DX0116,_NiCr_mapping.jpg
+
+demo/*

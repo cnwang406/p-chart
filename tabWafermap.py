@@ -74,14 +74,18 @@ class TabWafermapWidget(QObject):
         self.arrayXSpinBox = require_child(rootWidget, QSpinBox, 'arrayXspinBox')
         self.arrayYSpinBox = require_child(rootWidget, QSpinBox, 'arrayYspinBox')
         self.frameLineColorLabel = require_child(rootWidget, QLabel, 'frameLineColorLabel')
+        self.frameLineWidthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'frameLineWidthSpinBox')
         self.dieLineColorLabel = require_child(rootWidget, QLabel, 'dieLineColorLabel')
+        self.dieLineWidthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'dieLineWidthSpinBox')
         self.waferDiameterComboBox = require_child(rootWidget, QComboBox, 'waferDiameterComboBox')
         self.edgeExcludeSpinBox = require_child(rootWidget, QDoubleSpinBox, 'waferEdgeExcludeDoubleSpinBox')
         self.waferFlatComboBox = require_child(rootWidget, QComboBox, 'waferFlatComboBox')
         self.topLineEdit = require_child(rootWidget, QLineEdit, 'stepXLineEdit_2')
         self.bottomLineEdit = require_child(rootWidget, QLineEdit, 'stepYLineEdit_2')
         self.effectiveEdgeColorLabel = require_child(rootWidget, QLabel, 'effectEdgeColorLabel')
+        self.effectiveEdgeWidthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'effectEdgeWidthSpinBox')
         self.waferEdgeColorLabel = require_child(rootWidget, QLabel, 'waferEdgeColorLabel')
+        self.waferEdgeWidthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'waferEdgeWidthSpinBox')
         self.enableLaserMarkCheckBox = require_child(rootWidget, QCheckBox, 'enableLaserMarkCheckBox')
         self.laserEdgeToTopSpinBox = require_child(rootWidget, QDoubleSpinBox, 'waferEdgeExcludeDoubleSpinBox_2')
         self.laserHeightSpinBox = require_child(rootWidget, QDoubleSpinBox, 'laserMarkHeightDoubleSpinBox')
@@ -91,6 +95,7 @@ class TabWafermapWidget(QObject):
         self.siteOffsetYLineEdit = require_child(rootWidget, QLineEdit, 'siteOffsetYLineEdit')
         self.plotAreaWidget = require_child(rootWidget, QWidget, 'waferMapPlotAreaWidget')
         self.statusLabel = require_child(rootWidget, QLabel, 'waferMapStatusLabelx')
+        self.boxStatusLabel = require_child(rootWidget, QLabel, 'boxStatusLabel')
         self.mapTitleLineEdit = require_child(rootWidget, QLineEdit, 'mapTitleLineEdit')
         self.showDetailCheckBox = require_child(rootWidget, QCheckBox, 'showDetailCheckBox')
         self.showDieRCCheckBox = require_child(rootWidget, QCheckBox, 'showDieRCCheckBox')
@@ -101,6 +106,8 @@ class TabWafermapWidget(QObject):
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'waferMapDownloadHtmlButton')
         self.refreshButton = require_child(rootWidget, QPushButton, 'refreshButton')
         self.fontSizeSpinBox = require_child(rootWidget, QSpinBox, 'fontSizeSpinBox')
+        self.colorBarHLineEdit = rootWidget.findChild(QLineEdit, 'colorBarHLineEdit')
+        self.colorBarLLineEdit = rootWidget.findChild(QLineEdit, 'colorBarLLineEdit')
 
         self.canvas = FigureCanvas()
         self.redrawTimer = QTimer(self.rootWidget)
@@ -114,6 +121,7 @@ class TabWafermapWidget(QObject):
         self._configure_widgets()
 
     def _configure_widgets(self) -> None:
+        self.statusLabel.setFont(self.boxStatusLabel.font())
         self.downloadPngButton.clicked.connect(self._download_png)
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.saveJsonButton.clicked.connect(self._save_config)
@@ -137,6 +145,10 @@ class TabWafermapWidget(QObject):
             self.arrayXSpinBox,
             self.arrayYSpinBox,
             self.edgeExcludeSpinBox,
+            self.frameLineWidthSpinBox,
+            self.dieLineWidthSpinBox,
+            self.effectiveEdgeWidthSpinBox,
+            self.waferEdgeWidthSpinBox,
             self.laserEdgeToTopSpinBox,
             self.laserHeightSpinBox,
             self.laserLengthSpinBox,
@@ -162,6 +174,9 @@ class TabWafermapWidget(QObject):
             self.mapTitleLineEdit,
         ]:
             lineEdit.editingFinished.connect(self._redraw_after_change)
+        for lineEdit in [self.colorBarHLineEdit, self.colorBarLLineEdit]:
+            if lineEdit is not None:
+                lineEdit.editingFinished.connect(self._redraw_after_change)
 
         if not self.mapTitleLineEdit.text().strip():
             self.mapTitleLineEdit.setText('wafer_frame_preview')
@@ -283,6 +298,10 @@ class TabWafermapWidget(QObject):
             effectiveEdgeColor=self._label_color(self.effectiveEdgeColorLabel, '#f4a3a3'),
             waferEdgeColor=self._label_color(self.waferEdgeColorLabel, '#000000'),
             contourGridColor='#d9d9d9',
+            frameLineWidth=float(self.frameLineWidthSpinBox.value()),
+            dieLineWidth=float(self.dieLineWidthSpinBox.value()),
+            effectiveEdgeLineWidth=float(self.effectiveEdgeWidthSpinBox.value()),
+            waferEdgeLineWidth=float(self.waferEdgeWidthSpinBox.value()),
             showLaserMark=self.enableLaserMarkCheckBox.isChecked(),
             edgeToMarkTopMm=float(self.laserEdgeToTopSpinBox.value()),
             charHeightMm=float(self.laserHeightSpinBox.value()),
@@ -424,6 +443,9 @@ class TabWafermapWidget(QObject):
 
         valueMin = float(values.min())
         valueMax = float(values.max())
+        colorBarLimits = self._colorbar_limits()
+        if colorBarLimits is not None:
+            valueMin, valueMax = colorBarLimits
         if valueMin == valueMax:
             valueMin -= 1.0
             valueMax += 1.0
@@ -441,7 +463,8 @@ class TabWafermapWidget(QObject):
                 continue
 
             dieLeft, dieBottom, dieRight, dieTop = rect
-            color = cmap(norm(value))
+            isValueInRange = valueMin <= value <= valueMax
+            color = cmap(norm(value)) if isValueInRange else 'white'
             patch = plt.Rectangle(
                 (dieLeft, dieBottom),
                 dieRight - dieLeft,
@@ -472,13 +495,15 @@ class TabWafermapWidget(QObject):
         scalarMappable = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         scalarMappable.set_array([])
         colorbar = figure.colorbar(scalarMappable, ax=ax, fraction=0.046, pad=0.04)
+        axisFontSize = self._wafer_axis_font_size()
         colorbar.set_label(valueLabel)
         colorbar.ax.yaxis.label.set_fontfamily(WAFERMAP_FONT_FAMILY)
-        colorbar.ax.yaxis.label.set_fontsize(WAFERMAP_FONT_SIZE)
+        colorbar.ax.yaxis.label.set_fontsize(axisFontSize)
         colorbar.ax.yaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
-        colorbar.ax.tick_params(labelsize=WAFERMAP_FONT_SIZE)
+        colorbar.ax.tick_params(labelsize=axisFontSize)
         for tickLabel in colorbar.ax.get_yticklabels():
             tickLabel.set_fontfamily(WAFERMAP_FONT_FAMILY)
+            tickLabel.set_fontsize(axisFontSize)
             tickLabel.set_alpha(WAFERMAP_TEXT_ALPHA)
         return missCount
 
@@ -502,20 +527,21 @@ class TabWafermapWidget(QObject):
         return dieMap
 
     def _apply_wafermap_font_style(self, figure, waferValueFontSize: int) -> None:
+        axisFontSize = self._wafer_axis_font_size()
         for ax in figure.axes:
             title = ax.title
             title.set_fontfamily(WAFERMAP_FONT_FAMILY)
-            title.set_fontsize(WAFERMAP_FONT_SIZE)
+            title.set_fontsize(axisFontSize)
             title.set_alpha(WAFERMAP_TEXT_ALPHA)
             ax.xaxis.label.set_fontfamily(WAFERMAP_FONT_FAMILY)
-            ax.xaxis.label.set_fontsize(WAFERMAP_FONT_SIZE)
+            ax.xaxis.label.set_fontsize(axisFontSize)
             ax.xaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
             ax.yaxis.label.set_fontfamily(WAFERMAP_FONT_FAMILY)
-            ax.yaxis.label.set_fontsize(WAFERMAP_FONT_SIZE)
+            ax.yaxis.label.set_fontsize(axisFontSize)
             ax.yaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
             for tickLabel in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
                 tickLabel.set_fontfamily(WAFERMAP_FONT_FAMILY)
-                tickLabel.set_fontsize(WAFERMAP_FONT_SIZE)
+                tickLabel.set_fontsize(axisFontSize)
                 tickLabel.set_alpha(WAFERMAP_TEXT_ALPHA)
             for text in ax.texts:
                 text.set_fontfamily(WAFERMAP_FONT_FAMILY)
@@ -523,11 +549,33 @@ class TabWafermapWidget(QObject):
                 text.set_alpha(WAFERMAP_TEXT_ALPHA)
         for text in figure.texts:
             text.set_fontfamily(WAFERMAP_FONT_FAMILY)
-            text.set_fontsize(5 if '\n' in text.get_text() else WAFERMAP_FONT_SIZE)
-            text.set_alpha(WAFERMAP_TEXT_ALPHA)
+            isInfoPanelText = '\n' in text.get_text()
+            text.set_fontsize(5 if isInfoPanelText else WAFERMAP_FONT_SIZE)
+            text.set_alpha(0.8 if isInfoPanelText else WAFERMAP_TEXT_ALPHA)
 
     def _wafer_value_font_size(self) -> int:
         return max(1, int(self.fontSizeSpinBox.value()))
+
+    def _wafer_axis_font_size(self) -> int:
+        return self._wafer_value_font_size() + 2
+
+    def _colorbar_limits(self) -> tuple[float, float] | None:
+        if self.colorBarHLineEdit is None or self.colorBarLLineEdit is None:
+            return None
+        highText = self.colorBarHLineEdit.text().strip()
+        lowText = self.colorBarLLineEdit.text().strip()
+        if not highText and not lowText:
+            return None
+        try:
+            highValue = float(highText) if highText else 0.0
+            lowValue = float(lowText) if lowText else 0.0
+        except ValueError:
+            raise ValueError('colorbar H/L 必須是數字。')
+        if highValue == 0.0 and lowValue == 0.0:
+            return None
+        if highValue <= lowValue:
+            raise ValueError('colorBarHLineEdit 必須大於 colorBarLLineEdit。')
+        return lowValue, highValue
 
     def _read_parameters(self) -> dict[str, object]:
         return {
@@ -540,6 +588,10 @@ class TabWafermapWidget(QObject):
             'arrayY': max(1, int(self.arrayYSpinBox.value())),
             'diameterMm': self._combo_float(self.waferDiameterComboBox, 150.0),
             'edgeExcludeMm': float(self.edgeExcludeSpinBox.value()),
+            'frameLineWidth': float(self.frameLineWidthSpinBox.value()),
+            'dieLineWidth': float(self.dieLineWidthSpinBox.value()),
+            'effectiveEdgeLineWidth': float(self.effectiveEdgeWidthSpinBox.value()),
+            'waferEdgeLineWidth': float(self.waferEdgeWidthSpinBox.value()),
             'flatOption': self._flat_option(),
             'topMm': self._float_line_edit(self.topLineEdit, 10.0),
             'bottomMm': self._float_line_edit(self.bottomLineEdit, 3.0),
@@ -626,25 +678,27 @@ class TabWafermapWidget(QObject):
         skipRows = self.tabDataWidget.get_skip_rows() if self.tabDataWidget is not None else 0
         return '\n'.join([
             f"title: {params['title']}",
+            "",
+            "--- data source ---",
             f"skip rows: {skipRows}",
             f"value: {valueLabel}",
             f"coord mode: {coordinateMode}",
             "",
-            f"frame W: {params['stepXUm']:.1f} um",
-            f"frame H: {params['stepYUm']:.1f} um",
-            f"arrayX: {params['arrayX']}",
-            f"arrayY: {params['arrayY']}",
-            f"frameOffsetX: {params['frameOffsetXUm']:.1f} um",
-            f"frameOffsetY: {params['frameOffsetYUm']:.1f} um",
-            f"top: {params['topMm']:.2f} mm",
-            f"bottom: {params['bottomMm']:.2f} mm",
-            f"total frames: {totalFrames}",
-            f"total dies: {totalDies}",
+            "--- frame parameters ---",
+            f"frame W: {params['stepXUm']:.1f} um, H: {params['stepYUm']:.1f} um",
+            f"array X: {params['arrayX']}, Y: {params['arrayY']}",
+            f"frameOffset X: {params['frameOffsetXUm']:.1f} um, Y: {params['frameOffsetYUm']:.1f} um",
+            f"top to edge : {params['topMm']:.2f} mm",
+            f"bottom to edge : {params['bottomMm']:.2f} mm",
             f"frame bottom gap: {frameBottomGapMm:.2f} mm" if frameBottomGapMm >= 0 else "frame bottom gap: N/A",
             "",
-            f"site offset X: {params['siteOffsetXUm']:.1f} um",
-            f"site offset Y: {params['siteOffsetYUm']:.1f} um",
+            f"total frames: {totalFrames}",
+            f"total dies: {totalDies}",
             "",
+            "--- measurement site offset ---",
+            f"site offset X: {params['siteOffsetXUm']:.1f} um, Y: {params['siteOffsetYUm']:.1f} um",
+            "",
+            "--- wafer geometry ---",
             f"diameter: {params['diameterMm']:.1f} mm",
             f"flat: {params['flatOption']}",
             f"edge exclude: {params['edgeExcludeMm']:.2f} mm",
@@ -743,6 +797,10 @@ class TabWafermapWidget(QObject):
             'laserMarkPositionDeg': int(self.laserPosSpinBox.value()),
             'fontSize': self._wafer_value_font_size(),
         })
+        if self.colorBarHLineEdit is not None:
+            params['colorBarHigh'] = self.colorBarHLineEdit.text().strip()
+        if self.colorBarLLineEdit is not None:
+            params['colorBarLow'] = self.colorBarLLineEdit.text().strip()
         return params
 
     def _apply_config(self, config: dict[str, object]) -> None:
@@ -769,6 +827,14 @@ class TabWafermapWidget(QObject):
                 self.arrayYSpinBox.setValue(max(1, int(config['arrayY'])))
             if 'edgeExcludeMm' in config:
                 self.edgeExcludeSpinBox.setValue(float(config['edgeExcludeMm']))
+            if 'frameLineWidth' in config:
+                self.frameLineWidthSpinBox.setValue(float(config['frameLineWidth']))
+            if 'dieLineWidth' in config:
+                self.dieLineWidthSpinBox.setValue(float(config['dieLineWidth']))
+            if 'effectiveEdgeLineWidth' in config:
+                self.effectiveEdgeWidthSpinBox.setValue(float(config['effectiveEdgeLineWidth']))
+            if 'waferEdgeLineWidth' in config:
+                self.waferEdgeWidthSpinBox.setValue(float(config['waferEdgeLineWidth']))
             if 'laserMarkEdgeToTopMm' in config:
                 self.laserEdgeToTopSpinBox.setValue(float(config['laserMarkEdgeToTopMm']))
             if 'laserMarkCharHeightMm' in config:
@@ -779,6 +845,10 @@ class TabWafermapWidget(QObject):
                 self.laserPosSpinBox.setValue(int(config['laserMarkPositionDeg']))
             if 'fontSize' in config:
                 self.fontSizeSpinBox.setValue(max(1, int(config['fontSize'])))
+            if self.colorBarHLineEdit is not None and 'colorBarHigh' in config:
+                self.colorBarHLineEdit.setText(str(config['colorBarHigh']))
+            if self.colorBarLLineEdit is not None and 'colorBarLow' in config:
+                self.colorBarLLineEdit.setText(str(config['colorBarLow']))
 
             self._set_combo_text(self.waferDiameterComboBox, str(config.get('diameterMm', '')))
             self._set_combo_text(self.waferFlatComboBox, str(config.get('flatOption', '')).replace('-', ' '))

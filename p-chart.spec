@@ -9,7 +9,6 @@ np_datas, np_binaries, np_hiddenimports = collect_all('numpy')
 pd_datas, pd_binaries, pd_hiddenimports = collect_all('pandas')
 mpl_datas, mpl_binaries, mpl_hiddenimports = collect_all('matplotlib')
 datas = [
-   ('mainwindow.ui', '.'),
    ('mainwindow-win.ui','.'),
    ('mainwindow-mac.ui', '.'),
    ('plotly.min.js', '.'),

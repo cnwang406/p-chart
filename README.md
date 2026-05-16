@@ -94,9 +94,8 @@ position `(1, 1)`.
 ## Files
 
 - `app.py`: application entry point.
-- `mainwindow-win.ui`, `mainwindow-mac.ui`: platform-specific Qt Designer UI
-  files selected automatically at startup.
-- `mainwindow.ui`: fallback Qt Designer UI for other platforms.
+- `mainwindow-win.ui`, `mainwindow-mac.ui`: Qt Designer UI files selected
+  automatically at startup. Non-Windows/non-macOS platforms use the mac UI.
 - `plotly_local.py`: local Plotly HTML helper for offline chart rendering.
 - `tabData.py`, `tabScatter.py`, `tabBoxplot.py`: tab controllers.
 - `tabWafermap.py`, `wafermap_core.py`: wafer map controller and geometry logic.

@@ -396,6 +396,7 @@ class TabDataWidget:
                 self._set_status(statusText, error=hasDataWarning)
                 self._append_detected_stubnames()
                 self._populate_columns()
+                self._warn_if_no_reshape_columns()
                 self._show_preview(self.loadedDataFrame)
                 self._notify_data_changed()
                 self.sheetComboBox.clear()
@@ -445,6 +446,7 @@ class TabDataWidget:
             hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
             self._append_detected_stubnames()
             self._populate_columns()
+            self._warn_if_no_reshape_columns()
             self._show_preview(self.loadedDataFrame)
             self._notify_data_changed()
             statusText = f'Sheet "{sheetName}" loaded successfully.'
@@ -747,6 +749,11 @@ class TabDataWidget:
         self.sheetGroupBox.setTitle(
             f'Sheet & columns ({self.matchingColumnCount}/{self.totalColumnCount})'
         )
+
+    def _warn_if_no_reshape_columns(self) -> None:
+        if self.loadedDataFrame.empty or self.matchingColumnCount > 0:
+            return
+        QMessageBox.warning(self.rootWidget, 'p-chart', '無可以 reshape 欄位')
 
     def _ordered_reshaped_columns(
         self,
@@ -1253,6 +1260,9 @@ class TabDataWidget:
 
     def has_reshaped_data(self) -> bool:
         return not self.meltedDataFrame.empty
+
+    def has_reshape_columns(self) -> bool:
+        return self.matchingColumnCount > 0
 
     def add_data_changed_callback(self, callback) -> None:
         self.dataChangedCallbacks.append(callback)

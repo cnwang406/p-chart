@@ -579,6 +579,7 @@ def draw_frames(
     topReferenceY: float,
     bottomReferenceY: float,
     lineColor: str,
+    lineWidth: float = 0.9,
 ) -> None:
     completeFrames = build_complete_frame_rectangles(
         outline=outline,
@@ -610,7 +611,7 @@ def draw_frames(
             [pointA[0], pointB[0]],
             [pointA[1], pointB[1]],
             color=lineColor,
-            linewidth=0.9,
+            linewidth=lineWidth,
             linestyle=(0, (4, 4)),
             alpha=0.9,
             zorder=2,
@@ -629,6 +630,7 @@ def draw_dies(
     topMm: float,
     topReferenceY: float,
     lineColor: str,
+    lineWidth: float = 0.6,
     showDieLabels: bool = False,
 ) -> None:
     completeDies = build_complete_die_rectangles(
@@ -661,7 +663,7 @@ def draw_dies(
             [pointA[0], pointB[0]],
             [pointA[1], pointB[1]],
             color=lineColor,
-            linewidth=0.6,
+            linewidth=lineWidth,
             linestyle="-",
             alpha=1.0,
             zorder=1.6,
@@ -895,6 +897,10 @@ def render_figure(
     effectiveEdgeColor: str,
     waferEdgeColor: str,
     contourGridColor: str,
+    frameLineWidth: float = 0.9,
+    dieLineWidth: float = 0.6,
+    effectiveEdgeLineWidth: float = 1.4,
+    waferEdgeLineWidth: float = 2.0,
     showLaserMark: bool = False,
     edgeToMarkTopMm: float = 3.0,
     charHeightMm: float = 1.3,
@@ -995,6 +1001,7 @@ def render_figure(
         topMm,
         topReferenceY,
         dieLineColor,
+        lineWidth=dieLineWidth,
         showDieLabels=showDieLabels,
     )
     draw_frames(
@@ -1009,14 +1016,15 @@ def render_figure(
         topReferenceY,
         bottomReferenceY,
         frameLineColor,
+        lineWidth=frameLineWidth,
     )
-    ax.plot(waferOutline[:, 0], waferOutline[:, 1], color=waferEdgeColor, linewidth=2.0, zorder=4)
+    ax.plot(waferOutline[:, 0], waferOutline[:, 1], color=waferEdgeColor, linewidth=waferEdgeLineWidth, zorder=4)
     if len(effectiveOutline) > 2:
         ax.plot(
             effectiveOutline[:, 0],
             effectiveOutline[:, 1],
             color=effectiveEdgeColor,
-            linewidth=1.4,
+            linewidth=effectiveEdgeLineWidth,
             zorder=4,
         )
     laserMarkPolygon = draw_laser_mark(
@@ -1056,7 +1064,7 @@ def render_figure(
 
     if showInfoPanel and infoPanelText:
         fig.text(
-            0.66,
+            0.72,
             0.50,
             infoPanelText,
             ha="left",
@@ -1080,7 +1088,7 @@ def render_figure(
             signatureText,
             ha="right",
             va="bottom",
-            fontsize=8.5,
+            fontsize=5.5,
             color="#bdbdbd",
         )
     return fig
