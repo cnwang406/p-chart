@@ -14,21 +14,21 @@ pluginPath = os.path.join(qtDir, "plugins")
 frameworkPath = os.path.join(qtDir, "lib")
 print (f'QT_PLUGIN_PATH: {pluginPath}')
 print (f'QT_FRAMEWORK_PATH: {frameworkPath}')   
-for key in [
-    "QT_PLUGIN_PATH",
-    "QT_QPA_PLATFORM_PLUGIN_PATH",
-    "DYLD_LIBRARY_PATH",
-    "DYLD_FRAMEWORK_PATH",
-]:
-    os.environ.pop(key, None)
+# for key in [
+#     "QT_PLUGIN_PATH",
+#     "QT_QPA_PLATFORM_PLUGIN_PATH",
+#     "DYLD_LIBRARY_PATH",
+#     "DYLD_FRAMEWORK_PATH",
+# ]:
+#     os.environ.pop(key, None)
 
-# 🔥 鎖死 Qt
-os.environ["QT_PLUGIN_PATH"] = pluginPath
-os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = os.path.join(pluginPath, "platforms")
-os.environ["DYLD_FRAMEWORK_PATH"] = frameworkPath
+# macOS/PySide6 can fail to load the cocoa platform plugin when Qt paths are
+# forced before importing PySide6. Let PySide6 resolve its own plugin/runtime paths.
+# os.environ["QT_PLUGIN_PATH"] = pluginPath
+# os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = os.path.join(pluginPath, "platforms")
+# os.environ["DYLD_FRAMEWORK_PATH"] = frameworkPath
 
-# 🔥 可選：關掉 designer plugin 掃描
-os.environ["PYSIDE_DESIGNER_PLUGINS"] = ""
+# os.environ["PYSIDE_DESIGNER_PLUGINS"] = ""
 
 
 import PySide6
@@ -52,6 +52,7 @@ from qt_helpers import require_child
 from tabBoxplot import TabBoxplotWidget
 from tabData import TabDataWidget
 from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
+from tabWafermap import TabWafermapWidget
 
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
@@ -199,8 +200,10 @@ class AppMain:
         self.noWebengineLabel.setText('' if preferWebEngine else 'no webEngine')
         self.tabScatterWidget = TabScatterWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabBoxplotWidget = TabBoxplotWidget(self.ui, preferWebEngine=preferWebEngine)
+        self.tabWafermapWidget = TabWafermapWidget(self.ui)
         self.tabScatterWidget.set_tab_data(self.tabDataWidget)
         self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)
+        self.tabWafermapWidget.set_tab_data(self.tabDataWidget)
         self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
         self.aboutButton.clicked.connect(self._show_about_dialog)
         self.tabWidget.setCurrentIndex(0)
@@ -238,7 +241,7 @@ class AppMain:
             return 'mainwindow-win.ui'
         if sys.platform == 'darwin':
             return 'mainwindow-mac.ui'
-        return 'mainwindow.ui'
+        return 'mainwindow-mac.ui'
 
     def _center_window(self) -> None:
         screen = self.app.primaryScreen()
@@ -251,9 +254,13 @@ class AppMain:
         self.ui.move(windowFrame.topLeft())
 
     def _warn_if_plotting_loaded_data(self, tabIndex: int) -> None:
-        if tabIndex not in [1, 2]:
+        if tabIndex not in [1, 2, 3]:
             return
-        if not self.tabDataWidget.has_loaded_data() or self.tabDataWidget.has_reshaped_data():
+        if (
+            not self.tabDataWidget.has_loaded_data()
+            or self.tabDataWidget.has_reshaped_data()
+            or not self.tabDataWidget.has_reshape_columns()
+        ):
             return
 
         warningText = '尚未完成 reshape. 會以原本的資料進行畫圖'
@@ -261,6 +268,8 @@ class AppMain:
             self.tabScatterWidget._set_status(warningText, error=True)
         elif tabIndex == 2:
             self.tabBoxplotWidget._set_status(warningText, error=True)
+        elif tabIndex == 3:
+            self.tabWafermapWidget._set_status(warningText, error=True)
         self._show_app_icon_warning(warningText)
 
     def _show_app_icon_warning(self, message: str) -> None:

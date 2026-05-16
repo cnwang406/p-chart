@@ -7,8 +7,8 @@ app_name = 'p-chart'
 
 np_datas, np_binaries, np_hiddenimports = collect_all('numpy')
 pd_datas, pd_binaries, pd_hiddenimports = collect_all('pandas')
+mpl_datas, mpl_binaries, mpl_hiddenimports = collect_all('matplotlib')
 datas = [
-   ('mainwindow.ui', '.'),
    ('mainwindow-win.ui','.'),
    ('mainwindow-mac.ui', '.'),
    ('plotly.min.js', '.'),
@@ -18,7 +18,7 @@ datas = [
 ]
 datas += collect_data_files('plotly')
 datas += collect_data_files('kaleido')
-datas += np_datas + pd_datas
+datas += np_datas + pd_datas + mpl_datas
 hiddenimports = [
    'PySide6.QtWebEngineWidgets',
    'PySide6.QtWebEngineCore',
@@ -27,12 +27,12 @@ hiddenimports = [
 hiddenimports += collect_submodules('plotly')
 hiddenimports += collect_submodules('openpyxl')
 #hiddenimports += collect_submodules('kaleido')
-hiddenimports += np_hiddenimports + pd_hiddenimports
+hiddenimports += np_hiddenimports + pd_hiddenimports + mpl_hiddenimports
 hiddenimports += ['kaleido', 'kaleido.scopes', 'kaleido._version']
 a = Analysis(
    ['app.py'],
    pathex=[],
-   binaries=np_binaries + pd_binaries,
+   binaries=np_binaries + pd_binaries + mpl_binaries,
    datas=datas, hiddenimports=hiddenimports,
    hookspath=[],
    hooksconfig={},

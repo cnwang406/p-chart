@@ -17,6 +17,8 @@ License: MIT
   reference lines, auto ranges, and Y statistics.
 - Create Plotly box plots with Y, Group 1, Group 2, sorted X categories, point
   display options, Y lines, and selectable per-box annotations.
+- Create wafer maps with frame/die layout, matplotlib contour maps, and KGD-like
+  die heatmaps.
 - Support drag-and-drop loading, date-aware scatter X axes, and copyable pivot
   summary tables.
 - Use embedded Qt WebEngine for Plotly charts, with system-browser fallback for
@@ -77,14 +79,26 @@ checkboxes and are displayed in a fixed order: `N`, `max`, `1/4Q`, `median`,
 `average`, `3/4Q`, `min`, `standard deviation`, and `range`. Numeric formatting
 accepts Python specifiers such as `.2f`, `.3g`, `,.1f`, or `{value:.2f}`.
 
+Wafermap heatmap mode treats the selected X/Y/Z columns as KGD-style
+`column / row / value` data. The map origin is the lower-left die. Data
+coordinates are normalized before plotting:
+
+```python
+col_on_map = col_on_data - min(col_on_data) + 1
+row_on_map = row_on_data - min(row_on_data) + 1
+```
+
+So the smallest column and row in the loaded data are always drawn at map
+position `(1, 1)`.
+
 ## Files
 
 - `app.py`: application entry point.
-- `mainwindow-win.ui`, `mainwindow-mac.ui`: platform-specific Qt Designer UI
-  files selected automatically at startup.
-- `mainwindow.ui`: fallback Qt Designer UI for other platforms.
+- `mainwindow-win.ui`, `mainwindow-mac.ui`: Qt Designer UI files selected
+  automatically at startup. Non-Windows/non-macOS platforms use the mac UI.
 - `plotly_local.py`: local Plotly HTML helper for offline chart rendering.
 - `tabData.py`, `tabScatter.py`, `tabBoxplot.py`: tab controllers.
+- `tabWafermap.py`, `wafermap_core.py`: wafer map controller and geometry logic.
 - `p-chart.spec`: PyInstaller build config.
 - `LICENSE`: MIT License.
 
