@@ -46,7 +46,6 @@ from wafermap_core import (
 )
 
 
-WAFERMAP_FONT_FAMILY = 'Cascadia Next TC'
 WAFERMAP_FONT_SIZE = 10
 WAFERMAP_TEXT_ALPHA = 0.5
 
@@ -486,7 +485,6 @@ class TabWafermapWidget(QObject):
                 ha='center',
                 va='center',
                 fontsize=self._wafer_value_font_size(),
-                fontfamily=WAFERMAP_FONT_FAMILY,
                 color=(0, 0, 0, WAFERMAP_TEXT_ALPHA),
                 zorder=5,
                 bbox={'boxstyle': 'round,pad=0.1', 'fc': color, 'ec': 'none', 'alpha': WAFERMAP_TEXT_ALPHA},
@@ -497,12 +495,10 @@ class TabWafermapWidget(QObject):
         colorbar = figure.colorbar(scalarMappable, ax=ax, fraction=0.046, pad=0.04)
         axisFontSize = self._wafer_axis_font_size()
         colorbar.set_label(valueLabel)
-        colorbar.ax.yaxis.label.set_fontfamily(WAFERMAP_FONT_FAMILY)
         colorbar.ax.yaxis.label.set_fontsize(axisFontSize)
         colorbar.ax.yaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
         colorbar.ax.tick_params(labelsize=axisFontSize)
         for tickLabel in colorbar.ax.get_yticklabels():
-            tickLabel.set_fontfamily(WAFERMAP_FONT_FAMILY)
             tickLabel.set_fontsize(axisFontSize)
             tickLabel.set_alpha(WAFERMAP_TEXT_ALPHA)
         return missCount
@@ -530,25 +526,19 @@ class TabWafermapWidget(QObject):
         axisFontSize = self._wafer_axis_font_size()
         for ax in figure.axes:
             title = ax.title
-            title.set_fontfamily(WAFERMAP_FONT_FAMILY)
             title.set_fontsize(axisFontSize)
             title.set_alpha(WAFERMAP_TEXT_ALPHA)
-            ax.xaxis.label.set_fontfamily(WAFERMAP_FONT_FAMILY)
             ax.xaxis.label.set_fontsize(axisFontSize)
             ax.xaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
-            ax.yaxis.label.set_fontfamily(WAFERMAP_FONT_FAMILY)
             ax.yaxis.label.set_fontsize(axisFontSize)
             ax.yaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
             for tickLabel in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
-                tickLabel.set_fontfamily(WAFERMAP_FONT_FAMILY)
                 tickLabel.set_fontsize(axisFontSize)
                 tickLabel.set_alpha(WAFERMAP_TEXT_ALPHA)
             for text in ax.texts:
-                text.set_fontfamily(WAFERMAP_FONT_FAMILY)
                 text.set_fontsize(waferValueFontSize)
                 text.set_alpha(WAFERMAP_TEXT_ALPHA)
         for text in figure.texts:
-            text.set_fontfamily(WAFERMAP_FONT_FAMILY)
             isInfoPanelText = '\n' in text.get_text()
             text.set_fontsize(5 if isInfoPanelText else WAFERMAP_FONT_SIZE)
             text.set_alpha(0.8 if isInfoPanelText else WAFERMAP_TEXT_ALPHA)
