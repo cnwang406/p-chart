@@ -39,6 +39,8 @@ from PySide6.QtWidgets import (
 )
 
 from qt_helpers import require_child
+from async_helpers import BackgroundTaskMixin
+from loading_overlay import LoadingOverlay
 
 
 class DropFileFilter(QObject):
@@ -173,7 +175,7 @@ class PreviewSortFilterProxyModel(QSortFilterProxyModel):
             return str(leftValue).lower() < str(rightValue).lower()
 
 
-class TabDataWidget:
+class TabDataWidget(BackgroundTaskMixin):
     _dateColumnNamePattern = re.compile(
         r'(date|time|datetime|timestamp|dt|日期|時間|日付|年月日)',
         re.IGNORECASE,
@@ -226,6 +228,7 @@ class TabDataWidget:
         self.previewSourceDataFrame = pd.DataFrame()
         self.previewTableModel = PreviewTableModel()
         self.previewProxyModel = PreviewSortFilterProxyModel()
+        self.loadingOverlay = LoadingOverlay(self.previewTableWidget)
         self.previewMaxRows = 1000
         self.dataChangedCallbacks = []
         self.matchChangedCallbacks = []
@@ -380,39 +383,90 @@ class TabDataWidget:
             return
 
         self.loadedFilePath = filePath
-        try:
+        self.loadButton.setEnabled(False)
+        self.browseFileButton.setEnabled(False)
+        self._set_status('Loading file...')
+        self.loadingOverlay.show('Loading...')
+        skipRowsRequest = self._skip_rows_request()
+
+        def work() -> dict[str, object]:
             if filePath.lower().endswith('.csv'):
-                skipRows = self._resolve_skip_rows_for_file(filePath)
-                self.loadedDataFrame = pd.read_csv(filePath, skiprows=skipRows)
-                normalizedColumns = self._normalize_loaded_datetime_formats(self.loadedDataFrame)
-                hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
-                statusText = 'CSV loaded successfully.'
-                if skipRows:
-                    statusText += f' skiprows={skipRows}.'
-                if normalizedColumns:
-                    statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
-                if hasDataWarning:
-                    statusText += ' Possible date format issue found.'
-                self._set_status(statusText, error=hasDataWarning)
-                self._append_detected_stubnames()
-                self._populate_columns()
-                self._warn_if_no_reshape_columns()
-                self._show_preview(self.loadedDataFrame)
-                self._notify_data_changed()
-                self.sheetComboBox.clear()
-                self.sheetComboBox.addItem('csv')
-                self.sheetComboBox.setEnabled(False)
-                self.loadButton.setEnabled(False)
-            else:
-                with pd.ExcelFile(filePath) as excelReader:
-                    sheetNames = excelReader.sheet_names
-                self.sheetComboBox.clear()
-                self.sheetComboBox.addItems(sheetNames)
-                self.sheetComboBox.setEnabled(True)
-                self.loadButton.setEnabled(True)
-                self._set_status('Excel workbook loaded. Choose a sheet and press Load.')
-        except Exception as exc:
-            self._set_status(f'Error loading file: {exc}', error=True)
+                skipRows = self._resolve_skip_rows_for_worker(
+                    filePath,
+                    skipRowsRequest,
+                )
+                dataFrame = pd.read_csv(filePath, skiprows=skipRows)
+                normalizedColumns = self._normalize_loaded_datetime_formats(dataFrame)
+                warnings = self._loaded_data_warnings(dataFrame)
+                return {
+                    'kind': 'csv',
+                    'filePath': filePath,
+                    'dataFrame': dataFrame,
+                    'skipRows': skipRows,
+                    'normalizedColumns': normalizedColumns,
+                    'warnings': warnings,
+                }
+
+            with pd.ExcelFile(filePath) as excelReader:
+                sheetNames = excelReader.sheet_names
+            return {'kind': 'workbook', 'filePath': filePath, 'sheetNames': sheetNames}
+
+        self._activeLoadTaskId = self._start_background_task(
+            work,
+            self._on_load_file_finished,
+            self._on_load_file_failed,
+        )
+
+    def _on_load_file_finished(self, taskId: int, result: dict[str, object]) -> None:
+        if taskId != getattr(self, '_activeLoadTaskId', None):
+            return
+        self.browseFileButton.setEnabled(True)
+        if result.get('filePath') != self.loadedFilePath:
+            return
+
+        if result.get('kind') == 'csv':
+            self.loadingOverlay.hide()
+            self.loadedDataFrame = result['dataFrame']
+            self._apply_resolved_skip_rows(int(result.get('skipRows', 0)))
+            warnings = list(result.get('warnings', []))
+            if warnings:
+                self._show_loaded_data_warning_messages(warnings)
+            self._append_detected_stubnames()
+            self._populate_columns()
+            self._warn_if_no_reshape_columns()
+            self._show_preview(self.loadedDataFrame)
+            self._notify_data_changed()
+            self.sheetComboBox.clear()
+            self.sheetComboBox.addItem('csv')
+            self.sheetComboBox.setEnabled(False)
+            self.loadButton.setEnabled(False)
+            statusText = 'CSV loaded successfully.'
+            skipRows = int(result.get('skipRows', 0))
+            normalizedColumns = list(result.get('normalizedColumns', []))
+            if skipRows:
+                statusText += f' skiprows={skipRows}.'
+            if normalizedColumns:
+                statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
+            if warnings:
+                statusText += ' Possible date format issue found.'
+            self._set_status(statusText, error=bool(warnings))
+            return
+
+        sheetNames = list(result.get('sheetNames', []))
+        self.loadingOverlay.hide()
+        self.sheetComboBox.clear()
+        self.sheetComboBox.addItems(sheetNames)
+        self.sheetComboBox.setEnabled(True)
+        self.loadButton.setEnabled(True)
+        self._set_status('Excel workbook loaded. Choose a sheet and press Load.')
+
+    def _on_load_file_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != getattr(self, '_activeLoadTaskId', None):
+            return
+        self.browseFileButton.setEnabled(True)
+        self.loadButton.setEnabled(True)
+        self.loadingOverlay.hide()
+        self._set_status(f'Error loading file: {errorText}', error=True)
 
     def _load_selected_sheet(self) -> None:
         filePath = self.filePathLineEdit.text().strip()
@@ -433,32 +487,80 @@ class TabDataWidget:
         self._load_sheet_data(sheetName)
 
     def _load_sheet_data(self, sheetName: str) -> None:
-        try:
-            self._invalidate_melted_data()
-            skipRows = self._resolve_skip_rows_for_file(self.loadedFilePath, sheetName=sheetName)
-            with pd.ExcelFile(self.loadedFilePath) as excelReader:
-                self.loadedDataFrame = pd.read_excel(
+        self._invalidate_melted_data()
+        filePath = self.loadedFilePath
+        self.loadButton.setEnabled(False)
+        self.browseFileButton.setEnabled(False)
+        self._set_status(f'Loading sheet "{sheetName}"...')
+        self.loadingOverlay.show('Loading...')
+        skipRowsRequest = self._skip_rows_request()
+
+        def work() -> dict[str, object]:
+            skipRows = self._resolve_skip_rows_for_worker(
+                filePath,
+                skipRowsRequest,
+                sheetName=sheetName,
+            )
+            with pd.ExcelFile(filePath) as excelReader:
+                dataFrame = pd.read_excel(
                     excelReader,
                     sheet_name=sheetName,
                     skiprows=skipRows,
                 )
-            normalizedColumns = self._normalize_loaded_datetime_formats(self.loadedDataFrame)
-            hasDataWarning = self._show_loaded_data_warnings(self.loadedDataFrame)
-            self._append_detected_stubnames()
-            self._populate_columns()
-            self._warn_if_no_reshape_columns()
-            self._show_preview(self.loadedDataFrame)
-            self._notify_data_changed()
-            statusText = f'Sheet "{sheetName}" loaded successfully.'
-            if skipRows:
-                statusText += f' skiprows={skipRows}.'
-            if normalizedColumns:
-                statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
-            if hasDataWarning:
-                statusText += ' Possible date format issue found.'
-            self._set_status(statusText, error=hasDataWarning)
-        except Exception as exc:
-            self._set_status(f'Failed to load sheet: {exc}', error=True)
+            normalizedColumns = self._normalize_loaded_datetime_formats(dataFrame)
+            warnings = self._loaded_data_warnings(dataFrame)
+            return {
+                'filePath': filePath,
+                'sheetName': sheetName,
+                'dataFrame': dataFrame,
+                'skipRows': skipRows,
+                'normalizedColumns': normalizedColumns,
+                'warnings': warnings,
+            }
+
+        self._activeSheetTaskId = self._start_background_task(
+            work,
+            self._on_load_sheet_finished,
+            self._on_load_sheet_failed,
+        )
+
+    def _on_load_sheet_finished(self, taskId: int, result: dict[str, object]) -> None:
+        if taskId != getattr(self, '_activeSheetTaskId', None):
+            return
+        self.browseFileButton.setEnabled(True)
+        self.loadButton.setEnabled(True)
+        if result.get('filePath') != self.loadedFilePath:
+            return
+        self.loadingOverlay.hide()
+        self.loadedDataFrame = result['dataFrame']
+        self._apply_resolved_skip_rows(int(result.get('skipRows', 0)))
+        warnings = list(result.get('warnings', []))
+        if warnings:
+            self._show_loaded_data_warning_messages(warnings)
+        self._append_detected_stubnames()
+        self._populate_columns()
+        self._warn_if_no_reshape_columns()
+        self._show_preview(self.loadedDataFrame)
+        self._notify_data_changed()
+        sheetName = str(result.get('sheetName', ''))
+        statusText = f'Sheet "{sheetName}" loaded successfully.'
+        skipRows = int(result.get('skipRows', 0))
+        normalizedColumns = list(result.get('normalizedColumns', []))
+        if skipRows:
+            statusText += f' skiprows={skipRows}.'
+        if normalizedColumns:
+            statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
+        if warnings:
+            statusText += ' Possible date format issue found.'
+        self._set_status(statusText, error=bool(warnings))
+
+    def _on_load_sheet_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != getattr(self, '_activeSheetTaskId', None):
+            return
+        self.browseFileButton.setEnabled(True)
+        self.loadButton.setEnabled(True)
+        self.loadingOverlay.hide()
+        self._set_status(f'Failed to load sheet: {errorText}', error=True)
 
     def _normalize_loaded_datetime_formats(self, dataFrame: pd.DataFrame) -> list[str]:
         normalizedColumns = []
@@ -520,13 +622,19 @@ class TabDataWidget:
         return f'{matchedRow["date"]} {timeText}'
 
     def _show_loaded_data_warnings(self, dataFrame: pd.DataFrame) -> bool:
-        warnings = [
+        warnings = self._loaded_data_warnings(dataFrame)
+        if not warnings:
+            return False
+        self._show_loaded_data_warning_messages(warnings)
+        return True
+
+    def _loaded_data_warnings(self, dataFrame: pd.DataFrame) -> list[str]:
+        return [
             *self._detect_excel_zero_date_columns(dataFrame),
             *self._detect_suspicious_date_columns(dataFrame),
         ]
-        if not warnings:
-            return False
 
+    def _show_loaded_data_warning_messages(self, warnings: list[str]) -> None:
         warningText = '\n'.join(warnings[:8])
         if len(warnings) > 8:
             warningText += f'\n...and {len(warnings) - 8} more columns.'
@@ -541,7 +649,6 @@ class TabDataWidget:
                 'values were converted by Excel or pandas.'
             ),
         )
-        return True
 
     def _detect_excel_zero_date_columns(self, dataFrame: pd.DataFrame) -> list[str]:
         warnings = []
@@ -848,6 +955,7 @@ class TabDataWidget:
     ) -> None:
         self.previewMaxRows = maxRows
         self.previewSourceDataFrame = dataFrame
+        self.loadingOverlay.hide()
         if clearFilters:
             self.previewProxyModel.clear_filters()
         if dataFrame.empty:
@@ -1101,6 +1209,52 @@ class TabDataWidget:
     def get_skip_rows(self) -> int:
         return int(self.skipRowsSpinBox.value())
 
+    def _skip_rows_request(self) -> dict[str, int | bool | None]:
+        currentSkipRows = self.get_skip_rows()
+        canAutoDetect = (
+            currentSkipRows == 0
+            or self.autoDetectedSkipRows is not None
+            and currentSkipRows == self.autoDetectedSkipRows
+        )
+        return {
+            'currentSkipRows': currentSkipRows,
+            'canAutoDetect': canAutoDetect,
+        }
+
+    def _resolve_skip_rows_for_worker(
+        self,
+        filePath: str,
+        skipRowsRequest: dict[str, int | bool | None],
+        sheetName: str | None = None,
+    ) -> int:
+        currentSkipRows = int(skipRowsRequest['currentSkipRows'] or 0)
+        if not bool(skipRowsRequest['canAutoDetect']):
+            return currentSkipRows
+
+        return self._detect_skip_rows(
+            filePath,
+            sheetName=sheetName,
+            fallbackSkipRows=currentSkipRows,
+        )
+
+    def _apply_resolved_skip_rows(self, skipRows: int) -> None:
+        currentSkipRows = self.get_skip_rows()
+        canAutoDetect = (
+            currentSkipRows == 0
+            or self.autoDetectedSkipRows is not None
+            and currentSkipRows == self.autoDetectedSkipRows
+        )
+        if not canAutoDetect:
+            return
+
+        if skipRows != currentSkipRows:
+            self.settingSkipRowsFromAutoDetect = True
+            try:
+                self.skipRowsSpinBox.setValue(skipRows)
+            finally:
+                self.settingSkipRowsFromAutoDetect = False
+        self.autoDetectedSkipRows = skipRows
+
     def _resolve_skip_rows_for_file(self, filePath: str, sheetName: str | None = None) -> int:
         currentSkipRows = self.get_skip_rows()
         canAutoDetect = (
@@ -1121,7 +1275,12 @@ class TabDataWidget:
         self.autoDetectedSkipRows = detectedSkipRows
         return detectedSkipRows
 
-    def _detect_skip_rows(self, filePath: str, sheetName: str | None = None) -> int:
+    def _detect_skip_rows(
+        self,
+        filePath: str,
+        sheetName: str | None = None,
+        fallbackSkipRows: int | None = None,
+    ) -> int:
         try:
             if filePath.lower().endswith('.csv'):
                 previewRows = self._read_csv_preview_rows(filePath)
@@ -1136,6 +1295,8 @@ class TabDataWidget:
                     keep_default_na=False,
                 )
         except Exception:
+            if fallbackSkipRows is not None:
+                return fallbackSkipRows
             return self.get_skip_rows()
 
         if previewDf.empty:

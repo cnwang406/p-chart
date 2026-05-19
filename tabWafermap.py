@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
 )
 
 from qt_helpers import require_child
+from async_helpers import BackgroundTaskMixin
+from loading_overlay import LoadingOverlay
 from wafermap_core import (
     build_complete_die_rectangles,
     build_complete_frame_rectangles,
@@ -50,7 +52,7 @@ WAFERMAP_FONT_SIZE = 10
 WAFERMAP_TEXT_ALPHA = 0.5
 
 
-class TabWafermapWidget(QObject):
+class TabWafermapWidget(QObject, BackgroundTaskMixin):
     def __init__(self, rootWidget: QWidget):
         super().__init__(rootWidget)
         self.rootWidget = rootWidget
@@ -116,6 +118,7 @@ class TabWafermapWidget(QObject):
         self.plotLayout = QVBoxLayout(self.plotAreaWidget)
         self.plotLayout.setContentsMargins(0, 0, 0, 0)
         self.plotLayout.addWidget(self.canvas)
+        self.loadingOverlay = LoadingOverlay(self.plotAreaWidget)
 
         self._configure_widgets()
 
@@ -224,7 +227,45 @@ class TabWafermapWidget(QObject):
         self.redrawTimer.start()
 
     def draw_plot(self) -> None:
-        params = self._read_parameters()
+        snapshot = self._wafermap_snapshot()
+        self._set_status('Wafer map rendering...')
+        self.loadingOverlay.show('Loading...')
+        self._activeRenderTaskId = self._start_background_task(
+            lambda: self._build_wafermap_result(snapshot),
+            self._on_wafermap_render_finished,
+            self._on_wafermap_render_failed,
+        )
+
+    def _wafermap_snapshot(self) -> dict[str, object]:
+        return {
+            'params': self._read_parameters(),
+            'dataFrame': self._plot_data().copy(),
+            'xColumn': self.xComboBox.currentText().strip(),
+            'yColumn': self.yComboBox.currentText().strip(),
+            'zColumn': self.zComboBox.currentText().strip(),
+            'isHeatMap': self._is_heatmap_mode(),
+            'showDetail': self.showDetailCheckBox.isChecked(),
+            'showDieLabels': self.showDieRCCheckBox.isChecked(),
+            'frameLineColor': self._label_color(self.frameLineColorLabel, '#f4a3a3'),
+            'dieLineColor': self._label_color(self.dieLineColorLabel, '#ececec'),
+            'effectiveEdgeColor': self._label_color(self.effectiveEdgeColorLabel, '#f4a3a3'),
+            'waferEdgeColor': self._label_color(self.waferEdgeColorLabel, '#000000'),
+            'frameLineWidth': float(self.frameLineWidthSpinBox.value()),
+            'dieLineWidth': float(self.dieLineWidthSpinBox.value()),
+            'effectiveEdgeLineWidth': float(self.effectiveEdgeWidthSpinBox.value()),
+            'waferEdgeLineWidth': float(self.waferEdgeWidthSpinBox.value()),
+            'showLaserMark': self.enableLaserMarkCheckBox.isChecked(),
+            'edgeToMarkTopMm': float(self.laserEdgeToTopSpinBox.value()),
+            'charHeightMm': float(self.laserHeightSpinBox.value()),
+            'markerLengthMm': float(self.laserLengthSpinBox.value()),
+            'laserMarkPositionDeg': float(self.laserPosSpinBox.value()),
+            'waferValueFontSize': self._wafer_value_font_size(),
+            'colorBarLimits': self._colorbar_limits(),
+            'skipRows': self.tabDataWidget.get_skip_rows() if self.tabDataWidget is not None else 0,
+        }
+
+    def _build_wafermap_result(self, snapshot: dict[str, object]) -> dict[str, object]:
+        params = snapshot['params']
         validate_parameters(
             params['stepXUm'],
             params['stepYUm'],
@@ -233,12 +274,25 @@ class TabWafermapWidget(QObject):
             params['diameterMm'],
         )
 
-        dataFrame = self._plot_data()
-        pointsDf, valueLabel, coordinateMode, duplicateCount = self._build_points(dataFrame, params)
-        dieValueDf = self._build_die_value_data(dataFrame) if self._is_heatmap_mode() else pd.DataFrame()
+        dataFrame = snapshot['dataFrame']
+        xColumn = str(snapshot['xColumn'])
+        yColumn = str(snapshot['yColumn'])
+        zColumn = str(snapshot['zColumn'])
+        isHeatMap = bool(snapshot['isHeatMap'])
+        pointsDf, valueLabel, coordinateMode, duplicateCount = self._build_points_for_columns(
+            dataFrame,
+            params,
+            xColumn,
+            yColumn,
+            zColumn,
+        )
+        dieValueDf = (
+            self._build_die_value_data_for_columns(dataFrame, xColumn, yColumn, zColumn)
+            if isHeatMap
+            else pd.DataFrame()
+        )
         hasPoints = not pointsDf.empty
         contourGrid = None
-        isHeatMap = self._is_heatmap_mode()
         contourStyle = 'die rectangle heatmap' if isHeatMap else 'filled + lines'
 
         geometry = self._build_geometry(params)
@@ -266,6 +320,7 @@ class TabWafermapWidget(QObject):
             frameBottomGapMm=frameBottomGapMm,
             showContour=(not isHeatMap) and showContour and contourGrid is not None,
             contourStyle=contourStyle,
+            skipRows=int(snapshot['skipRows']),
         )
 
         figure = render_figure(
@@ -288,42 +343,38 @@ class TabWafermapWidget(QObject):
             showContour=(not isHeatMap) and showContour and contourGrid is not None,
             contourStyle=contourStyle,
             showContourGrid=False,
-            showInfoPanel=self.showDetailCheckBox.isChecked(),
-            showDieLabels=self.showDieRCCheckBox.isChecked(),
+            showInfoPanel=bool(snapshot['showDetail']),
+            showDieLabels=bool(snapshot['showDieLabels']),
             infoPanelText=infoPanelText,
             signatureText='by cnwang',
-            frameLineColor=self._label_color(self.frameLineColorLabel, '#f4a3a3'),
-            dieLineColor=self._label_color(self.dieLineColorLabel, '#ececec'),
-            effectiveEdgeColor=self._label_color(self.effectiveEdgeColorLabel, '#f4a3a3'),
-            waferEdgeColor=self._label_color(self.waferEdgeColorLabel, '#000000'),
+            frameLineColor=str(snapshot['frameLineColor']),
+            dieLineColor=str(snapshot['dieLineColor']),
+            effectiveEdgeColor=str(snapshot['effectiveEdgeColor']),
+            waferEdgeColor=str(snapshot['waferEdgeColor']),
             contourGridColor='#d9d9d9',
-            frameLineWidth=float(self.frameLineWidthSpinBox.value()),
-            dieLineWidth=float(self.dieLineWidthSpinBox.value()),
-            effectiveEdgeLineWidth=float(self.effectiveEdgeWidthSpinBox.value()),
-            waferEdgeLineWidth=float(self.waferEdgeWidthSpinBox.value()),
-            showLaserMark=self.enableLaserMarkCheckBox.isChecked(),
-            edgeToMarkTopMm=float(self.laserEdgeToTopSpinBox.value()),
-            charHeightMm=float(self.laserHeightSpinBox.value()),
-            markerLengthMm=float(self.laserLengthSpinBox.value()),
-            laserMarkPositionDeg=float(self.laserPosSpinBox.value()),
+            frameLineWidth=float(snapshot['frameLineWidth']),
+            dieLineWidth=float(snapshot['dieLineWidth']),
+            effectiveEdgeLineWidth=float(snapshot['effectiveEdgeLineWidth']),
+            waferEdgeLineWidth=float(snapshot['waferEdgeLineWidth']),
+            showLaserMark=bool(snapshot['showLaserMark']),
+            edgeToMarkTopMm=float(snapshot['edgeToMarkTopMm']),
+            charHeightMm=float(snapshot['charHeightMm']),
+            markerLengthMm=float(snapshot['markerLengthMm']),
+            laserMarkPositionDeg=float(snapshot['laserMarkPositionDeg']),
             infoPanelFontSize=5,
         )
         heatmapMissCount = 0
         if isHeatMap and not dieValueDf.empty:
-            heatmapMissCount = self._overlay_die_rect_heatmap(
+            heatmapMissCount = self._overlay_die_rect_heatmap_with_limits(
                 figure,
                 dieValueDf,
                 completeDies,
                 params,
                 valueLabel,
+                snapshot['colorBarLimits'],
+                int(snapshot['waferValueFontSize']),
             )
-        self._apply_wafermap_font_style(figure, self._wafer_value_font_size())
-
-        self.currentFigure = figure
-        self._replace_canvas(figure)
-        self.canvas.draw_idle()
-        self.currentHtml = ''
-        self.currentTitle = params['title']
+        self._apply_wafermap_font_style(figure, int(snapshot['waferValueFontSize']))
 
         statusParts = [f'Wafer map updated. frames={len(completeFrames)}, dies={len(completeDies)}']
         if isHeatMap:
@@ -338,7 +389,29 @@ class TabWafermapWidget(QObject):
             statusParts.append(f'unmatched cells={heatmapMissCount}')
         if not isHeatMap and hasPoints and contourGrid is None:
             statusParts.append('contour skipped: insufficient points')
-        self._set_status(', '.join(statusParts))
+        return {
+            'figure': figure,
+            'title': params['title'],
+            'statusText': ', '.join(statusParts),
+        }
+
+    def _on_wafermap_render_finished(self, taskId: int, result: dict[str, object]) -> None:
+        if taskId != getattr(self, '_activeRenderTaskId', None):
+            return
+        self.loadingOverlay.hide()
+        figure = result['figure']
+        self.currentFigure = figure
+        self._replace_canvas(figure)
+        self.canvas.draw_idle()
+        self.currentHtml = ''
+        self.currentTitle = str(result.get('title', ''))
+        self._set_status(str(result.get('statusText', 'Wafer map updated.')))
+
+    def _on_wafermap_render_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != getattr(self, '_activeRenderTaskId', None):
+            return
+        self.loadingOverlay.hide()
+        self._set_status(f'Wafer map error: {errorText}', error=True)
 
     def _build_points(
         self,
@@ -348,6 +421,16 @@ class TabWafermapWidget(QObject):
         xColumn = self.xComboBox.currentText().strip()
         yColumn = self.yComboBox.currentText().strip()
         zColumn = self.zComboBox.currentText().strip()
+        return self._build_points_for_columns(dataFrame, params, xColumn, yColumn, zColumn)
+
+    def _build_points_for_columns(
+        self,
+        dataFrame: pd.DataFrame,
+        params: dict[str, object],
+        xColumn: str,
+        yColumn: str,
+        zColumn: str,
+    ) -> tuple[pd.DataFrame, str, str, int]:
         if (
             dataFrame.empty
             or not xColumn
@@ -387,6 +470,15 @@ class TabWafermapWidget(QObject):
         xColumn = self.xComboBox.currentText().strip()
         yColumn = self.yComboBox.currentText().strip()
         zColumn = self.zComboBox.currentText().strip()
+        return self._build_die_value_data_for_columns(dataFrame, xColumn, yColumn, zColumn)
+
+    def _build_die_value_data_for_columns(
+        self,
+        dataFrame: pd.DataFrame,
+        xColumn: str,
+        yColumn: str,
+        zColumn: str,
+    ) -> pd.DataFrame:
         if (
             dataFrame.empty
             or not xColumn
@@ -431,6 +523,26 @@ class TabWafermapWidget(QObject):
         params: dict[str, object],
         valueLabel: str,
     ) -> int:
+        return self._overlay_die_rect_heatmap_with_limits(
+            figure,
+            dieValueDf,
+            completeDies,
+            params,
+            valueLabel,
+            self._colorbar_limits(),
+            self._wafer_value_font_size(),
+        )
+
+    def _overlay_die_rect_heatmap_with_limits(
+        self,
+        figure,
+        dieValueDf: pd.DataFrame,
+        completeDies: list[tuple[float, float, float, float]],
+        params: dict[str, object],
+        valueLabel: str,
+        colorBarLimits: tuple[float, float] | None,
+        waferValueFontSize: int,
+    ) -> int:
         if dieValueDf.empty or not completeDies:
             return len(dieValueDf)
 
@@ -442,7 +554,6 @@ class TabWafermapWidget(QObject):
 
         valueMin = float(values.min())
         valueMax = float(values.max())
-        colorBarLimits = self._colorbar_limits()
         if colorBarLimits is not None:
             valueMin, valueMax = colorBarLimits
         if valueMin == valueMax:
@@ -484,7 +595,7 @@ class TabWafermapWidget(QObject):
                 f'{value:.1f}',
                 ha='center',
                 va='center',
-                fontsize=self._wafer_value_font_size(),
+                fontsize=waferValueFontSize,
                 color=(0, 0, 0, WAFERMAP_TEXT_ALPHA),
                 zorder=5,
                 bbox={'boxstyle': 'round,pad=0.1', 'fc': color, 'ec': 'none', 'alpha': WAFERMAP_TEXT_ALPHA},
@@ -493,7 +604,7 @@ class TabWafermapWidget(QObject):
         scalarMappable = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         scalarMappable.set_array([])
         colorbar = figure.colorbar(scalarMappable, ax=ax, fraction=0.046, pad=0.04)
-        axisFontSize = self._wafer_axis_font_size()
+        axisFontSize = waferValueFontSize + 2
         colorbar.set_label(valueLabel)
         colorbar.ax.yaxis.label.set_fontsize(axisFontSize)
         colorbar.ax.yaxis.label.set_alpha(WAFERMAP_TEXT_ALPHA)
@@ -664,8 +775,10 @@ class TabWafermapWidget(QObject):
         frameBottomGapMm: float,
         showContour: bool,
         contourStyle: str,
+        skipRows: int | None = None,
     ) -> str:
-        skipRows = self.tabDataWidget.get_skip_rows() if self.tabDataWidget is not None else 0
+        if skipRows is None:
+            skipRows = self.tabDataWidget.get_skip_rows() if self.tabDataWidget is not None else 0
         return '\n'.join([
             f"title: {params['title']}",
             "",

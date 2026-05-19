@@ -26,6 +26,8 @@ from PySide6.QtWidgets import (
 import warnings
 
 from qt_helpers import require_child
+from async_helpers import BackgroundTaskMixin
+from loading_overlay import LoadingOverlay
 from pivot_helpers import build_pivot_table, show_pivot_dialog
 from plot_annotation_helpers import add_preview_filter_annotation
 from plot_export_helpers import save_plotly_png_and_copy_to_clipboard
@@ -42,7 +44,7 @@ except ImportError:
 PLOT_ROW_ID = '__plotRowId'
 
 
-class TabScatterWidget:
+class TabScatterWidget(BackgroundTaskMixin):
     _excelZeroDatePattern = re.compile(
         r'^\s*\d{4}[/-](?:0[/-]\d{1,2}|\d{1,2}[/-]0)(?:\s+\d{1,2}:\d{1,2}(?::\d{1,2})?)?\s*$'
     )
@@ -111,6 +113,7 @@ class TabScatterWidget:
         self._browserViewerOpened = False
         self.lineColor = '#ff0000'
         self._configure_plot_area()
+        self.loadingOverlay = LoadingOverlay(self.plotAreaWidget)
         self._configure_signals()
         self._configure_defaults()
 
@@ -931,7 +934,6 @@ class TabScatterWidget:
                 )
 
             self._render_figure(fig)
-            self._set_status('Plot created successfully.')
         except Exception as exc:
             self._set_status(f'Failed to draw plot: {exc}', error=True)
 
@@ -1178,13 +1180,33 @@ class TabScatterWidget:
 
     def _render_figure(self, figure) -> None:
         self.currentPlotFigure = figure
-        self.currentPlotHtml = local_plotly_html(figure, fullHtml=True)
+        self.currentPlotHtml = ''
+        self._set_status('Rendering scatter HTML...')
+        self.loadingOverlay.show('Loading...')
+
+        def work() -> dict[str, str]:
+            result = {'fullHtml': local_plotly_html(figure, fullHtml=True)}
+            if not self.useExternalBrowser:
+                result['embeddedHtml'] = local_plotly_html(figure, fullHtml=False)
+            return result
+
+        self._activeRenderTaskId = self._start_background_task(
+            work,
+            self._on_render_figure_finished,
+            self._on_render_figure_failed,
+        )
+
+    def _on_render_figure_finished(self, taskId: int, result: dict[str, str]) -> None:
+        if taskId != getattr(self, '_activeRenderTaskId', None):
+            return
+        self.loadingOverlay.hide()
+        self.currentPlotHtml = result['fullHtml']
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
-            html = local_plotly_html(figure, fullHtml=False)
             try:
                 baseUrl = QUrl.fromLocalFile(str(assetsDir)+'/')
-                self.chartView.setHtml(html, baseUrl)
+                self.chartView.setHtml(result.get('embeddedHtml', self.currentPlotHtml), baseUrl)
+                self._set_status('Plot created successfully.')
                 return
             except Exception:
                 self._switch_to_external_browser_view()
@@ -1233,6 +1255,13 @@ class TabScatterWidget:
             '<p><h1>不是我的錯！</h1></p>'
             '</div>'
         )
+        self._set_status('Plot created successfully.')
+
+    def _on_render_figure_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != getattr(self, '_activeRenderTaskId', None):
+            return
+        self.loadingOverlay.hide()
+        self._set_status(f'Failed to render scatter HTML: {errorText}', error=True)
 
     def _download_html(self) -> None:
         if not self.currentPlotHtml:

@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
 )
 
 from qt_helpers import require_child
+from async_helpers import BackgroundTaskMixin
+from loading_overlay import LoadingOverlay
 from pivot_helpers import build_pivot_table, show_pivot_dialog
 from plot_annotation_helpers import add_preview_filter_annotation
 from plot_export_helpers import save_plotly_png_and_copy_to_clipboard
@@ -38,7 +40,7 @@ except ImportError:
     WEB_ENGINE_AVAILABLE = False
 
 
-class TabBoxplotWidget:
+class TabBoxplotWidget(BackgroundTaskMixin):
     def __init__(self, rootWidget: QWidget, preferWebEngine: bool = True):
         self.tabDataWidget = None
         self.preferWebEngine = preferWebEngine
@@ -112,6 +114,7 @@ class TabBoxplotWidget:
         self.statusLabel = require_child(rootWidget, QLabel, 'boxStatusLabel')
 
         self._configure_plot_area()
+        self.loadingOverlay = LoadingOverlay(self.plotAreaWidget)
         self._configure_signals()
         self._configure_defaults()
 
@@ -815,19 +818,38 @@ class TabBoxplotWidget:
                 )
 
             self._render_figure(fig)
-            self._set_status('Boxplot created successfully.')
         except Exception as exc:
             self._set_status(f'Failed to draw boxplot: {exc}', error=True)
 
     def _render_figure(self, figure) -> None:
         self.currentPlotFigure = figure
-        self.currentPlotHtml = local_plotly_html(figure, fullHtml=True)
+        self.currentPlotHtml = ''
+        self._set_status('Rendering boxplot HTML...')
+        self.loadingOverlay.show('Loading...')
+
+        def work() -> dict[str, str]:
+            result = {'fullHtml': local_plotly_html(figure, fullHtml=True)}
+            if not self.useExternalBrowser:
+                result['embeddedHtml'] = local_plotly_html(figure, fullHtml=False)
+            return result
+
+        self._activeRenderTaskId = self._start_background_task(
+            work,
+            self._on_render_figure_finished,
+            self._on_render_figure_failed,
+        )
+
+    def _on_render_figure_finished(self, taskId: int, result: dict[str, str]) -> None:
+        if taskId != getattr(self, '_activeRenderTaskId', None):
+            return
+        self.loadingOverlay.hide()
+        self.currentPlotHtml = result['fullHtml']
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
-            html = local_plotly_html(figure, fullHtml=False)
             try:
                 baseUrl = QUrl.fromLocalFile(str(assetsDir)+'/')
-                self.chartView.setHtml(html, baseUrl)
+                self.chartView.setHtml(result.get('embeddedHtml', self.currentPlotHtml), baseUrl)
+                self._set_status('Boxplot created successfully.')
                 return
             except Exception:
                 self._switch_to_external_browser_view()
@@ -876,6 +898,13 @@ class TabBoxplotWidget:
             '<p><h1>不是我的錯！</h1></p>'
             '</div>'
         )
+        self._set_status('Boxplot created successfully.')
+
+    def _on_render_figure_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != getattr(self, '_activeRenderTaskId', None):
+            return
+        self.loadingOverlay.hide()
+        self._set_status(f'Failed to render boxplot HTML: {errorText}', error=True)
 
     def _download_html(self) -> None:
         if not self.currentPlotHtml:
