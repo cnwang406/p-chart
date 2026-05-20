@@ -7,10 +7,11 @@ import tempfile
 
 os.environ.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
 
-import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 import numpy as np
 import pandas as pd
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from matplotlib.patches import Polygon as MplPolygon
 from matplotlib.path import Path as MplPath
 
@@ -186,10 +187,10 @@ def build_effective_outline(
     if not np.any(effectiveMask):
         return np.empty((0, 2))
 
-    contourFigure, contourAxis = plt.subplots(figsize=(4, 4), dpi=100)
+    contourFigure = Figure(figsize=(4, 4), dpi=100)
+    contourAxis = contourFigure.add_subplot(111)
     contourSet = contourAxis.contour(xValues, yValues, effectiveMask.astype(float), levels=[0.5])
     contourSegments = contourSet.allsegs[0] if contourSet.allsegs else []
-    plt.close(contourFigure)
 
     if not contourSegments:
         return np.empty((0, 2))
@@ -503,7 +504,7 @@ def build_laser_mark_polygon(
 
 
 def draw_laser_mark(
-    ax: plt.Axes,
+    ax: Axes,
     waferOutline: np.ndarray,
     showLaserMark: bool,
     edgeToMarkTopMm: float,
@@ -568,7 +569,7 @@ def draw_laser_mark(
 
 
 def draw_frames(
-    ax: plt.Axes,
+    ax: Axes,
     outline: np.ndarray,
     stepXUm: float,
     stepYUm: float,
@@ -619,7 +620,7 @@ def draw_frames(
 
 
 def draw_dies(
-    ax: plt.Axes,
+    ax: Axes,
     outline: np.ndarray,
     stepXUm: float,
     stepYUm: float,
@@ -908,12 +909,13 @@ def render_figure(
     laserMarkPositionDeg: float = 0.0,
     laserMarkColor: str = "#00aa44",
     infoPanelFontSize: int = 6,
-) -> plt.Figure:
+) -> Figure:
     radius = np.max(np.linalg.norm(waferOutline, axis=1))
     hasPoints = not pointsDf.empty
     canRenderContour = showContour and contourGrid is not None
     figureWidth = 10.2 if showInfoPanel else 8.0
-    fig, ax = plt.subplots(figsize=(figureWidth, 8), dpi=200)
+    fig = Figure(figsize=(figureWidth, 8), dpi=200)
+    ax = fig.add_subplot(111)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("#f8fbff")
     if showInfoPanel:
@@ -1094,7 +1096,7 @@ def render_figure(
     return fig
 
 
-def figure_to_jpg_bytes(fig: plt.Figure) -> bytes:
+def figure_to_jpg_bytes(fig: Figure) -> bytes:
     buffer = io.BytesIO()
     fig.savefig(buffer, format="jpg", dpi=300, bbox_inches="tight", facecolor="white")
     buffer.seek(0)

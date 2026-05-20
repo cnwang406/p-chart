@@ -425,12 +425,9 @@ class TabDataWidget(BackgroundTaskMixin):
             return
 
         if result.get('kind') == 'csv':
-            self.loadingOverlay.hide()
             self.loadedDataFrame = result['dataFrame']
             self._apply_resolved_skip_rows(int(result.get('skipRows', 0)))
             warnings = list(result.get('warnings', []))
-            if warnings:
-                self._show_loaded_data_warning_messages(warnings)
             self._append_detected_stubnames()
             self._populate_columns()
             self._warn_if_no_reshape_columns()
@@ -450,6 +447,9 @@ class TabDataWidget(BackgroundTaskMixin):
             if warnings:
                 statusText += ' Possible date format issue found.'
             self._set_status(statusText, error=bool(warnings))
+            self.loadingOverlay.hide()
+            if warnings:
+                self._show_loaded_data_warning_messages(warnings)
             return
 
         sheetNames = list(result.get('sheetNames', []))
@@ -531,12 +531,9 @@ class TabDataWidget(BackgroundTaskMixin):
         self.loadButton.setEnabled(True)
         if result.get('filePath') != self.loadedFilePath:
             return
-        self.loadingOverlay.hide()
         self.loadedDataFrame = result['dataFrame']
         self._apply_resolved_skip_rows(int(result.get('skipRows', 0)))
         warnings = list(result.get('warnings', []))
-        if warnings:
-            self._show_loaded_data_warning_messages(warnings)
         self._append_detected_stubnames()
         self._populate_columns()
         self._warn_if_no_reshape_columns()
@@ -553,6 +550,9 @@ class TabDataWidget(BackgroundTaskMixin):
         if warnings:
             statusText += ' Possible date format issue found.'
         self._set_status(statusText, error=bool(warnings))
+        self.loadingOverlay.hide()
+        if warnings:
+            self._show_loaded_data_warning_messages(warnings)
 
     def _on_load_sheet_failed(self, taskId: int, errorText: str) -> None:
         if taskId != getattr(self, '_activeSheetTaskId', None):
@@ -955,7 +955,6 @@ class TabDataWidget(BackgroundTaskMixin):
     ) -> None:
         self.previewMaxRows = maxRows
         self.previewSourceDataFrame = dataFrame
-        self.loadingOverlay.hide()
         if clearFilters:
             self.previewProxyModel.clear_filters()
         if dataFrame.empty:
