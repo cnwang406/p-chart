@@ -15,6 +15,7 @@ from matplotlib.colors import Normalize
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QColorDialog,
     QComboBox,
@@ -1012,16 +1013,33 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         if self.currentFigure is None:
             self._set_status('No wafer map to save yet.', error=True)
             return
+
         selectedFile, _ = QFileDialog.getSaveFileName(
             self.rootWidget,
             'Save wafermap PNG',
             'wafermap.png',
-            'PNG Files (*.png);;JPEG Files (*.jpg);;All Files (*)',
+            'PNG Files (*.png);;All Files (*)',
         )
-        if not selectedFile:
-            return
-        self.currentFigure.savefig(selectedFile, dpi=300, bbox_inches='tight', facecolor='white')
-        self._set_status(f'Wafermap image saved: {selectedFile}')
+        if selectedFile and not selectedFile.lower().endswith('.png'):
+            selectedFile = f'{selectedFile}.png'
+
+        try:
+            # Keep behavior aligned with other tabs: always copy current widget image
+            # to clipboard, regardless of whether the user saves a file.
+            widgetPixmap = self.canvas.grab()
+            if widgetPixmap.isNull():
+                raise ValueError('Failed to capture wafermap widget image.')
+
+            QApplication.clipboard().setPixmap(widgetPixmap)
+
+            if selectedFile:
+                if not widgetPixmap.save(selectedFile, 'PNG'):
+                    raise ValueError(f'Failed to save wafermap PNG to {selectedFile}')
+                self._set_status(f'Wafermap PNG saved to {selectedFile}, and copied to clipboard.')
+            else:
+                self._set_status('Wafermap PNG copied to clipboard.')
+        except Exception as exc:
+            self._set_status(f'Failed to save wafermap PNG: {exc}', error=True)
 
     def _download_html(self) -> None:
         if self.currentFigure is None:

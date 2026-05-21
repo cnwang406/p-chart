@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 import importlib.util
 # 找 PySide6 path（還沒 import Qt）
@@ -72,6 +73,7 @@ REC_DIRECTORY_CANDIDATES = [
     Path.home() / 'Documents' / 'py' / 'pchart_sa.rec',
 ]
 REC_INFO_FILENAME = 'info.json'
+UPDATE_SOURCE_DIRECTORY = Path(r'\\172.30.79.11\9630\p-chart')
 
 
 def resource_path(filename: str) -> str:
@@ -170,6 +172,31 @@ def write_launch_info(infoPath: Path, launchInfo: dict[str, str]) -> None:
         )
     except OSError:
         return
+
+
+def current_app_directory() -> Path:
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def update_target_paths(sourceDirectory: Path, targetDirectory: Path) -> list[Path]:
+    targetPaths = []
+    for sourcePath in sourceDirectory.rglob('*'):
+        relativePath = sourcePath.relative_to(sourceDirectory)
+        targetPath = targetDirectory / relativePath
+        if targetPath.exists():
+            targetPaths.append(targetPath)
+    return targetPaths
+
+
+def copy_update_files(sourceDirectory: Path, targetDirectory: Path) -> None:
+    for sourcePath in sourceDirectory.iterdir():
+        targetPath = targetDirectory / sourcePath.name
+        if sourcePath.is_dir():
+            shutil.copytree(sourcePath, targetPath, dirs_exist_ok=True)
+        else:
+            shutil.copy2(sourcePath, targetPath)
 
 
 class AppMain:
@@ -294,14 +321,66 @@ class AppMain:
             return
 
         releaseNote = str(self.launchInfo.get('release_note') or '').strip()
-        message = f'好像有新版本, {latestVersion}, 可以問我看看有什麼新功能'
+        message = f'好像有新版本, {latestVersion}, 要更新到最新版嗎?'
         if releaseNote:
             message = f'{message}\n\nRelease note:\n{releaseNote}'
 
-        QMessageBox.information(
+        answer = QMessageBox.question(
             self.ui,
             'New Version',
             message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._update_to_newest_version()
+
+    def _update_to_newest_version(self) -> None:
+        sourceDirectory = UPDATE_SOURCE_DIRECTORY
+        targetDirectory = current_app_directory()
+        if not sourceDirectory.exists() or not sourceDirectory.is_dir():
+            QMessageBox.warning(
+                self.ui,
+                'Update',
+                f'找不到更新來源資料夾:\n{sourceDirectory}',
+            )
+            return
+
+        try:
+            overwritePaths = update_target_paths(sourceDirectory, targetDirectory)
+            if overwritePaths:
+                overwriteText = '\n'.join(str(path) for path in overwritePaths[:40])
+                if len(overwritePaths) > 40:
+                    overwriteText = (
+                        f'{overwriteText}\n...and {len(overwritePaths) - 40} more path(s)'
+                    )
+                message = (
+                    f'目前 pchart {APP_VERSION} 會被覆蓋:\n\n'
+                    f'{overwriteText}\n\n'
+                    '按 OK 後開始更新。'
+                )
+            else:
+                message = (
+                    '目前沒有找到會被覆蓋的 existing path。\n\n'
+                    f'更新檔會從:\n{sourceDirectory}\n\n'
+                    f'複製到:\n{targetDirectory}'
+                )
+            QMessageBox.information(self.ui, 'Update Targets', message)
+            copy_update_files(sourceDirectory, targetDirectory)
+        except Exception as exc:
+            QMessageBox.warning(
+                self.ui,
+                'Update Failed',
+                f'更新失敗:\n{exc}',
+            )
+            return
+
+        QMessageBox.information(
+            self.ui,
+            'Update Complete',
+            f'更新完成。請重新啟動 {APP_NAME}。\n\nTarget:\n{targetDirectory}',
         )
 
     def _show_about_dialog(self) -> None:
