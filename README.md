@@ -9,7 +9,7 @@ License: MIT
 
 ## Features
 
-- Load CSV or Excel worksheets.
+- Load CSV or Excel worksheets. accept "log-type", "KGD", "mapping", "log with heading info"
 - Reshape wide data to long data with custom `stubnames`, suffix regex, and
   suffix column name.
 - Preview and export reshaped data as CSV or Excel.
@@ -64,14 +64,14 @@ image, app icons, and Windows `.ico`.
 ## Workflow
 
 1. Load a CSV or Excel worksheet.
-2. Enter `Stubnames`, `Suffix regex`, and suffix output column.
-3. Confirm matching columns in `Columns (a/b)`.
+2. app will auto find out  `Stubnames`, `Suffix regex`, and suffix output column.
+3. Confirm auto generated matching columns in `Columns (a/b)`.
 4. Click `wide_to_long`.
-5. Use the enabled Scatter or Boxplot tab.
+5. Use the enabled Scatter , Boxplot tab, or wafermap tab.
 
 Scatter charts draw automatically after X and Y are selected. Reference lines
 support color, opacity/width, auto ranges, and Y-based statistics including Ca,
-Cp, and Cpk when H lines define spec limits.
+Cp, and Cpk when H lines define spec limits. A regression line with formula also available.
 
 Boxplot charts draw automatically after Y and grouping choices are selected.
 Group categories are naturally sorted. Annotation rows are selected with
@@ -90,6 +90,7 @@ row_on_map = row_on_data - min(row_on_data) + 1
 
 So the smallest column and row in the loaded data are always drawn at map
 position `(1, 1)`.
+without X,Y,Z selected, a wafer map with frame and die map will be generated.
 
 ## Files
 
