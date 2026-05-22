@@ -359,15 +359,25 @@ class AppMain:
                 message = (
                     f'目前 pchart {APP_VERSION} 會被覆蓋:\n\n'
                     f'{overwriteText}\n\n'
-                    '按 OK 後開始更新。'
+                    '按 OK 後開始更新；按 Cancel 可以拒絕這次更新。'
                 )
             else:
                 message = (
                     '目前沒有找到會被覆蓋的 existing path。\n\n'
                     f'更新檔會從:\n{sourceDirectory}\n\n'
-                    f'複製到:\n{targetDirectory}'
+                    f'複製到:\n{targetDirectory}\n\n'
+                    '按 OK 後開始更新；按 Cancel 可以拒絕這次更新。'
                 )
-            QMessageBox.information(self.ui, 'Update Targets', message)
+            answer = QMessageBox.question(
+                self.ui,
+                'Update Targets',
+                message,
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Ok:
+                return
+
             copy_update_files(sourceDirectory, targetDirectory)
         except Exception as exc:
             QMessageBox.warning(
