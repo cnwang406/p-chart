@@ -69,6 +69,12 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         self.xComboBox = require_child(rootWidget, QComboBox, 'xColComboBox')
         self.yComboBox = require_child(rootWidget, QComboBox, 'yColComboBox')
         self.zComboBox = require_child(rootWidget, QComboBox, 'zColComboBox')
+        self.waferIDTitleComboBox = require_child(
+            rootWidget,
+            QComboBox,
+            'waferIDTitleComboBox',
+        )
+        self.waferIDComboBox = require_child(rootWidget, QComboBox, 'waferIDComboBox')
         self.stepXLineEdit = require_child(rootWidget, QLineEdit, 'stepXLineEdit')
         self.stepYLineEdit = require_child(rootWidget, QLineEdit, 'stepYLineEdit')
         self.frameOffsetXLineEdit = require_child(rootWidget, QLineEdit, 'offsetXLineEdit')
@@ -137,6 +143,10 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
 
         for comboBox in [self.xComboBox, self.yComboBox]:
             comboBox.currentTextChanged.connect(self._mark_plot_dirty)
+        self.waferIDTitleComboBox.currentTextChanged.connect(
+            self._on_wafer_id_column_changed
+        )
+        self.waferIDComboBox.currentTextChanged.connect(self._redraw_after_change)
         for comboBox in [
             self.zComboBox,
             self.waferDiameterComboBox,
@@ -201,12 +211,105 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
             if currentText in columnNames:
                 comboBox.setCurrentText(currentText)
             comboBox.blockSignals(False)
+        self._populate_wafer_id_title_combo(columnNames)
+        self._update_wafer_id_values()
         self._mark_plot_dirty()
+
+    def _populate_wafer_id_title_combo(self, columnNames: list[str]) -> None:
+        currentText = self.waferIDTitleComboBox.currentText().strip()
+        selectedText = (
+            currentText
+            if currentText in columnNames
+            else self._default_wafer_id_column(columnNames)
+        )
+
+        self.waferIDTitleComboBox.blockSignals(True)
+        self.waferIDTitleComboBox.clear()
+        self.waferIDTitleComboBox.addItems(columnNames)
+        if selectedText:
+            self.waferIDTitleComboBox.setCurrentText(selectedText)
+        self.waferIDTitleComboBox.blockSignals(False)
+
+    def _default_wafer_id_column(self, columnNames: list[str]) -> str:
+        for columnName in columnNames:
+            if self._is_wafer_id_column_name(columnName):
+                return columnName
+        return columnNames[0] if columnNames else ''
+
+    def _is_wafer_id_column_name(self, columnName: str) -> bool:
+        text = str(columnName).strip().lower()
+        normalizedText = re.sub(r'[\s_-]+', '', text)
+        return (
+            text == '#'
+            or normalizedText in {'wafer', 'waferid', 'id'}
+            or 'wafer' in normalizedText
+        )
+
+    def _on_wafer_id_column_changed(self, *_args) -> None:
+        self._update_wafer_id_values('')
+        self._redraw_after_change()
+
+    def _update_wafer_id_values(self, preferredText: str | None = None) -> None:
+        dataFrame = self._plot_data()
+        columnName = self.waferIDTitleComboBox.currentText().strip()
+        selectedText = (
+            preferredText.strip()
+            if preferredText is not None
+            else self.waferIDComboBox.currentText().strip()
+        )
+        valueTexts = []
+        seenTexts = set()
+
+        if not dataFrame.empty and columnName in dataFrame.columns:
+            for value in dataFrame[columnName]:
+                valueText = self._format_wafer_id_value(value)
+                if not valueText or valueText in seenTexts:
+                    continue
+                seenTexts.add(valueText)
+                valueTexts.append(valueText)
+
+        self.waferIDComboBox.blockSignals(True)
+        self.waferIDComboBox.clear()
+        self.waferIDComboBox.addItem('')
+        self.waferIDComboBox.addItems(valueTexts)
+        if selectedText and selectedText in seenTexts:
+            self.waferIDComboBox.setCurrentText(selectedText)
+        else:
+            self.waferIDComboBox.setCurrentIndex(0)
+        self.waferIDComboBox.blockSignals(False)
+
+    def _format_wafer_id_value(self, value) -> str:
+        if pd.isna(value):
+            return ''
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        return str(value).strip()
 
     def _plot_data(self) -> pd.DataFrame:
         if self.tabDataWidget is None:
             return pd.DataFrame()
         return self.tabDataWidget.get_plot_data()
+
+    def _filtered_plot_data(self) -> pd.DataFrame:
+        dataFrame = self._plot_data()
+        columnName = self.waferIDTitleComboBox.currentText().strip()
+        selectedWaferID = self.waferIDComboBox.currentText().strip()
+        if (
+            dataFrame.empty
+            or not columnName
+            or not selectedWaferID
+            or columnName not in dataFrame.columns
+        ):
+            return dataFrame
+
+        waferTextSeries = dataFrame[columnName].map(self._format_wafer_id_value)
+        return dataFrame.loc[waferTextSeries == selectedWaferID]
+
+    def _wafermap_title_text(self) -> str:
+        baseTitle = self.mapTitleLineEdit.text().strip() or 'wafer_frame_preview'
+        selectedWaferID = self.waferIDComboBox.currentText().strip()
+        waferSuffix = f'(#{selectedWaferID})' if selectedWaferID else '(all wafers)'
+        return f'{baseTitle} {waferSuffix}'
 
     def _draw_plot_when_ready(self, *_args) -> None:
         try:
@@ -238,9 +341,11 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         )
 
     def _wafermap_snapshot(self) -> dict[str, object]:
+        params = self._read_parameters()
+        params['title'] = self._wafermap_title_text()
         return {
-            'params': self._read_parameters(),
-            'dataFrame': self._plot_data().copy(),
+            'params': params,
+            'dataFrame': self._filtered_plot_data().copy(),
             'xColumn': self.xComboBox.currentText().strip(),
             'yColumn': self.yComboBox.currentText().strip(),
             'zColumn': self.zComboBox.currentText().strip(),
@@ -891,6 +996,8 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
             'xColumn': self.xComboBox.currentText().strip(),
             'yColumn': self.yComboBox.currentText().strip(),
             'zColumn': self.zComboBox.currentText().strip(),
+            'waferIDColumn': self.waferIDTitleComboBox.currentText().strip(),
+            'waferIDValue': self.waferIDComboBox.currentText().strip(),
             'showDetail': self.showDetailCheckBox.isChecked(),
             'showDieRC': self.showDieRCCheckBox.isChecked(),
             'mode': self.heatMapOrContourComboBox.currentText().strip(),
@@ -959,6 +1066,11 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
             self._set_combo_text(self.xComboBox, str(config.get('xColumn', '')))
             self._set_combo_text(self.yComboBox, str(config.get('yColumn', '')))
             self._set_combo_text(self.zComboBox, str(config.get('zColumn', '')))
+            self._set_combo_text(
+                self.waferIDTitleComboBox,
+                str(config.get('waferIDColumn', '')),
+            )
+            self._update_wafer_id_values(str(config.get('waferIDValue', '')))
             self._set_combo_text(self.heatMapOrContourComboBox, str(config.get('mode', '')))
             self.showDetailCheckBox.setChecked(bool(config.get('showDetail', False)))
             self.showDieRCCheckBox.setChecked(bool(config.get('showDieRC', False)))
