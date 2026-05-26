@@ -12,7 +12,7 @@
   </rect>
  </property>
  <property name="windowTitle">
-  <string>Plotly Excel wide_to_long</string>
+  <string>p-Chart</string>
  </property>
  <widget class="QWidget" name="centralwidget">
   <widget class="QTabWidget" name="tabWidget">
@@ -3453,7 +3453,7 @@ to-top</string>
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>170</y>
+       <y>190</y>
        <width>961</width>
        <height>651</height>
       </rect>
@@ -3497,9 +3497,9 @@ here.</string>
     <widget class="QLineEdit" name="mapTitleLineEdit">
      <property name="geometry">
       <rect>
-       <x>180</x>
+       <x>50</x>
        <y>100</y>
-       <width>181</width>
+       <width>311</width>
        <height>21</height>
       </rect>
      </property>
@@ -3510,7 +3510,7 @@ here.</string>
     <widget class="QLabel" name="label_19">
      <property name="geometry">
       <rect>
-       <x>150</x>
+       <x>10</x>
        <y>100</y>
        <width>31</width>
        <height>16</height>
@@ -3973,27 +3973,50 @@ here.</string>
       </property>
      </widget>
     </widget>
+    <widget class="QComboBox" name="waferIDComboBox">
+     <property name="geometry">
+      <rect>
+       <x>320</x>
+       <y>163</y>
+       <width>41</width>
+       <height>22</height>
+      </rect>
+     </property>
+    </widget>
     <widget class="QLabel" name="label_28">
      <property name="geometry">
       <rect>
-       <x>0</x>
-       <y>100</y>
-       <width>41</width>
-       <height>16</height>
+       <x>290</x>
+       <y>164</y>
+       <width>21</width>
+       <height>20</height>
       </rect>
      </property>
      <property name="text">
-      <string>single</string>
+      <string>#</string>
      </property>
     </widget>
-    <widget class="QComboBox" name="seriesComboBox_2">
+    <widget class="QComboBox" name="waferIDTitleComboBox">
      <property name="geometry">
       <rect>
-       <x>40</x>
-       <y>95</y>
-       <width>101</width>
+       <x>140</x>
+       <y>164</y>
+       <width>111</width>
        <height>22</height>
       </rect>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_29">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>164</y>
+       <width>111</width>
+       <height>20</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>wafer ID title</string>
      </property>
     </widget>
    </widget>
