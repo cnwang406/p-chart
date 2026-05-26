@@ -648,7 +648,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         )
         groupedData = {
             str(categoryValue): group[yColumn].dropna()
-            for categoryValue, group in plotData.groupby(categoryColumn, sort=False)
+            for categoryValue, group in plotData.groupby(categoryColumn, sort=False, observed =False)
         }
         for categoryValue in categoryOrder:
             series = groupedData.get(categoryValue)
