@@ -1,24 +1,26 @@
 # -*- mode: python ; coding: utf-8 -*-
 # pyright: reportUndefinedVariable=false
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules,   collect_all
+
 
 app_name = 'p-chart'
 
 np_datas, np_binaries, np_hiddenimports = collect_all('numpy')
 pd_datas, pd_binaries, pd_hiddenimports = collect_all('pandas')
-mpl_datas, mpl_binaries, mpl_hiddenimports = collect_all('matplotlib')
+
 datas = [
-   ('mainwindow-win.ui','.'),
+   ('mainwindow.ui', '.'),
+   ('mainwindow-win.ui', '.'),
    ('mainwindow-mac.ui', '.'),
    ('plotly.min.js', '.'),
    ('CascadiaNextTC.wght.ttf', '.'),
-   ('w2l.png',  '.'),
+   ('w2l.png', '.'),
    ('AppIcon.appiconset/icon-ios-marketing-1024x1024-1x.png', 'AppIcon.appiconset'),
 ]
 datas += collect_data_files('plotly')
 datas += collect_data_files('kaleido')
-datas += np_datas + pd_datas + mpl_datas
+datas += np_datas + pd_datas
 hiddenimports = [
    'PySide6.QtWebEngineWidgets',
    'PySide6.QtWebEngineCore',
@@ -27,13 +29,15 @@ hiddenimports = [
 hiddenimports += collect_submodules('plotly')
 hiddenimports += collect_submodules('openpyxl')
 #hiddenimports += collect_submodules('kaleido')
-hiddenimports += np_hiddenimports + pd_hiddenimports + mpl_hiddenimports
+
+hiddenimports += np_hiddenimports + pd_hiddenimports
 hiddenimports += ['kaleido', 'kaleido.scopes', 'kaleido._version']
 a = Analysis(
    ['app.py'],
    pathex=[],
-   binaries=np_binaries + pd_binaries + mpl_binaries,
-   datas=datas, hiddenimports=hiddenimports,
+   binaries=np_binaries + pd_binaries,
+   datas=datas,
+   hiddenimports=hiddenimports,
    hookspath=[],
    hooksconfig={},
    runtime_hooks=[],
@@ -42,6 +46,7 @@ a = Analysis(
    optimize=0,
 )
 pyz = PYZ(a.pure)
+
 exe = EXE(
    pyz,
    a.scripts,
