@@ -73,7 +73,7 @@ REC_DIRECTORY_CANDIDATES = [
     Path.home() / 'Documents' / 'py' / 'pchart_sa.rec',
 ]
 REC_INFO_FILENAME = 'info.json'
-UPDATE_SOURCE_DIRECTORY = Path(r'\\172.30.79.11\9630\p-chart')
+UPDATE_SOURCE_DIRECTORY = Path(r'\\172.30.79.11\wtk_share\9630\p-chart')
 
 
 def resource_path(filename: str) -> str:
