@@ -3052,7 +3052,7 @@ to-top</string>
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>170</y>
+       <y>190</y>
        <width>961</width>
        <height>671</height>
       </rect>
@@ -3074,7 +3074,7 @@ to-top</string>
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>843</y>
+       <y>850</y>
        <width>951</width>
        <height>32</height>
       </rect>
@@ -3096,9 +3096,9 @@ here.</string>
     <widget class="QLineEdit" name="mapTitleLineEdit">
      <property name="geometry">
       <rect>
-       <x>150</x>
+       <x>50</x>
        <y>100</y>
-       <width>151</width>
+       <width>251</width>
        <height>21</height>
       </rect>
      </property>
@@ -3109,7 +3109,7 @@ here.</string>
     <widget class="QLabel" name="label_19">
      <property name="geometry">
       <rect>
-       <x>100</x>
+       <x>10</x>
        <y>100</y>
        <width>50</width>
        <height>16</height>
@@ -3631,29 +3631,78 @@ here.</string>
       </property>
      </widget>
     </widget>
-    <widget class="QComboBox" name="seriesComboBox_2">
+    <widget class="QLabel" name="label_30">
      <property name="geometry">
       <rect>
-       <x>30</x>
-       <y>90</y>
-       <width>101</width>
+       <x>20</x>
+       <y>160</y>
+       <width>90</width>
        <height>20</height>
       </rect>
      </property>
+     <property name="text">
+      <string>wafer ID title</string>
+     </property>
     </widget>
-    <widget class="QLabel" name="label_29">
+    <widget class="QComboBox" name="waferIDComboBox">
      <property name="geometry">
       <rect>
-       <x>10</x>
-       <y>98</y>
-       <width>10</width>
-       <height>16</height>
+       <x>300</x>
+       <y>159</y>
+       <width>41</width>
+       <height>22</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QComboBox" name="waferIDTitleComboBox">
+     <property name="geometry">
+      <rect>
+       <x>120</x>
+       <y>160</y>
+       <width>111</width>
+       <height>22</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_31">
+     <property name="geometry">
+      <rect>
+       <x>270</x>
+       <y>160</y>
+       <width>21</width>
+       <height>20</height>
       </rect>
      </property>
      <property name="text">
-      <string>Z</string>
+      <string>#</string>
      </property>
     </widget>
+    <zorder>groupBox_4</zorder>
+    <zorder>groupBox_5</zorder>
+    <zorder>groupBox_6</zorder>
+    <zorder>groupBox_7</zorder>
+    <zorder>groupBox_8</zorder>
+    <zorder>waferMapPlotAreaWidget</zorder>
+    <zorder>mapTitleLineEdit</zorder>
+    <zorder>label_19</zorder>
+    <zorder>showDetailCheckBox</zorder>
+    <zorder>showDieRCCheckBox</zorder>
+    <zorder>heatMapOrContourComboBox</zorder>
+    <zorder>label_20</zorder>
+    <zorder>saveJsonButton</zorder>
+    <zorder>waferMapDownloadPngButton</zorder>
+    <zorder>loadJsonButton</zorder>
+    <zorder>waferMapDownloadHtmlButton</zorder>
+    <zorder>refreshButton</zorder>
+    <zorder>fontSizeSpinBox</zorder>
+    <zorder>groupBox_9</zorder>
+    <zorder>label_21</zorder>
+    <zorder>groupBox_10</zorder>
+    <zorder>label_30</zorder>
+    <zorder>waferIDComboBox</zorder>
+    <zorder>waferIDTitleComboBox</zorder>
+    <zorder>label_31</zorder>
+    <zorder>waferMapStatusLabelx</zorder>
    </widget>
   </widget>
   <widget class="QLabel" name="noWebengineLabel">
