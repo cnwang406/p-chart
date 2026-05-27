@@ -13,7 +13,7 @@ from PySide6.QtCore import (
     QSortFilterProxyModel,
     Qt,
 )
-from PySide6.QtGui import QColor, QBrush, QPixmap
+from PySide6.QtGui import QColor, QBrush, QPixmap, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -175,6 +175,65 @@ class PreviewSortFilterProxyModel(QSortFilterProxyModel):
             return str(leftValue).lower() < str(rightValue).lower()
 
 
+class CheckableComboBox(QComboBox):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setModel(QStandardItemModel(self))
+        self.setEditable(True)
+        self.lineEdit().setReadOnly(True)
+        self._skipNextHide = False
+        self.view().pressed.connect(self._toggle_item)
+        self.activated.connect(lambda _index: self._update_summary())
+        self._update_summary()
+
+    def add_check_item(self, text: str, checked: bool = False, enabled: bool = True) -> None:
+        item = QStandardItem(text)
+        flags = Qt.ItemIsUserCheckable
+        if enabled:
+            flags |= Qt.ItemIsEnabled
+        item.setFlags(flags)
+        item.setData(Qt.Checked if checked else Qt.Unchecked, Qt.CheckStateRole)
+        self.model().appendRow(item)
+        self._update_summary()
+
+    def checked_items(self) -> list[str]:
+        checkedItems = []
+        for rowIndex in range(self.model().rowCount()):
+            item = self.model().item(rowIndex)
+            if item is not None and item.checkState() == Qt.Checked:
+                checkedItems.append(item.text())
+        return checkedItems
+
+    def clear(self) -> None:
+        super().clear()
+        self._update_summary()
+
+    def hidePopup(self) -> None:
+        if self._skipNextHide:
+            self._skipNextHide = False
+            return
+        super().hidePopup()
+
+    def _toggle_item(self, index: QModelIndex) -> None:
+        item = self.model().itemFromIndex(index)
+        if item is None or not item.isEnabled():
+            return
+        self._skipNextHide = True
+        item.setCheckState(Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked)
+        self._update_summary()
+
+    def _update_summary(self) -> None:
+        if self.lineEdit() is None:
+            return
+        checkedItems = self.checked_items()
+        if not checkedItems:
+            self.lineEdit().setText('No values selected')
+        elif len(checkedItems) <= 2:
+            self.lineEdit().setText(', '.join(checkedItems))
+        else:
+            self.lineEdit().setText(f'{len(checkedItems)} selected')
+
+
 class TabDataWidget(BackgroundTaskMixin):
     _dateColumnNamePattern = re.compile(
         r'(date|time|datetime|timestamp|dt|日期|時間|日付|年月日)',
@@ -216,6 +275,7 @@ class TabDataWidget(BackgroundTaskMixin):
         self.savePathLineEdit = require_child(rootWidget, QLineEdit, 'savePathLineEdit')
         self.browseSaveButton = require_child(rootWidget, QPushButton, 'browseSaveButton')
         self.meltButton = require_child(rootWidget, QPushButton, 'meltButton')
+        self.melt2Button = require_child(rootWidget, QPushButton, 'melt2Button')
         self.saveButton = require_child(rootWidget, QPushButton, 'saveButton')
         self.infoButton = require_child(rootWidget, QPushButton, 'infoButton')
         self.convertColumnButton = require_child(rootWidget, QPushButton, 'convertColumnButton')
@@ -246,6 +306,7 @@ class TabDataWidget(BackgroundTaskMixin):
         self.loadButton.clicked.connect(self._load_selected_sheet)
         self.browseSaveButton.clicked.connect(self._browse_save_path)
         self.meltButton.clicked.connect(self._melt_dataframe)
+        self.melt2Button.clicked.connect(self._show_long_to_wide_dialog)
         self.saveButton.clicked.connect(self._save_melted_data)
         self.infoButton.clicked.connect(self._show_wide_to_long_info)
         self.convertColumnButton.clicked.connect(self._convert_prefixed_columns)
@@ -946,6 +1007,207 @@ class TabDataWidget(BackgroundTaskMixin):
             )
         except Exception as exc:
             self._set_status(f'Error reshaping data: {exc}', error=True)
+
+    def _show_long_to_wide_dialog(self) -> None:
+        sourceDataFrame = self._long_to_wide_source_data_frame()
+        if sourceDataFrame.empty:
+            self._set_status('No data loaded; import an Excel or CSV file first.', error=True)
+            return
+
+        sourceDataFrame = sourceDataFrame.copy()
+        sourceDataFrame.columns = sourceDataFrame.columns.astype(str)
+        columnNames = list(sourceDataFrame.columns)
+        if len(set(columnNames)) != len(columnNames):
+            self._set_status('Long-to-wide requires unique column names.', error=True)
+            return
+
+        dialog = QDialog(self.rootWidget)
+        dialog.setWindowTitle('Long-to-wide 轉換')
+        dialogLayout = QVBoxLayout(dialog)
+        dialogLayout.addWidget(QLabel('選擇放各 parameter 的 column name', dialog))
+
+        parameterComboBox = QComboBox(dialog)
+        parameterComboBox.addItems(columnNames)
+        defaultParameterIndex = self._default_parameter_column_index(columnNames)
+        if defaultParameterIndex >= 0:
+            parameterComboBox.setCurrentIndex(defaultParameterIndex)
+
+        parameterLayout = QHBoxLayout()
+        parameterLayout.addWidget(QLabel('Select patameter', dialog))
+        parameterLayout.addWidget(parameterComboBox)
+        dialogLayout.addLayout(parameterLayout)
+
+        valueComboBox = CheckableComboBox(dialog)
+
+        def rebuild_value_options(selectedParameter: str) -> None:
+            checkedColumns = set(valueComboBox.checked_items())
+            valueComboBox.clear()
+            for columnName in columnNames:
+                isParameterColumn = columnName == selectedParameter
+                checked = (
+                    columnName in checkedColumns
+                    if checkedColumns
+                    else '_' in columnName
+                )
+                valueComboBox.add_check_item(
+                    columnName,
+                    checked=checked and not isParameterColumn,
+                    enabled=not isParameterColumn,
+                )
+
+        rebuild_value_options(parameterComboBox.currentText())
+        parameterComboBox.currentTextChanged.connect(rebuild_value_options)
+
+        valueLayout = QHBoxLayout()
+        valueLayout.addWidget(QLabel('valyes', dialog))
+        valueLayout.addWidget(valueComboBox)
+        dialogLayout.addLayout(valueLayout)
+
+        buttonLayout = QHBoxLayout()
+        buttonLayout.addStretch()
+        cancelButton = QPushButton('CANCEL', dialog)
+        convertButton = QPushButton('轉換', dialog)
+        cancelButton.clicked.connect(dialog.reject)
+        convertButton.clicked.connect(dialog.accept)
+        buttonLayout.addWidget(cancelButton)
+        buttonLayout.addWidget(convertButton)
+        dialogLayout.addLayout(buttonLayout)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        parameterColumn = parameterComboBox.currentText()
+        valueColumns = valueComboBox.checked_items()
+        self._long_to_wide_dataframe(sourceDataFrame, parameterColumn, valueColumns)
+
+    def _long_to_wide_source_data_frame(self) -> pd.DataFrame:
+        if not self.meltedDataFrame.empty:
+            return self.meltedDataFrame.copy()
+        return self.loadedDataFrame.copy()
+
+    def _default_parameter_column_index(self, columnNames: list[str]) -> int:
+        exactNames = {'PARAMETER', 'PARAMETERS'}
+        for columnIndex, columnName in enumerate(columnNames):
+            if columnName.upper() in exactNames:
+                return columnIndex
+        for columnIndex, columnName in enumerate(columnNames):
+            upperColumnName = columnName.upper()
+            if 'PARAMETER' in upperColumnName or 'PARAMETERS' in upperColumnName:
+                return columnIndex
+        return 0 if columnNames else -1
+
+    def _long_to_wide_dataframe(
+        self,
+        dataFrame: pd.DataFrame,
+        parameterColumn: str,
+        valueColumns: list[str],
+    ) -> None:
+        if not parameterColumn or parameterColumn not in dataFrame.columns:
+            self._set_status('Choose a valid parameter column.', error=True)
+            return
+
+        valueColumns = [
+            columnName
+            for columnName in valueColumns
+            if columnName in dataFrame.columns
+        ]
+        if not valueColumns:
+            self._set_status('Choose at least one value column for long-to-wide.', error=True)
+            return
+
+        if parameterColumn in valueColumns:
+            self._set_status('Parameter column cannot also be a value column.', error=True)
+            return
+
+        try:
+            convertedDataFrame, parameterCount, duplicateRowCount = (
+                self._build_long_to_wide_dataframe(dataFrame, parameterColumn, valueColumns)
+            )
+        except Exception as exc:
+            self._set_status(f'Error reshaping data with long-to-wide: {exc}', error=True)
+            return
+
+        self.meltedDataFrame = convertedDataFrame
+        self._show_preview(self.meltedDataFrame)
+        self._notify_data_changed()
+        statusText = (
+            f'Data reshaped with long-to-wide. '
+            f'Parameters: {parameterCount}; values: {len(valueColumns)}.'
+        )
+        if duplicateRowCount:
+            statusText += f' Duplicate rows merged with first value: {duplicateRowCount}.'
+        self._set_status(statusText)
+
+    def _build_long_to_wide_dataframe(
+        self,
+        dataFrame: pd.DataFrame,
+        parameterColumn: str,
+        valueColumns: list[str],
+    ) -> tuple[pd.DataFrame, int, int]:
+        workingDataFrame = dataFrame.copy()
+        workingDataFrame[parameterColumn] = workingDataFrame[parameterColumn].map(
+            self._format_long_to_wide_parameter_value
+        )
+        workingDataFrame = workingDataFrame.loc[workingDataFrame[parameterColumn] != ''].copy()
+        if workingDataFrame.empty:
+            raise ValueError('parameter column has no non-empty values')
+
+        indexColumns = [
+            columnName
+            for columnName in workingDataFrame.columns
+            if columnName != parameterColumn and columnName not in valueColumns
+        ]
+        occurrenceColumn = ''
+        if not indexColumns:
+            occurrenceColumn = self._unique_column_name(
+                '__longToWideRowId',
+                set(workingDataFrame.columns.astype(str)),
+            )
+            workingDataFrame[occurrenceColumn] = (
+                workingDataFrame.groupby(parameterColumn, sort=False).cumcount()
+            )
+            indexColumns = [occurrenceColumn]
+
+        parameterValues = list(dict.fromkeys(workingDataFrame[parameterColumn].tolist()))
+        duplicateRowCount = int(
+            workingDataFrame.duplicated([*indexColumns, parameterColumn], keep=False).sum()
+        )
+        dedupedDataFrame = workingDataFrame.drop_duplicates(
+            subset=[*indexColumns, parameterColumn],
+            keep='first',
+        )
+        wideDataFrame = dedupedDataFrame[indexColumns].drop_duplicates(keep='first').copy()
+
+        usedColumnNames = set(wideDataFrame.columns.astype(str))
+        for parameterValue in parameterValues:
+            parameterDataFrame = dedupedDataFrame.loc[
+                dedupedDataFrame[parameterColumn] == parameterValue,
+                [*indexColumns, *valueColumns],
+            ].copy()
+            renamedColumns = {}
+            for valueColumn in valueColumns:
+                wideColumnName = self._unique_column_name(
+                    f'{parameterValue}_{valueColumn}',
+                    usedColumnNames,
+                )
+                usedColumnNames.add(wideColumnName)
+                renamedColumns[valueColumn] = wideColumnName
+            parameterDataFrame = parameterDataFrame.rename(columns=renamedColumns)
+            wideDataFrame = wideDataFrame.merge(
+                parameterDataFrame,
+                on=indexColumns,
+                how='left',
+                sort=False,
+            )
+
+        if occurrenceColumn:
+            wideDataFrame = wideDataFrame.drop(columns=[occurrenceColumn])
+        return wideDataFrame.reset_index(drop=True), len(parameterValues), duplicateRowCount
+
+    def _format_long_to_wide_parameter_value(self, value) -> str:
+        if pd.isna(value):
+            return ''
+        return str(value).strip()
 
     def _show_preview(
         self,
