@@ -58,7 +58,7 @@ from tabWafermap import TabWafermapWidget
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.5.2'
+APP_VERSION = 'v2.6.0'
 APP_AUTHOR = 'cnwang'
 APP_DATE = '2024/04'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
@@ -73,7 +73,7 @@ REC_DIRECTORY_CANDIDATES = [
     Path.home() / 'Documents' / 'py' / 'pchart_sa.rec',
 ]
 REC_INFO_FILENAME = 'info.json'
-UPDATE_SOURCE_DIRECTORY = Path(r'\\172.30.79.11\9630\p-chart')
+UPDATE_SOURCE_DIRECTORY = Path(r'\\172.30.79.11\wtk_share\9630\p-chart')
 
 
 def resource_path(filename: str) -> str:

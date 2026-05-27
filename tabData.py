@@ -421,6 +421,10 @@ class TabDataWidget(BackgroundTaskMixin):
 但是如果電腦環境不支援 PySide6.WebEngine, 就會退回到在系統瀏覽器裡面看圖, 這時候app 的字體可能會變得很大很醜,
 這 不 是 我 的 錯
 , 是 PySide6.WebEngine 的問題. 但是產生的 HTML 應該還是正常的,可以放大縮小移動 balabala
+
+5. V2.6 新增功能, 把 long-->wide. 是對付 eFAB/WAT 這種有 PARAMETER 欄位, 分別對應不同片好的不同 parameter 的 AVG, MIN,MAX 等等, 但是又想要把這些 parameter 分別當作不同的欄位來分析的情況. 這樣就可以先用 wide_to_long 把資料轉成長格式, 加工完之後再用 long_to_wide 把它轉回寬格式, 這樣就可以直接拿去畫圖了.
+
+6. WaferMap 可以畫 frames, dies, 還可以畫出 mapping. 但無法把 eFAB/WAT mapping 對應過來. 因為 WAT/mapping 的座標根本亂來. 但是其他 app 如 KGD, OP 之類的就沒問題了
 """.strip()
         )
         infoTextEdit.setMinimumHeight(160)
