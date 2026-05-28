@@ -307,7 +307,7 @@ class TabDataWidget(BackgroundTaskMixin):
         self.browseSaveButton.clicked.connect(self._browse_save_path)
         self.meltButton.clicked.connect(self._melt_dataframe)
         self.melt2Button.clicked.connect(self._show_long_to_wide_dialog)
-        self.saveButton.clicked.connect(self._save_melted_data)
+        self.saveButton.clicked.connect(self._export_data_frame)
         self.infoButton.clicked.connect(self._show_wide_to_long_info)
         self.convertColumnButton.clicked.connect(self._convert_prefixed_columns)
 
@@ -375,15 +375,21 @@ class TabDataWidget(BackgroundTaskMixin):
         self._invalidate_melted_data()
 
     def _browse_save_path(self) -> None:
-        defaultPath = self.loadedFilePath if self.loadedFilePath else os.getcwd()
+        defaultPath = self._default_export_path()
         selectedFile, _ = QFileDialog.getSaveFileName(
             self.rootWidget,
-            'Save reshaped worksheet',
+            'Export DataFrame',
             defaultPath,
             'Excel Files (*.xlsx);;CSV Files (*.csv);;All Files (*)',
         )
         if selectedFile:
             self.savePathLineEdit.setText(selectedFile)
+
+    def _default_export_path(self) -> str:
+        if self.loadedFilePath:
+            baseName, _extension = os.path.splitext(self.loadedFilePath)
+            return f'{baseName}_export.xlsx'
+        return os.path.join(os.getcwd(), 'pchart_export.xlsx')
 
     def _show_wide_to_long_info(self) -> None:
         imagePath = os.path.join(os.path.dirname(__file__), 'w2l.png')
@@ -1428,9 +1434,10 @@ class TabDataWidget(BackgroundTaskMixin):
             filteredDataFrame = filteredDataFrame.loc[seriesText.isin(selectedValues)]
         return filteredDataFrame.copy()
 
-    def _save_melted_data(self) -> None:
-        if self.meltedDataFrame.empty:
-            self._set_status('No reshaped data to save. Run wide_to_long first.', error=True)
+    def _export_data_frame(self) -> None:
+        dataFrame = self.get_plot_data()
+        if dataFrame.empty:
+            self._set_status('No data to export. Load data first.', error=True)
             return
 
         attachMode = self.attachComboBox.currentText()
@@ -1438,28 +1445,34 @@ class TabDataWidget(BackgroundTaskMixin):
         if attachMode == 'attach new sheet to workbook' and not savePath:
             savePath = self.loadedFilePath
         if not savePath:
-            self._set_status('Choose save path first.', error=True)
+            self._set_status('Choose export path first.', error=True)
             return
 
         try:
             if attachMode == 'attach new sheet to workbook':
-                if not savePath.lower().endswith(('.xlsx', '.xls')):
-                    self._set_status('Attach mode works only with Excel files.', error=True)
+                if not savePath.lower().endswith('.xlsx'):
+                    self._set_status('Attach mode works only with .xlsx Excel files.', error=True)
                     return
-                sheetName = self.sheetNameLineEdit.text().strip() or 'wide_to_long'
+                sheetName = self.sheetNameLineEdit.text().strip() or 'export'
                 with pd.ExcelWriter(savePath, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-                    self.meltedDataFrame.to_excel(writer, sheet_name=sheetName, index=False)
-                self._set_status(f'Reshaped worksheet attached to {savePath} as sheet {sheetName}.')
+                    dataFrame.to_excel(writer, sheet_name=sheetName, index=False)
+                self._set_status(f'DataFrame attached to {savePath} as sheet {sheetName}.')
             else:
+                savePath = self._normalized_export_path(savePath)
                 if savePath.lower().endswith('.csv'):
-                    self.meltedDataFrame.to_csv(savePath, index=False)
+                    dataFrame.to_csv(savePath, index=False)
                 else:
                     with pd.ExcelWriter(savePath, engine='openpyxl') as writer:
-                        sheetName = self.sheetNameLineEdit.text().strip() or 'wide_to_long'
-                        self.meltedDataFrame.to_excel(writer, sheet_name=sheetName, index=False)
-                self._set_status(f'Reshaped worksheet saved to {savePath}.')
+                        sheetName = self.sheetNameLineEdit.text().strip() or 'export'
+                        dataFrame.to_excel(writer, sheet_name=sheetName, index=False)
+                self._set_status(f'DataFrame exported to {savePath}.')
         except Exception as exc:
-            self._set_status(f'Error saving reshaped data: {exc}', error=True)
+            self._set_status(f'Error exporting DataFrame: {exc}', error=True)
+
+    def _normalized_export_path(self, savePath: str) -> str:
+        if savePath.lower().endswith(('.csv', '.xlsx')):
+            return savePath
+        return f'{savePath}.xlsx'
 
     def get_melted_data(self) -> pd.DataFrame:
         if self.meltedDataFrame.empty:
