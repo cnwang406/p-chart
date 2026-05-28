@@ -11,6 +11,7 @@ from PySide6.QtCore import (
     QObject,
     QPoint,
     QSortFilterProxyModel,
+    Signal,
     Qt,
 )
 from PySide6.QtGui import QColor, QBrush, QPixmap, QStandardItem, QStandardItemModel
@@ -176,12 +177,17 @@ class PreviewSortFilterProxyModel(QSortFilterProxyModel):
 
 
 class CheckableComboBox(QComboBox):
+    checkedItemsChanged = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setModel(QStandardItemModel(self))
+        self.itemModel = QStandardItemModel(self)
+        self.setModel(self.itemModel)
         self.setEditable(True)
         self.lineEdit().setReadOnly(True)
         self._skipNextHide = False
+        self._updatingItems = False
+        self.itemModel.itemChanged.connect(self._on_item_changed)
         self.view().pressed.connect(self._toggle_item)
         self.activated.connect(lambda _index: self._update_summary())
         self._update_summary()
@@ -193,19 +199,41 @@ class CheckableComboBox(QComboBox):
             flags |= Qt.ItemIsEnabled
         item.setFlags(flags)
         item.setData(Qt.Checked if checked else Qt.Unchecked, Qt.CheckStateRole)
-        self.model().appendRow(item)
+        self.itemModel.appendRow(item)
         self._update_summary()
+
+    def set_check_items(
+        self,
+        itemStates: list[tuple[str, bool, bool]],
+        emitChanged: bool = True,
+    ) -> None:
+        self._updatingItems = True
+        super().clear()
+        for text, checked, enabled in itemStates:
+            item = QStandardItem(text)
+            flags = Qt.ItemIsUserCheckable
+            if enabled:
+                flags |= Qt.ItemIsEnabled
+            item.setFlags(flags)
+            item.setData(Qt.Checked if checked else Qt.Unchecked, Qt.CheckStateRole)
+            self.itemModel.appendRow(item)
+        self._updatingItems = False
+        self._update_summary()
+        if emitChanged:
+            self.checkedItemsChanged.emit()
 
     def checked_items(self) -> list[str]:
         checkedItems = []
-        for rowIndex in range(self.model().rowCount()):
-            item = self.model().item(rowIndex)
+        for rowIndex in range(self.itemModel.rowCount()):
+            item = self.itemModel.item(rowIndex)
             if item is not None and item.checkState() == Qt.Checked:
                 checkedItems.append(item.text())
         return checkedItems
 
     def clear(self) -> None:
+        self._updatingItems = True
         super().clear()
+        self._updatingItems = False
         self._update_summary()
 
     def hidePopup(self) -> None:
@@ -220,7 +248,12 @@ class CheckableComboBox(QComboBox):
             return
         self._skipNextHide = True
         item.setCheckState(Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked)
+
+    def _on_item_changed(self, _item: QStandardItem) -> None:
+        if self._updatingItems:
+            return
         self._update_summary()
+        self.checkedItemsChanged.emit()
 
     def _update_summary(self) -> None:
         if self.lineEdit() is None:
@@ -1033,62 +1066,110 @@ class TabDataWidget(BackgroundTaskMixin):
 
         dialog = QDialog(self.rootWidget)
         dialog.setWindowTitle('Long-to-wide 轉換')
+        dialog.resize(600, 260)
         dialogLayout = QVBoxLayout(dialog)
         dialogLayout.addWidget(QLabel('選擇放各 parameter 的 column name', dialog))
 
         parameterComboBox = QComboBox(dialog)
         parameterComboBox.addItems(columnNames)
+        parameterComboBox.setMinimumWidth(420)
         defaultParameterIndex = self._default_parameter_column_index(columnNames)
         if defaultParameterIndex >= 0:
             parameterComboBox.setCurrentIndex(defaultParameterIndex)
 
-        parameterLayout = QHBoxLayout()
-        parameterLayout.addWidget(QLabel('Select patameter', dialog))
-        parameterLayout.addWidget(parameterComboBox)
-        dialogLayout.addLayout(parameterLayout)
+        parameterLabel = QLabel('Select patameter', dialog)
+        dialogLayout.addWidget(parameterLabel)
+        dialogLayout.addWidget(parameterComboBox)
 
+        indexComboBox = CheckableComboBox(dialog)
+        indexComboBox.setMinimumWidth(420)
         valueComboBox = CheckableComboBox(dialog)
+        valueComboBox.setMinimumWidth(420)
 
-        def rebuild_value_options(selectedParameter: str) -> None:
-            checkedColumns = set(valueComboBox.checked_items())
-            valueComboBox.clear()
+        indexOptionsInitialized = False
+        valueOptionsInitialized = False
+
+        def rebuild_index_options() -> None:
+            nonlocal indexOptionsInitialized
+            selectedParameter = parameterComboBox.currentText()
+            checkedColumns = set(indexComboBox.checked_items())
+            itemStates = []
             for columnName in columnNames:
-                isParameterColumn = columnName == selectedParameter
-                checked = (
-                    columnName in checkedColumns
-                    if checkedColumns
-                    else '_' in columnName
-                )
-                valueComboBox.add_check_item(
-                    columnName,
-                    checked=checked and not isParameterColumn,
-                    enabled=not isParameterColumn,
-                )
+                enabled = columnName != selectedParameter
+                if indexOptionsInitialized:
+                    checked = columnName in checkedColumns
+                else:
+                    checked = self._is_default_long_to_wide_index_column(columnName)
+                itemStates.append((columnName, checked and enabled, enabled))
+            indexComboBox.set_check_items(itemStates, emitChanged=False)
+            indexOptionsInitialized = True
 
-        rebuild_value_options(parameterComboBox.currentText())
-        parameterComboBox.currentTextChanged.connect(rebuild_value_options)
+        def rebuild_value_options() -> None:
+            nonlocal valueOptionsInitialized
+            selectedParameter = parameterComboBox.currentText()
+            selectedIndexColumns = set(indexComboBox.checked_items())
+            checkedColumns = set(valueComboBox.checked_items())
+            itemStates = []
+            for columnName in columnNames:
+                enabled = (
+                    columnName != selectedParameter
+                    and columnName not in selectedIndexColumns
+                )
+                if valueOptionsInitialized:
+                    checked = columnName in checkedColumns
+                else:
+                    checked = '_' in columnName
+                itemStates.append((columnName, checked and enabled, enabled))
+            valueComboBox.set_check_items(itemStates, emitChanged=False)
+            valueOptionsInitialized = True
 
-        valueLayout = QHBoxLayout()
-        valueLayout.addWidget(QLabel('valyes', dialog))
-        valueLayout.addWidget(valueComboBox)
-        dialogLayout.addLayout(valueLayout)
+        def on_parameter_changed(_selectedParameter: str) -> None:
+            rebuild_index_options()
+            rebuild_value_options()
+
+        rebuild_index_options()
+        rebuild_value_options()
+        parameterComboBox.currentTextChanged.connect(on_parameter_changed)
+        indexComboBox.checkedItemsChanged.connect(rebuild_value_options)
+
+        indexLabel = QLabel('index', dialog)
+        dialogLayout.addWidget(indexLabel)
+        dialogLayout.addWidget(indexComboBox)
+
+        valueLabel = QLabel('values', dialog)
+        dialogLayout.addWidget(valueLabel)
+        dialogLayout.addWidget(valueComboBox)
 
         buttonLayout = QHBoxLayout()
         buttonLayout.addStretch()
         cancelButton = QPushButton('CANCEL', dialog)
-        convertButton = QPushButton('轉換', dialog)
+        convertButton = QPushButton('OK', dialog)
         cancelButton.clicked.connect(dialog.reject)
         convertButton.clicked.connect(dialog.accept)
         buttonLayout.addWidget(cancelButton)
         buttonLayout.addWidget(convertButton)
         dialogLayout.addLayout(buttonLayout)
 
-        if dialog.exec() != QDialog.Accepted:
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
         parameterColumn = parameterComboBox.currentText()
+        indexColumns = indexComboBox.checked_items()
         valueColumns = valueComboBox.checked_items()
-        self._long_to_wide_dataframe(sourceDataFrame, parameterColumn, valueColumns)
+        selectedColumns = {parameterColumn, *indexColumns, *valueColumns}
+        droppedColumns = [
+            columnName
+            for columnName in columnNames
+            if columnName not in selectedColumns
+        ]
+        if not self._confirm_long_to_wide_dropped_columns(droppedColumns):
+            return
+        self._long_to_wide_dataframe(
+            sourceDataFrame,
+            parameterColumn,
+            indexColumns,
+            valueColumns,
+        )
 
     def _long_to_wide_source_data_frame(self) -> pd.DataFrame:
         if not self.meltedDataFrame.empty:
@@ -1106,16 +1187,51 @@ class TabDataWidget(BackgroundTaskMixin):
                 return columnIndex
         return 0 if columnNames else -1
 
+    def _is_default_long_to_wide_index_column(self, columnName: str) -> bool:
+        normalizedName = columnName.strip().lower()
+        compactName = re.sub(r'[^a-z0-9]+', '', normalizedName)
+        tokens = [token for token in re.split(r'[^a-z0-9]+', normalizedName) if token]
+        return (
+            'waferid' in compactName
+            or 'lotno' in compactName
+            or 'processunit' in compactName
+            or 'wafer' in tokens
+            or 'lot' in tokens
+            or 'tool' in tokens
+            or 'pu' in tokens
+        )
+
+    def _confirm_long_to_wide_dropped_columns(self, droppedColumns: list[str]) -> bool:
+        droppedColumnText = ', '.join(droppedColumns) if droppedColumns else '無'
+        message = (
+            f'沒有被選擇的欄位：{droppedColumnText}\n'
+            '會被消失不見，請注意 save 也會消失掉這些欄位'
+        )
+        answer = QMessageBox.warning(
+            self.rootWidget,
+            'Long-to-wide 欄位確認',
+            message,
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        return answer == QMessageBox.StandardButton.Ok
+
     def _long_to_wide_dataframe(
         self,
         dataFrame: pd.DataFrame,
         parameterColumn: str,
+        indexColumns: list[str],
         valueColumns: list[str],
     ) -> None:
         if not parameterColumn or parameterColumn not in dataFrame.columns:
             self._set_status('Choose a valid parameter column.', error=True)
             return
 
+        indexColumns = [
+            columnName
+            for columnName in indexColumns
+            if columnName in dataFrame.columns and columnName != parameterColumn
+        ]
         valueColumns = [
             columnName
             for columnName in valueColumns
@@ -1129,9 +1245,23 @@ class TabDataWidget(BackgroundTaskMixin):
             self._set_status('Parameter column cannot also be a value column.', error=True)
             return
 
+        overlappingColumns = sorted(set(indexColumns) & set(valueColumns))
+        if overlappingColumns:
+            self._set_status(
+                'Index columns cannot also be value columns: '
+                f'{", ".join(overlappingColumns)}.',
+                error=True,
+            )
+            return
+
         try:
             convertedDataFrame, parameterCount, duplicateRowCount = (
-                self._build_long_to_wide_dataframe(dataFrame, parameterColumn, valueColumns)
+                self._build_long_to_wide_dataframe(
+                    dataFrame,
+                    parameterColumn,
+                    indexColumns,
+                    valueColumns,
+                )
             )
         except Exception as exc:
             self._set_status(f'Error reshaping data with long-to-wide: {exc}', error=True)
@@ -1142,7 +1272,8 @@ class TabDataWidget(BackgroundTaskMixin):
         self._notify_data_changed()
         statusText = (
             f'Data reshaped with long-to-wide. '
-            f'Parameters: {parameterCount}; values: {len(valueColumns)}.'
+            f'Parameters: {parameterCount}; indexes: {len(indexColumns)}; '
+            f'values: {len(valueColumns)}.'
         )
         if duplicateRowCount:
             statusText += f' Duplicate rows merged with first value: {duplicateRowCount}.'
@@ -1152,6 +1283,7 @@ class TabDataWidget(BackgroundTaskMixin):
         self,
         dataFrame: pd.DataFrame,
         parameterColumn: str,
+        indexColumns: list[str],
         valueColumns: list[str],
     ) -> tuple[pd.DataFrame, int, int]:
         workingDataFrame = dataFrame.copy()
@@ -1162,13 +1294,9 @@ class TabDataWidget(BackgroundTaskMixin):
         if workingDataFrame.empty:
             raise ValueError('parameter column has no non-empty values')
 
-        indexColumns = [
-            columnName
-            for columnName in workingDataFrame.columns
-            if columnName != parameterColumn and columnName not in valueColumns
-        ]
+        effectiveIndexColumns = list(indexColumns)
         occurrenceColumn = ''
-        if not indexColumns:
+        if not effectiveIndexColumns:
             occurrenceColumn = self._unique_column_name(
                 '__longToWideRowId',
                 set(workingDataFrame.columns.astype(str)),
@@ -1176,23 +1304,30 @@ class TabDataWidget(BackgroundTaskMixin):
             workingDataFrame[occurrenceColumn] = (
                 workingDataFrame.groupby(parameterColumn, sort=False).cumcount()
             )
-            indexColumns = [occurrenceColumn]
+            effectiveIndexColumns = [occurrenceColumn]
 
         parameterValues = list(dict.fromkeys(workingDataFrame[parameterColumn].tolist()))
         duplicateRowCount = int(
-            workingDataFrame.duplicated([*indexColumns, parameterColumn], keep=False).sum()
+            workingDataFrame.duplicated(
+                [*effectiveIndexColumns, parameterColumn],
+                keep=False,
+            ).sum()
         )
         dedupedDataFrame = workingDataFrame.drop_duplicates(
-            subset=[*indexColumns, parameterColumn],
+            subset=[*effectiveIndexColumns, parameterColumn],
             keep='first',
         )
-        wideDataFrame = dedupedDataFrame[indexColumns].drop_duplicates(keep='first').copy()
+        wideDataFrame = (
+            dedupedDataFrame[effectiveIndexColumns]
+            .drop_duplicates(keep='first')
+            .copy()
+        )
 
         usedColumnNames = set(wideDataFrame.columns.astype(str))
         for parameterValue in parameterValues:
             parameterDataFrame = dedupedDataFrame.loc[
                 dedupedDataFrame[parameterColumn] == parameterValue,
-                [*indexColumns, *valueColumns],
+                [*effectiveIndexColumns, *valueColumns],
             ].copy()
             renamedColumns = {}
             for valueColumn in valueColumns:
@@ -1205,7 +1340,7 @@ class TabDataWidget(BackgroundTaskMixin):
             parameterDataFrame = parameterDataFrame.rename(columns=renamedColumns)
             wideDataFrame = wideDataFrame.merge(
                 parameterDataFrame,
-                on=indexColumns,
+                on=effectiveIndexColumns,
                 how='left',
                 sort=False,
             )
