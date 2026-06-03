@@ -4020,9 +4020,9 @@ here.</string>
       </property>
      </widget>
     </widget>
-    <widget class="QWidget" name="tab">
+    <widget class="QWidget" name="logTab">
      <attribute name="title">
-      <string>logView</string>
+      <string>logTab</string>
      </attribute>
      <widget class="QGroupBox" name="plotGroupBox_2">
       <property name="geometry">

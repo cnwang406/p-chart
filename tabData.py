@@ -301,10 +301,20 @@ class TabDataWidget(BackgroundTaskMixin):
         self._load_file()
 
     def _browse_file(self) -> None:
+        currentFilePath = self.filePathLineEdit.text().strip()
+        defaultDirectory = os.getcwd()
+        if currentFilePath:
+            currentPath = os.path.abspath(currentFilePath)
+            if os.path.isdir(currentPath):
+                defaultDirectory = currentPath
+            else:
+                currentDirectory = os.path.dirname(currentPath)
+                if os.path.isdir(currentDirectory):
+                    defaultDirectory = currentDirectory
         selectedFile, _ = QFileDialog.getOpenFileName(
             self.rootWidget,
             'Open Excel or CSV',
-            os.getcwd(),
+            defaultDirectory,
             'Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)',
         )
         if selectedFile:
@@ -450,7 +460,7 @@ class TabDataWidget(BackgroundTaskMixin):
             self.sheetComboBox.addItem('csv')
             self.sheetComboBox.setEnabled(False)
             self.loadButton.setEnabled(False)
-            statusText = 'CSV loaded successfully.'
+            statusText = f'CSV loaded successfully. read {len(self.loadedDataFrame)} lines.'
             skipRows = int(result.get('skipRows', 0))
             normalizedColumns = list(result.get('normalizedColumns', []))
             if skipRows:
@@ -555,7 +565,7 @@ class TabDataWidget(BackgroundTaskMixin):
         self._show_preview(self.loadedDataFrame)
         self._notify_data_changed()
         sheetName = str(result.get('sheetName', ''))
-        statusText = f'Sheet "{sheetName}" loaded successfully.'
+        statusText = f'Sheet "{sheetName}" loaded successfully. read {len(self.loadedDataFrame)} lines.'
         skipRows = int(result.get('skipRows', 0))
         normalizedColumns = list(result.get('normalizedColumns', []))
         if skipRows:

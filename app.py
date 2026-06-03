@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
 from qt_helpers import require_child
 from tabBoxplot import TabBoxplotWidget
 from tabData import TabDataWidget
+from tabLog import TabLogWidget
 from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 from tabWafermap import TabWafermapWidget
 
@@ -327,9 +328,11 @@ class AppMain:
         self.tabScatterWidget = TabScatterWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabBoxplotWidget = TabBoxplotWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabWafermapWidget = TabWafermapWidget(self.ui)
+        self.tabLogWidget = TabLogWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabScatterWidget.set_tab_data(self.tabDataWidget)
         self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)
         self.tabWafermapWidget.set_tab_data(self.tabDataWidget)
+        self.tabLogWidget.set_tab_data(self.tabDataWidget)
         self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
         self.aboutButton.clicked.connect(self._show_about_dialog)
         self.tabWidget.setCurrentIndex(0)
@@ -383,7 +386,7 @@ class AppMain:
         self.ui.move(windowFrame.topLeft())
 
     def _warn_if_plotting_loaded_data(self, tabIndex: int) -> None:
-        if tabIndex not in [1, 2, 3]:
+        if tabIndex not in [1, 2, 3, 4]:
             return
         if (
             not self.tabDataWidget.has_loaded_data()
@@ -399,6 +402,8 @@ class AppMain:
             self.tabBoxplotWidget._set_status(warningText, error=True)
         elif tabIndex == 3:
             self.tabWafermapWidget._set_status(warningText, error=True)
+        elif tabIndex == 4:
+            self.tabLogWidget._set_status(warningText, error=True)
         self._show_app_icon_warning(warningText)
 
     def _show_app_icon_warning(self, message: str) -> None:
