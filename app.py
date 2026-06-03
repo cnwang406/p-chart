@@ -33,7 +33,7 @@ print (f'QT_FRAMEWORK_PATH: {frameworkPath}')
 
 
 import PySide6
-from PySide6.QtCore import QCoreApplication, QFile
+from PySide6.QtCore import QCoreApplication, QEvent, QFile, QObject
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QColor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -58,7 +58,7 @@ from tabWafermap import TabWafermapWidget
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.5.2'
+APP_VERSION = 'v2.7.0'
 APP_AUTHOR = 'cnwang'
 APP_DATE = '2024/04'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
@@ -199,6 +199,103 @@ def copy_update_files(sourceDirectory: Path, targetDirectory: Path) -> None:
             shutil.copy2(sourcePath, targetPath)
 
 
+class ResponsiveUiResizer(QObject):
+    def __init__(self, rootWidget: QWidget) -> None:
+        super().__init__(rootWidget)
+        self.rootWidget = rootWidget
+        self.anchorRules = []
+        self.rulesByParentId = {}
+        self.parentWidgets = {}
+        self._register_default_anchors()
+
+    def _register_default_anchors(self) -> None:
+        self._add_anchor('tabWidget', stretchWidth=True, stretchHeight=True)
+
+        for widgetName in (
+            'previewTableWidget',
+            'plotAreaWidget',
+            'boxPlotAreaWidget',
+            'waferMapPlotAreaWidget',
+        ):
+            self._add_anchor(widgetName, stretchWidth=True, stretchHeight=True)
+
+        for widgetName in (
+            'statisticLabel',
+            'boxStatisticLabel',
+        ):
+            self._add_anchor(widgetName, stretchWidth=True)
+
+        for widgetName in (
+            'statusLabelTab1',
+            'statusLabelTab2',
+            'boxStatusLabel',
+            'waferMapStatusLabelx',
+        ):
+            self._add_anchor(widgetName, stretchWidth=True, moveY=True)
+
+    def _add_anchor(
+        self,
+        widgetName: str,
+        stretchWidth: bool = False,
+        stretchHeight: bool = False,
+        moveY: bool = False,
+    ) -> None:
+        widget = self.rootWidget.findChild(QWidget, widgetName)
+        if widget is None or widget.parentWidget() is None:
+            return
+
+        parentWidget = widget.parentWidget()
+        rule = {
+            'widget': widget,
+            'parent': parentWidget,
+            'geometry': widget.geometry(),
+            'parentSize': parentWidget.size(),
+            'stretchWidth': stretchWidth,
+            'stretchHeight': stretchHeight,
+            'moveY': moveY,
+            'minWidth': min(widget.width(), 200),
+            'minHeight': min(widget.height(), 120) if stretchHeight else widget.height(),
+        }
+        self.anchorRules.append(rule)
+        parentId = id(parentWidget)
+        self.rulesByParentId.setdefault(parentId, []).append(rule)
+        if parentId not in self.parentWidgets:
+            self.parentWidgets[parentId] = parentWidget
+            parentWidget.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        parentId = id(watched)
+        if event.type() == QEvent.Type.Resize and parentId in self.rulesByParentId:
+            self._apply_parent_rules(watched)
+        return super().eventFilter(watched, event)
+
+    def _apply_parent_rules(self, parentWidget: QWidget) -> None:
+        for rule in self.rulesByParentId.get(id(parentWidget), []):
+            self._apply_rule(rule)
+
+    def _apply_rule(self, rule: dict[str, object]) -> None:
+        widget = rule['widget']
+        parentWidget = rule['parent']
+        baseGeometry = rule['geometry']
+        baseParentSize = rule['parentSize']
+        widthDelta = parentWidget.width() - baseParentSize.width()
+        heightDelta = parentWidget.height() - baseParentSize.height()
+
+        newX = baseGeometry.x()
+        newY = baseGeometry.y() + heightDelta if rule['moveY'] else baseGeometry.y()
+        newWidth = baseGeometry.width()
+        newHeight = baseGeometry.height()
+        if rule['stretchWidth']:
+            newWidth = max(int(rule['minWidth']), baseGeometry.width() + widthDelta)
+        if rule['stretchHeight']:
+            newHeight = max(int(rule['minHeight']), baseGeometry.height() + heightDelta)
+        widget.setGeometry(newX, newY, newWidth, newHeight)
+
+    def apply_all(self) -> None:
+        for parentWidget in self.parentWidgets.values():
+            self._apply_parent_rules(parentWidget)
+
+
 class AppMain:
     def __init__(self) -> None:
         self.runtimeOptions = remove_runtime_args()
@@ -233,9 +330,11 @@ class AppMain:
         self.tabWafermapWidget.set_tab_data(self.tabDataWidget)
         self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
         self.aboutButton.clicked.connect(self._show_about_dialog)
+        self.responsiveUiResizer = ResponsiveUiResizer(self.ui)
         self.tabWidget.setCurrentIndex(0)
         self._center_window()
         self.ui.show()
+        self.responsiveUiResizer.apply_all()
         self._show_new_version_notice()
 
     def _configure_application_metadata(self) -> None:

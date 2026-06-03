@@ -3,6 +3,11 @@ import os
 import re
 from html import escape
 
+try:
+    import chardet
+except ImportError:
+    chardet = None
+
 import pandas as pd
 from PySide6.QtCore import (
     QAbstractTableModel,
@@ -395,7 +400,14 @@ class TabDataWidget(BackgroundTaskMixin):
                     filePath,
                     skipRowsRequest,
                 )
-                dataFrame = pd.read_csv(filePath, skiprows=skipRows)
+                csvOptions = self._detect_csv_read_options(filePath)
+                dataFrame = pd.read_csv(
+                    filePath,
+                    skiprows=skipRows,
+                    encoding=csvOptions['encoding'],
+                    sep=csvOptions['delimiter'],
+                )
+                dataFrame = self._strip_csv_dataframe_spaces(dataFrame)
                 normalizedColumns = self._normalize_loaded_datetime_formats(dataFrame)
                 warnings = self._loaded_data_warnings(dataFrame)
                 return {
@@ -403,6 +415,7 @@ class TabDataWidget(BackgroundTaskMixin):
                     'filePath': filePath,
                     'dataFrame': dataFrame,
                     'skipRows': skipRows,
+                    'csvDelimiter': csvOptions['delimiter'],
                     'normalizedColumns': normalizedColumns,
                     'warnings': warnings,
                 }
@@ -442,6 +455,8 @@ class TabDataWidget(BackgroundTaskMixin):
             normalizedColumns = list(result.get('normalizedColumns', []))
             if skipRows:
                 statusText += f' skiprows={skipRows}.'
+            if result.get('csvDelimiter') == '\t':
+                statusText += ' delimiter=tab.'
             if normalizedColumns:
                 statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
             if warnings:
@@ -1314,13 +1329,68 @@ class TabDataWidget(BackgroundTaskMixin):
 
     def _read_csv_preview_rows(self, filePath: str, maxRows: int = 30) -> list[list[str]]:
         rows = []
-        with open(filePath, newline='', encoding='utf-8-sig') as csvFile:
-            reader = csv.reader(csvFile)
+        csvOptions = self._detect_csv_read_options(filePath)
+        with open(filePath, newline='', encoding=csvOptions['encoding']) as csvFile:
+            reader = csv.reader(csvFile, delimiter=csvOptions['delimiter'])
             for rowIndex, row in enumerate(reader):
                 if rowIndex >= maxRows:
                     break
-                rows.append(row)
+                rows.append([cell.strip() for cell in row])
         return rows
+
+    def _strip_csv_dataframe_spaces(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
+        strippedDataFrame = dataFrame.copy()
+        usedColumnNames = set()
+        strippedColumns = []
+        for columnName in strippedDataFrame.columns:
+            strippedColumnName = str(columnName).strip()
+            uniqueColumnName = self._unique_column_name(strippedColumnName, usedColumnNames)
+            usedColumnNames.add(uniqueColumnName)
+            strippedColumns.append(uniqueColumnName)
+        strippedDataFrame.columns = strippedColumns
+
+        for columnName in strippedDataFrame.columns:
+            series = strippedDataFrame[columnName]
+            if not (
+                pd.api.types.is_object_dtype(series)
+                or pd.api.types.is_string_dtype(series)
+            ):
+                continue
+            strippedDataFrame[columnName] = series.map(
+                lambda value: value.strip() if isinstance(value, str) else value
+            )
+        return strippedDataFrame
+
+    def _detect_csv_read_options(self, filePath: str) -> dict[str, str]:
+        sampleBytes = self._read_csv_sample_bytes(filePath)
+        encoding = self._detect_csv_encoding(sampleBytes)
+        sampleText = self._decode_csv_sample(sampleBytes, encoding)
+        return {
+            'encoding': encoding,
+            'delimiter': self._detect_csv_delimiter(sampleText),
+        }
+
+    def _read_csv_sample_bytes(self, filePath: str) -> bytes:
+        with open(filePath, 'rb') as sampleFile:
+            return sampleFile.read(1024 * 100)
+
+    def _detect_csv_encoding(self, sampleBytes: bytes) -> str:
+        if chardet is not None:
+            detectedEncoding = chardet.detect(sampleBytes).get('encoding')
+            if detectedEncoding:
+                return str(detectedEncoding)
+        return 'utf-8-sig'
+
+    def _decode_csv_sample(self, sampleBytes: bytes, encoding: str) -> str:
+        try:
+            return sampleBytes.decode(encoding, errors='ignore')
+        except LookupError:
+            return sampleBytes.decode('utf-8-sig', errors='ignore')
+
+    def _detect_csv_delimiter(self, sampleText: str) -> str:
+        if ',' not in sampleText and '\t' in sampleText:
+            return '\t'
+        return ','
 
     def _score_header_row(self, previewDf: pd.DataFrame, rowIndex: int) -> float:
         rowTexts = self._row_text_values(previewDf.iloc[rowIndex])
