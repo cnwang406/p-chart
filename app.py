@@ -215,6 +215,7 @@ class ResponsiveUiResizer(QObject):
             'previewTableWidget',
             'plotAreaWidget',
             'boxPlotAreaWidget',
+            'logPlotAreaWidget',
             'waferMapPlotAreaWidget',
         ):
             self._add_anchor(widgetName, stretchWidth=True, stretchHeight=True)
@@ -229,6 +230,7 @@ class ResponsiveUiResizer(QObject):
             'statusLabelTab1',
             'statusLabelTab2',
             'boxStatusLabel',
+            'logStatusLabel',
             'waferMapStatusLabelx',
         ):
             self._add_anchor(widgetName, stretchWidth=True, moveY=True)
@@ -330,10 +332,11 @@ class AppMain:
         self.tabWafermapWidget.set_tab_data(self.tabDataWidget)
         self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
         self.aboutButton.clicked.connect(self._show_about_dialog)
-        self.responsiveUiResizer = ResponsiveUiResizer(self.ui)
         self.tabWidget.setCurrentIndex(0)
         self._center_window()
         self.ui.show()
+        self.app.processEvents()
+        self.responsiveUiResizer = ResponsiveUiResizer(self.ui)
         self.responsiveUiResizer.apply_all()
         self._show_new_version_notice()
 
