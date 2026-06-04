@@ -1,3 +1,5 @@
+import math
+import os
 import re
 import tempfile
 import webbrowser
@@ -6,14 +8,20 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 from pandas.api.types import is_datetime64_any_dtype
-from PySide6.QtCore import Qt, QUrl
+from plotly.subplots import make_subplots
+from PySide6.QtCore import QEvent, QObject, QSignalBlocker, Qt, QUrl
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
     QFileDialog,
     QComboBox,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QTextBrowser,
     QVBoxLayout,
@@ -35,6 +43,11 @@ except ImportError:
     WEB_ENGINE_AVAILABLE = False
 
 
+FILE_PATH_ROLE = int(Qt.ItemDataRole.UserRole)
+PRIMARY_FILE_ROLE = FILE_PATH_ROLE + 1
+LOG_FILE_EXTENSIONS = ('.csv', '.txt')
+
+
 class CheckableColumnCombo:
     def __init__(self, comboBox: QComboBox, placeholder: str, onChanged=None) -> None:
         self.comboBox = comboBox
@@ -48,7 +61,7 @@ class CheckableColumnCombo:
         self.comboBox.view().pressed.connect(self._toggle_item)
         self.model.itemChanged.connect(self._update_display_text)
         self._updating = False
-        self._update_display_text()
+        self.comboBox.lineEdit().setText(self.placeholder)
 
     def set_items(self, columnNames: list[str], checkedColumns: set[str] | None = None) -> None:
         checkedColumns = checkedColumns or set()
@@ -99,8 +112,38 @@ class CheckableColumnCombo:
             self.onChanged()
 
 
+class LogFileDropFilter(QObject):
+    def __init__(self, onFilesDropped, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.onFilesDropped = onFilesDropped
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
+            if self._supported_files(event.mimeData()):
+                event.acceptProposedAction()
+                return True
+        if event.type() == QEvent.Type.Drop:
+            filePaths = self._supported_files(event.mimeData())
+            if filePaths:
+                self.onFilesDropped(filePaths)
+                event.acceptProposedAction()
+                return True
+        return super().eventFilter(watched, event)
+
+    def _supported_files(self, mimeData) -> list[str]:
+        if not mimeData.hasUrls():
+            return []
+        return [
+            url.toLocalFile()
+            for url in mimeData.urls()
+            if url.isLocalFile()
+            and url.toLocalFile().lower().endswith(LOG_FILE_EXTENSIONS)
+        ]
+
+
 class TabLogWidget(BackgroundTaskMixin):
     _dateColumnPattern = re.compile(r'(date|timestamp|time)', re.IGNORECASE)
+    _emptyDataHint = '可直接將 .csv or .txt（同一編碼形式）拉到 files'
 
     def __init__(self, rootWidget: QWidget, preferWebEngine: bool = True) -> None:
         self.rootWidget = rootWidget
@@ -112,15 +155,26 @@ class TabLogWidget(BackgroundTaskMixin):
         self.y1ComboBox = require_child(rootWidget, QComboBox, 'logY1ComboBox')
         self.y2ComboBox = require_child(rootWidget, QComboBox, 'logY2ComboBox')
         self.plotTitleLineEdit = require_child(rootWidget, QLineEdit, 'logTitleLineEdit')
+        self.subTitleLineEdit = require_child(rootWidget, QLineEdit, 'logSubTitleLineEdit')
         self.y1TitleLineEdit = require_child(rootWidget, QLineEdit, 'logY1TitleLineEdit')
         self.y2TitleLineEdit = require_child(rootWidget, QLineEdit, 'logY2TitleLineEdit')
         self.plotButton = require_child(rootWidget, QPushButton, 'logPlotButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'logDownloadHtmlButton')
         self.downloadPngButton = require_child(rootWidget, QPushButton, 'logDownloadPngButton')
+        self.cleanFilesButton = require_child(rootWidget, QPushButton, 'logCleanFilesButton')
         self.plotlyThemeComboBox = require_child(rootWidget, QComboBox, 'logPlotlyThemeComboBox')
         self.plotWidthSpinBox = require_child(rootWidget, QSpinBox, 'logPlotWidthSpinBox')
         self.plotHeightSpinBox = require_child(rootWidget, QSpinBox, 'logPlotHeightSpinBox')
         self.legendFontSizeSpinBox = require_child(rootWidget, QSpinBox, 'logLegendFontSizeSpinButton')
+        self.lineWidthSpinBox = require_child(rootWidget, QSpinBox, 'logLineWidthSpinBox')
+        self.fontSizeSpinBox = require_child(rootWidget, QSpinBox, 'logFontSizeSpinButton')
+        self.horizontalSpaceSpinBox = require_child(rootWidget, QSpinBox, 'logChartsHSpaceSpinButton')
+        self.verticalSpaceSpinBox = require_child(rootWidget, QSpinBox, 'logChartsVSpaceSpinButton')
+        self.symbolCheckBox = require_child(rootWidget, QCheckBox, 'logSymbolCheckBox')
+        self.lineCheckBox = require_child(rootWidget, QCheckBox, 'logLineCheckBox')
+        self.overlapRadioButton = require_child(rootWidget, QRadioButton, 'logOverlapChartsRadioButton')
+        self.subplotRadioButton = require_child(rootWidget, QRadioButton, 'logSubplotChartsRadioButton')
+        self.filesList = require_child(rootWidget, QListWidget, 'logFilesList')
         self.plotAreaWidget = require_child(rootWidget, QWidget, 'logPlotAreaWidget')
         self.statusLabel = require_child(rootWidget, QLabel, 'logStatusLabel')
 
@@ -128,23 +182,31 @@ class TabLogWidget(BackgroundTaskMixin):
         self.currentPlotFigure = None
         self.currentPlotFilePath = ''
         self.currentViewerFilePath = ''
+        self.pendingRenderStatus = ''
+        self.pendingRenderStatusError = False
+        self.primaryFilePath = ''
+        self.subtitleEdited = False
+        self.hasDrawRequest = False
         self._browserViewerOpened = False
+        self._updatingFilesList = False
 
         self.y1ColumnCombo = CheckableColumnCombo(
             self.y1ComboBox,
             'Select Y1 columns',
-            self._redraw_existing_plot,
+            self._on_y1_columns_changed,
         )
         self.y2ColumnCombo = CheckableColumnCombo(
             self.y2ComboBox,
             'Select Y2 columns',
-            self._redraw_existing_plot,
+            self._on_y2_columns_changed,
         )
+        self.fileDropFilter = LogFileDropFilter(self._add_external_files, self.rootWidget)
 
         self._configure_plot_area()
         self.loadingOverlay = LoadingOverlay(self.plotAreaWidget)
         self._configure_defaults()
         self._configure_signals()
+        self._apply_chart_mode()
 
     def _configure_plot_area(self) -> None:
         if self.preferWebEngine and WEB_ENGINE_AVAILABLE and QWebEngineView is not None:
@@ -202,18 +264,44 @@ class TabLogWidget(BackgroundTaskMixin):
             self.plotHeightSpinBox.setValue(max(200, self.plotAreaWidget.height()))
         self.legendFontSizeSpinBox.setRange(6, 32)
         self.legendFontSizeSpinBox.setValue(self.legendFontSizeSpinBox.value() or 12)
-        self.statusLabel.setText('Log plot status messages appear here.')
+        initialLineWidth = self.lineWidthSpinBox.value()
+        self.lineWidthSpinBox.setRange(1, 20)
+        if initialLineWidth <= 0:
+            self.lineWidthSpinBox.setValue(2)
+        self.fontSizeSpinBox.setRange(-8, 8)
+        self.fontSizeSpinBox.setValue(0)
+        self.overlapRadioButton.setChecked(
+            self.overlapRadioButton.isChecked() or not self.subplotRadioButton.isChecked()
+        )
+        self.filesList.setAcceptDrops(True)
+        self.filesList.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
+        self.filesList.installEventFilter(self.fileDropFilter)
+        self.filesList.viewport().setAcceptDrops(True)
+        self.filesList.viewport().installEventFilter(self.fileDropFilter)
 
     def _configure_signals(self) -> None:
         self.plotButton.clicked.connect(self._draw_plot)
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.downloadPngButton.clicked.connect(self._download_png)
+        self.cleanFilesButton.clicked.connect(self._clean_external_files)
+        self.filesList.itemSelectionChanged.connect(self._on_file_selection_changed)
         self.plotlyThemeComboBox.currentTextChanged.connect(self._redraw_existing_plot)
         self.plotWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotHeightSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.legendFontSizeSpinBox.valueChanged.connect(self._redraw_existing_plot)
+        self.lineWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
+        self.fontSizeSpinBox.valueChanged.connect(self._redraw_existing_plot)
+        self.horizontalSpaceSpinBox.valueChanged.connect(self._redraw_existing_plot)
+        self.verticalSpaceSpinBox.valueChanged.connect(self._redraw_existing_plot)
+        self.symbolCheckBox.stateChanged.connect(self._on_trace_style_changed)
+        self.lineCheckBox.stateChanged.connect(self._on_trace_style_changed)
+        self.overlapRadioButton.toggled.connect(self._on_presentation_changed)
+        self.subplotRadioButton.toggled.connect(self._on_presentation_changed)
         self.xComboBox.currentTextChanged.connect(self._update_plot_title)
+        self.xComboBox.currentTextChanged.connect(self._redraw_existing_plot)
         self.plotTitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
+        self.subTitleLineEdit.textEdited.connect(self._mark_subtitle_edited)
+        self.subTitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
         self.y1TitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
         self.y2TitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
 
@@ -221,11 +309,14 @@ class TabLogWidget(BackgroundTaskMixin):
         self.tabDataWidget = tabDataWidget
         if hasattr(self.tabDataWidget, 'add_data_changed_callback'):
             self.tabDataWidget.add_data_changed_callback(self._refresh_column_options)
+        if hasattr(self.tabDataWidget, 'filePathLineEdit'):
+            self.tabDataWidget.filePathLineEdit.textChanged.connect(self._sync_primary_file)
         self._refresh_column_options()
 
     def _refresh_column_options(self) -> None:
         if self.tabDataWidget is None:
             return
+        self._sync_primary_file()
         dataFrame = self.tabDataWidget.get_plot_data()
         columnNames = list(dataFrame.columns.astype(str))
         currentX = self.xComboBox.currentText().strip()
@@ -241,7 +332,6 @@ class TabLogWidget(BackgroundTaskMixin):
 
         self.y1ColumnCombo.set_items(columnNames, currentY1.intersection(columnNames))
         self.y2ColumnCombo.set_items(columnNames, currentY2.intersection(columnNames))
-        self._sync_default_axis_titles()
         self._update_plot_title()
         self._redraw_existing_plot()
 
@@ -251,28 +341,250 @@ class TabLogWidget(BackgroundTaskMixin):
                 return columnName
         return columnNames[0] if columnNames else ''
 
-    def _sync_default_axis_titles(self) -> None:
-        if not self.y1TitleLineEdit.text().strip() or self.y1TitleLineEdit.text().strip() == 'log Title':
-            self.y1TitleLineEdit.setText('Y1')
-        if not self.y2TitleLineEdit.text().strip() or self.y2TitleLineEdit.text().strip() == 'log Title':
-            self.y2TitleLineEdit.setText('Y2')
+    def _on_y1_columns_changed(self) -> None:
+        self._sync_axis_title(
+            self.y1TitleLineEdit,
+            self.y1ColumnCombo.checked_items(),
+            'Y1',
+        )
+        self._apply_chart_mode()
+        self._redraw_existing_plot()
+
+    def _on_y2_columns_changed(self) -> None:
+        self._sync_axis_title(
+            self.y2TitleLineEdit,
+            self.y2ColumnCombo.checked_items(),
+            'Y2',
+        )
+        self._apply_chart_mode()
+        self._redraw_existing_plot()
+
+    def _sync_axis_title(
+        self,
+        titleLineEdit: QLineEdit,
+        selectedColumns: list[str],
+        defaultTitle: str,
+    ) -> None:
+        titleLineEdit.setText(', '.join(selectedColumns) or defaultTitle)
 
     def _build_auto_plot_title(self) -> str:
         xColumn = self.xComboBox.currentText().strip()
-        if not xColumn:
-            return 'Log Plot'
-        return f'{xColumn} log plot'
+        return f'{xColumn} log plot' if xColumn else 'Log Plot'
 
     def _update_plot_title(self, *_args) -> None:
-        if not self.plotTitleLineEdit.text().strip() or self.plotTitleLineEdit.text().strip() == 'log Title':
+        currentTitle = self.plotTitleLineEdit.text().strip()
+        if not currentTitle or currentTitle == 'log Title':
             self.plotTitleLineEdit.setText(self._build_auto_plot_title())
 
+    def _sync_primary_file(self, *_args) -> None:
+        if self.tabDataWidget is None:
+            return
+        filePath = self.tabDataWidget.filePathLineEdit.text().strip()
+        normalizedPath = self._normalized_path(filePath) if filePath else ''
+        hasPrimaryData = self.tabDataWidget.has_loaded_data()
+        primaryKey = normalizedPath if normalizedPath else '<tabdata-current>'
+        if primaryKey == self.primaryFilePath and (normalizedPath or not hasPrimaryData):
+            return
+
+        externalEntries = []
+        selectedPaths = set()
+        for rowIndex in range(self.filesList.count()):
+            item = self.filesList.item(rowIndex)
+            itemPath = str(item.data(FILE_PATH_ROLE) or '')
+            if item.isSelected():
+                selectedPaths.add(itemPath)
+            if not bool(item.data(PRIMARY_FILE_ROLE)) and itemPath != normalizedPath:
+                externalEntries.append(itemPath)
+
+        self.primaryFilePath = primaryKey if normalizedPath or hasPrimaryData else ''
+        self._updatingFilesList = True
+        self.filesList.clear()
+        if self.primaryFilePath:
+            displayName = Path(normalizedPath).name if normalizedPath else 'TabData current data'
+            self._add_file_item(normalizedPath, displayName, primary=True, selected=True)
+        for externalPath in externalEntries:
+            self._add_file_item(
+                externalPath,
+                Path(externalPath).name,
+                primary=False,
+                selected=externalPath in selectedPaths,
+            )
+        self._updatingFilesList = False
+        self._apply_chart_mode()
+        self._update_auto_subtitle()
+
+    def _add_external_files(self, filePaths: list[str]) -> None:
+        normalizedPaths = []
+        for filePath in filePaths:
+            normalizedPath = self._normalized_path(filePath)
+            if (
+                normalizedPath.lower().endswith(LOG_FILE_EXTENSIONS)
+                and os.path.exists(normalizedPath)
+                and normalizedPath not in normalizedPaths
+            ):
+                normalizedPaths.append(normalizedPath)
+
+        if (
+            normalizedPaths
+            and self.tabDataWidget is not None
+            and not self.tabDataWidget.filePathLineEdit.text().strip()
+        ):
+            primaryPath = normalizedPaths.pop(0)
+            self.tabDataWidget._load_dropped_file(primaryPath)
+
+        existingPaths = {
+            str(self.filesList.item(rowIndex).data(FILE_PATH_ROLE) or '')
+            for rowIndex in range(self.filesList.count())
+        }
+        addedCount = 0
+        self._updatingFilesList = True
+        for normalizedPath in normalizedPaths:
+            if normalizedPath in existingPaths:
+                continue
+            self._add_file_item(
+                normalizedPath,
+                Path(normalizedPath).name,
+                primary=False,
+                selected=True,
+            )
+            existingPaths.add(normalizedPath)
+            addedCount += 1
+        self._updatingFilesList = False
+        self._apply_chart_mode()
+        self._update_auto_subtitle()
+        if addedCount:
+            self._redraw_existing_plot()
+
+    def _add_file_item(
+        self,
+        filePath: str,
+        displayName: str,
+        primary: bool,
+        selected: bool,
+    ) -> None:
+        item = QListWidgetItem(displayName)
+        item.setData(FILE_PATH_ROLE, filePath)
+        item.setData(PRIMARY_FILE_ROLE, primary)
+        item.setToolTip(filePath or 'TabData current processed data')
+        self.filesList.addItem(item)
+        item.setSelected(selected)
+
+    def _clean_external_files(self) -> None:
+        self._updatingFilesList = True
+        for rowIndex in range(self.filesList.count() - 1, -1, -1):
+            item = self.filesList.item(rowIndex)
+            if not bool(item.data(PRIMARY_FILE_ROLE)):
+                self.filesList.takeItem(rowIndex)
+        if self.filesList.count() and not self.filesList.selectedItems():
+            self.filesList.item(0).setSelected(True)
+        self._updatingFilesList = False
+        self._apply_chart_mode()
+        self._update_auto_subtitle()
+        self._redraw_existing_plot()
+
+    def _normalized_path(self, filePath: str) -> str:
+        return os.path.normcase(os.path.abspath(filePath))
+
+    def _on_file_selection_changed(self) -> None:
+        if self._updatingFilesList:
+            return
+        self._ensure_valid_file_selection()
+        self._update_auto_subtitle()
+        self._set_mode_status()
+        self._redraw_existing_plot()
+
+    def _ensure_valid_file_selection(self) -> None:
+        if not self.filesList.count():
+            return
+        selectedItems = self.filesList.selectedItems()
+        if not selectedItems:
+            self._updatingFilesList = True
+            self.filesList.item(0).setSelected(True)
+            self._updatingFilesList = False
+            return
+        if self._single_chart_mode() and len(selectedItems) > 1:
+            keepItem = self.filesList.currentItem() or selectedItems[0]
+            self._updatingFilesList = True
+            for item in selectedItems:
+                item.setSelected(item is keepItem)
+            self._updatingFilesList = False
+
+    def _single_chart_mode(self) -> bool:
+        return (
+            len(self.y1ColumnCombo.checked_items()) > 1
+            or len(self.y2ColumnCombo.checked_items()) > 1
+        )
+
+    def _apply_chart_mode(self) -> None:
+        singleMode = self._single_chart_mode()
+        selectionMode = (
+            QAbstractItemView.SelectionMode.SingleSelection
+            if singleMode
+            else QAbstractItemView.SelectionMode.MultiSelection
+        )
+        self.filesList.setSelectionMode(selectionMode)
+        self.overlapRadioButton.setEnabled(not singleMode)
+        self.subplotRadioButton.setEnabled(not singleMode)
+        self._ensure_valid_file_selection()
+        self._update_auto_subtitle()
+        self._set_mode_status()
+
+    def _mode_text(self) -> str:
+        if self._single_chart_mode():
+            return 'single chart mode'
+        presentation = 'subplot' if self.subplotRadioButton.isChecked() else 'overlap'
+        return f'multiple charts mode: {presentation}'
+
+    def _set_mode_status(self) -> None:
+        if (
+            self.tabDataWidget is not None
+            and hasattr(self.tabDataWidget, 'filePathLineEdit')
+            and not self.tabDataWidget.filePathLineEdit.text().strip()
+        ):
+            self._set_status(self._emptyDataHint)
+            return
+        self._set_status(self._mode_text())
+
+    def _selected_file_entries(self) -> list[dict[str, object]]:
+        entries = []
+        for rowIndex in range(self.filesList.count()):
+            item = self.filesList.item(rowIndex)
+            if item.isSelected():
+                entries.append({
+                    'name': item.text(),
+                    'path': str(item.data(FILE_PATH_ROLE) or ''),
+                    'primary': bool(item.data(PRIMARY_FILE_ROLE)),
+                })
+        return entries[:1] if self._single_chart_mode() else entries
+
+    def _mark_subtitle_edited(self, *_args) -> None:
+        self.subtitleEdited = True
+
+    def _update_auto_subtitle(self) -> None:
+        if self.subtitleEdited:
+            return
+        fileNames = [str(entry['name']) for entry in self._selected_file_entries()]
+        self.subTitleLineEdit.setText(', '.join(fileNames))
+
+    def _on_trace_style_changed(self, *_args) -> None:
+        if not self.lineCheckBox.isChecked() and not self.symbolCheckBox.isChecked():
+            blocker = QSignalBlocker(self.lineCheckBox)
+            self.lineCheckBox.setChecked(True)
+            del blocker
+        self._redraw_existing_plot()
+
+    def _on_presentation_changed(self, checked: bool) -> None:
+        if not checked:
+            return
+        self._set_mode_status()
+        self._redraw_existing_plot()
+
     def _redraw_existing_plot(self, *_args) -> None:
-        if self.currentPlotHtml:
+        if self.hasDrawRequest:
             self._draw_plot()
 
     def _draw_plot_when_ready(self, *_args) -> None:
-        if self.currentPlotHtml:
+        if self.hasDrawRequest:
             self._draw_plot()
 
     def _draw_plot(self) -> None:
@@ -280,95 +592,384 @@ class TabLogWidget(BackgroundTaskMixin):
             self._set_status('No data source attached to log tab.', error=True)
             return
 
-        dataFrame = self.tabDataWidget.get_plot_data()
-        if dataFrame.empty:
+        primaryDataFrame = self.tabDataWidget.get_plot_data()
+        if primaryDataFrame.empty:
             self._set_status('No data available for log plot.', error=True)
             return
 
         xColumn = self.xComboBox.currentText().strip()
         y1Columns = self.y1ColumnCombo.checked_items()
         y2Columns = self.y2ColumnCombo.checked_items()
-        if not xColumn or xColumn not in dataFrame.columns:
+        selectedEntries = self._selected_file_entries()
+        if not xColumn:
             self._set_status('Choose a valid X column first.', error=True)
             return
         if not y1Columns and not y2Columns:
             self._set_status('Choose at least one Y1 or Y2 column first.', error=True)
             return
-
-        missingColumns = [columnName for columnName in [*y1Columns, *y2Columns] if columnName not in dataFrame.columns]
-        if missingColumns:
-            self._set_status(f'Selected column not found: {missingColumns[0]}', error=True)
+        if not selectedEntries:
+            self._set_status('Select at least one file first.', error=True)
             return
 
-        plotData = dataFrame[[xColumn, *dict.fromkeys([*y1Columns, *y2Columns])]].copy()
-        xIsDate = self._is_date_series(plotData[xColumn])
-        if xIsDate:
-            plotData[xColumn] = pd.to_datetime(plotData[xColumn], errors='coerce')
-        for columnName in [*y1Columns, *y2Columns]:
-            plotData[columnName] = pd.to_numeric(plotData[columnName], errors='coerce')
-        plotData = plotData.dropna(subset=[xColumn], how='any')
-        if plotData.empty:
-            self._set_status('X column has no usable values.', error=True)
+        self.hasDrawRequest = True
+        skipRows = self.tabDataWidget.get_skip_rows()
+        self._set_status(f'Loading selected files. {self._mode_text()}')
+        self.loadingOverlay.show('Loading files...')
+
+        def work() -> dict[str, object]:
+            sources = []
+            warnings = []
+            for entry in selectedEntries:
+                if entry['primary']:
+                    dataFrame = primaryDataFrame
+                else:
+                    try:
+                        dataFrame = self._read_external_data(str(entry['path']), skipRows)
+                    except Exception as exc:
+                        warnings.append(f'{entry["name"]}: {exc}')
+                        continue
+                sources.append({
+                    'name': entry['name'],
+                    'path': entry['path'],
+                    'dataFrame': dataFrame,
+                })
+            return {
+                'sources': sources,
+                'warnings': warnings,
+                'xColumn': xColumn,
+                'y1Columns': y1Columns,
+                'y2Columns': y2Columns,
+            }
+
+        self._activeLogDataTaskId = self._start_background_task(
+            work,
+            self._on_log_data_finished,
+            self._on_log_data_failed,
+        )
+
+    def _read_external_data(self, filePath: str, fallbackSkipRows: int) -> pd.DataFrame:
+        skipRows = self.tabDataWidget._detect_skip_rows(
+            filePath,
+            fallbackSkipRows=fallbackSkipRows,
+        )
+        csvOptions = self.tabDataWidget._detect_csv_read_options(filePath)
+        dataFrame = pd.read_csv(
+            filePath,
+            skiprows=skipRows,
+            encoding=csvOptions['encoding'],
+            sep=csvOptions['delimiter'],
+        )
+        dataFrame = self.tabDataWidget._strip_csv_dataframe_spaces(dataFrame)
+        self.tabDataWidget._normalize_loaded_datetime_formats(dataFrame)
+        return dataFrame
+
+    def _on_log_data_finished(self, taskId: int, result: dict[str, object]) -> None:
+        if taskId != getattr(self, '_activeLogDataTaskId', None):
+            return
+        try:
+            figure, warnings = self._build_figure(
+                list(result['sources']),
+                str(result['xColumn']),
+                list(result['y1Columns']),
+                list(result['y2Columns']),
+                list(result['warnings']),
+            )
+        except Exception as exc:
+            self.loadingOverlay.hide()
+            self._set_status(f'Failed to draw log plot: {exc}', error=True)
+            return
+        if figure is None:
+            self.loadingOverlay.hide()
+            warningText = '; '.join(warnings) or 'No selected files contain usable plot data.'
+            self._set_status(warningText, error=True)
             return
 
-        plotTitle = self.plotTitleLineEdit.text().strip() or self._build_auto_plot_title()
-        y1Title = self.y1TitleLineEdit.text().strip() or 'Y1'
-        y2Title = self.y2TitleLineEdit.text().strip() or 'Y2'
+        statusText = f'Log plot created successfully. {self._mode_text()}'
+        if warnings:
+            statusText += f' Skipped: {"; ".join(warnings)}'
+        self.pendingRenderStatus = statusText
+        self.pendingRenderStatusError = bool(warnings)
+        self._render_figure(figure)
+
+    def _on_log_data_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != getattr(self, '_activeLogDataTaskId', None):
+            return
+        self.loadingOverlay.hide()
+        self._set_status(f'Failed to load log files: {errorText}', error=True)
+
+    def _build_figure(
+        self,
+        sources: list[dict[str, object]],
+        xColumn: str,
+        y1Columns: list[str],
+        y2Columns: list[str],
+        warnings: list[str],
+    ) -> tuple[go.Figure | None, list[str]]:
+        preparedSources = []
+        requiredColumns = list(dict.fromkeys([xColumn, *y1Columns, *y2Columns]))
+        for source in sources:
+            dataFrame = source['dataFrame']
+            missingColumns = [
+                columnName for columnName in requiredColumns
+                if columnName not in dataFrame.columns
+            ]
+            if missingColumns:
+                warnings.append(
+                    f'{source["name"]}: missing {", ".join(missingColumns)}'
+                )
+                continue
+            plotData = dataFrame[requiredColumns].copy()
+            xIsDate = self._is_date_series(plotData[xColumn])
+            if xIsDate:
+                plotData[xColumn] = pd.to_datetime(plotData[xColumn], errors='coerce')
+            for columnName in [*y1Columns, *y2Columns]:
+                plotData[columnName] = pd.to_numeric(plotData[columnName], errors='coerce')
+            plotData = plotData.dropna(subset=[xColumn])
+            if plotData.empty or all(
+                plotData[columnName].dropna().empty
+                for columnName in [*y1Columns, *y2Columns]
+            ):
+                warnings.append(f'{source["name"]}: no usable plot data')
+                continue
+            preparedSources.append({
+                'name': source['name'],
+                'dataFrame': plotData,
+                'xIsDate': xIsDate,
+            })
+
+        if not preparedSources:
+            return None, warnings
+        if not self._single_chart_mode() and self.subplotRadioButton.isChecked():
+            return self._build_subplot_figure(
+                preparedSources,
+                xColumn,
+                y1Columns,
+                y2Columns,
+            ), warnings
+        return self._build_overlap_figure(
+            preparedSources,
+            xColumn,
+            y1Columns,
+            y2Columns,
+        ), warnings
+
+    def _build_overlap_figure(
+        self,
+        sources: list[dict[str, object]],
+        xColumn: str,
+        y1Columns: list[str],
+        y2Columns: list[str],
+    ) -> go.Figure:
+        figure = go.Figure()
+        includeFileName = len(sources) > 1
+        for source in sources:
+            for columnName in y1Columns:
+                self._add_trace(
+                    figure,
+                    source,
+                    xColumn,
+                    columnName,
+                    yAxis='y',
+                    includeFileName=includeFileName,
+                )
+            for columnName in y2Columns:
+                self._add_trace(
+                    figure,
+                    source,
+                    xColumn,
+                    columnName,
+                    yAxis='y2',
+                    includeFileName=includeFileName,
+                )
+
+        self._apply_common_layout(figure, xColumn, y1Columns, y2Columns)
+        if any(bool(source['xIsDate']) for source in sources):
+            figure.update_xaxes(tickformat='%Y/%m/%d %H:%M')
+        return figure
+
+    def _build_subplot_figure(
+        self,
+        sources: list[dict[str, object]],
+        xColumn: str,
+        y1Columns: list[str],
+        y2Columns: list[str],
+    ) -> go.Figure:
+        sourceCount = len(sources)
+        columnCount = math.ceil(math.sqrt(sourceCount))
+        rowCount = math.ceil(sourceCount / columnCount)
+        specs = []
+        for rowIndex in range(rowCount):
+            rowSpecs = []
+            for columnIndex in range(columnCount):
+                sourceIndex = rowIndex * columnCount + columnIndex
+                rowSpecs.append(
+                    {'secondary_y': bool(y2Columns)}
+                    if sourceIndex < sourceCount
+                    else None
+                )
+            specs.append(rowSpecs)
+        figure = make_subplots(
+            rows=rowCount,
+            cols=columnCount,
+            specs=specs,
+            subplot_titles=[str(source['name']) for source in sources],
+            horizontal_spacing=self._subplot_spacing(self.horizontalSpaceSpinBox, columnCount),
+            vertical_spacing=self._subplot_spacing(self.verticalSpaceSpinBox, rowCount),
+        )
+        for sourceIndex, source in enumerate(sources):
+            rowIndex = sourceIndex // columnCount + 1
+            columnIndex = sourceIndex % columnCount + 1
+            for yColumn in y1Columns:
+                trace = self._make_trace(source, xColumn, yColumn, includeFileName=False)
+                figure.add_trace(trace, row=rowIndex, col=columnIndex, secondary_y=False)
+            for yColumn in y2Columns:
+                trace = self._make_trace(source, xColumn, yColumn, includeFileName=False)
+                figure.add_trace(trace, row=rowIndex, col=columnIndex, secondary_y=True)
+            figure.update_xaxes(title_text=xColumn, row=rowIndex, col=columnIndex)
+            if source['xIsDate']:
+                figure.update_xaxes(
+                    tickformat='%Y/%m/%d %H:%M',
+                    row=rowIndex,
+                    col=columnIndex,
+                )
+            if y1Columns:
+                figure.update_yaxes(
+                    title_text=self.y1TitleLineEdit.text().strip() or 'Y1',
+                    row=rowIndex,
+                    col=columnIndex,
+                    secondary_y=False,
+                )
+            if y2Columns:
+                figure.update_yaxes(
+                    title_text=self.y2TitleLineEdit.text().strip() or 'Y2',
+                    row=rowIndex,
+                    col=columnIndex,
+                    secondary_y=True,
+                )
+        self._apply_common_layout(
+            figure,
+            xColumn,
+            y1Columns,
+            y2Columns,
+            applyAxes=False,
+        )
+        return figure
+
+    def _subplot_spacing(self, spinBox: QSpinBox, axisCount: int) -> float:
+        if axisCount <= 1:
+            return 0.0
+        requestedSpacing = spinBox.value() / 100.0
+        maximumSpacing = 0.99 / (axisCount - 1)
+        return min(requestedSpacing, maximumSpacing)
+
+    def _add_trace(
+        self,
+        figure: go.Figure,
+        source: dict[str, object],
+        xColumn: str,
+        yColumn: str,
+        yAxis: str,
+        includeFileName: bool,
+    ) -> None:
+        trace = self._make_trace(source, xColumn, yColumn, includeFileName)
+        trace.yaxis = yAxis
+        figure.add_trace(trace)
+
+    def _make_trace(
+        self,
+        source: dict[str, object],
+        xColumn: str,
+        yColumn: str,
+        includeFileName: bool,
+    ) -> go.Scatter:
+        plotData = source['dataFrame'].dropna(subset=[yColumn])
+        traceName = (
+            f'{source["name"]}: {yColumn}'
+            if includeFileName
+            else yColumn
+        )
+        return go.Scatter(
+            x=plotData[xColumn],
+            y=plotData[yColumn],
+            mode=self._trace_mode(),
+            name=traceName,
+            legendgroup=str(source['name']),
+            line=dict(width=self.lineWidthSpinBox.value()),
+        )
+
+    def _trace_mode(self) -> str:
+        if self.lineCheckBox.isChecked() and self.symbolCheckBox.isChecked():
+            return 'lines+markers'
+        if self.symbolCheckBox.isChecked():
+            return 'markers'
+        return 'lines'
+
+    def _apply_common_layout(
+        self,
+        figure: go.Figure,
+        xColumn: str,
+        y1Columns: list[str],
+        y2Columns: list[str],
+        applyAxes: bool = True,
+    ) -> None:
         plotlyTheme = self.plotlyThemeComboBox.currentText().strip()
         plotlyTheme = None if plotlyTheme == 'none' else plotlyTheme or 'plotly'
-        fig = go.Figure()
-
-        for columnName in y1Columns:
-            validData = plotData.dropna(subset=[columnName])
-            if validData.empty:
-                continue
-            fig.add_trace(go.Scatter(
-                x=validData[xColumn],
-                y=validData[columnName],
-                mode='lines+markers',
-                name=columnName,
-                yaxis='y',
-            ))
-        for columnName in y2Columns:
-            validData = plotData.dropna(subset=[columnName])
-            if validData.empty:
-                continue
-            fig.add_trace(go.Scatter(
-                x=validData[xColumn],
-                y=validData[columnName],
-                mode='lines+markers',
-                name=columnName,
-                yaxis='y2',
-            ))
-
-        if not fig.data:
-            self._set_status('Selected Y columns have no numeric data.', error=True)
-            return
-
-        fig.update_layout(
-            title=plotTitle,
+        figure.update_layout(
+            title=dict(text=self._plot_title_html(), x=0.5, font=dict(size=self._font_sizes()['title'])),
             template=plotlyTheme,
             width=self.plotWidthSpinBox.value(),
             height=self.plotHeightSpinBox.value(),
-            xaxis=dict(title=xColumn),
-            yaxis=dict(title=y1Title),
             legend=dict(
                 orientation='v',
                 y=1,
-                x=1.14,
+                x=1.12,
                 title_text='Legend',
                 font=dict(size=self.legendFontSizeSpinBox.value()),
                 title_font=dict(size=self.legendFontSizeSpinBox.value()),
                 bordercolor='rgba(0,0,0,0.15)',
                 borderwidth=1,
             ),
-            margin={'t': 60, 'r': 180 if y2Columns else 80, 'l': 70, 'b': 60},
+            margin={'t': 90, 'r': 180 if y2Columns else 100, 'l': 80, 'b': 70},
         )
-        if y2Columns:
-            fig.update_layout(yaxis2=dict(title=y2Title, overlaying='y', side='right'))
-        if xIsDate:
-            fig.update_xaxes(tickformat='%Y/%m/%d %H:%M')
-        self._render_figure(fig)
+        if applyAxes:
+            figure.update_xaxes(title_text=xColumn)
+            figure.update_yaxes(title_text=self.y1TitleLineEdit.text().strip() or 'Y1')
+        if applyAxes and y2Columns:
+            figure.update_layout(
+                yaxis2=dict(
+                    title=self.y2TitleLineEdit.text().strip() or 'Y2',
+                    overlaying='y',
+                    side='right',
+                )
+            )
+        self._apply_non_legend_fonts(figure)
+
+    def _font_sizes(self) -> dict[str, int]:
+        adjustment = self.fontSizeSpinBox.value()
+        return {
+            'title': 20 + adjustment,
+            'subtitle': 14 + adjustment,
+            'axisTitle': 14 + adjustment,
+            'tick': 12 + adjustment,
+        }
+
+    def _apply_non_legend_fonts(self, figure: go.Figure) -> None:
+        fontSizes = self._font_sizes()
+        figure.update_xaxes(
+            title_font=dict(size=fontSizes['axisTitle']),
+            tickfont=dict(size=fontSizes['tick']),
+        )
+        figure.update_yaxes(
+            title_font=dict(size=fontSizes['axisTitle']),
+            tickfont=dict(size=fontSizes['tick']),
+        )
+        figure.update_annotations(font=dict(size=fontSizes['tick']))
+
+    def _plot_title_html(self) -> str:
+        title = self.plotTitleLineEdit.text().strip() or self._build_auto_plot_title()
+        subtitle = self.subTitleLineEdit.text().strip()
+        subtitleSize = self._font_sizes()['subtitle']
+        return f'{title}<br><span style="font-size:{subtitleSize}px">{subtitle}</span>' if subtitle else title
 
     def _is_date_series(self, series: pd.Series) -> bool:
         nonNullSeries = series.dropna()
@@ -384,7 +985,7 @@ class TabLogWidget(BackgroundTaskMixin):
     def _render_figure(self, figure) -> None:
         self.currentPlotFigure = figure
         self.currentPlotHtml = ''
-        self._set_status('Rendering log HTML...')
+        self._set_status(f'Rendering log HTML. {self._mode_text()}')
         self.loadingOverlay.show('Loading...')
 
         def work() -> dict[str, str]:
@@ -409,7 +1010,10 @@ class TabLogWidget(BackgroundTaskMixin):
             try:
                 baseUrl = QUrl.fromLocalFile(str(assetsDir) + '/')
                 self.chartView.setHtml(result.get('embeddedHtml', self.currentPlotHtml), baseUrl)
-                self._set_status('Log plot created successfully.')
+                self._set_status(
+                    self.pendingRenderStatus or f'Log plot created successfully. {self._mode_text()}',
+                    error=self.pendingRenderStatusError,
+                )
                 return
             except Exception:
                 self._switch_to_external_browser_view()
@@ -455,7 +1059,10 @@ class TabLogWidget(BackgroundTaskMixin):
             '<p>The viewer reloads the latest Plotly HTML automatically. Use Download HTML to save a copy.</p>'
             '</div>'
         )
-        self._set_status('Log plot created successfully.')
+        self._set_status(
+            self.pendingRenderStatus or f'Log plot created successfully. {self._mode_text()}',
+            error=self.pendingRenderStatusError,
+        )
 
     def _on_render_figure_failed(self, taskId: int, errorText: str) -> None:
         if taskId != getattr(self, '_activeRenderTaskId', None):

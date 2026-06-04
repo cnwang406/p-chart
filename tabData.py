@@ -48,6 +48,10 @@ from async_helpers import BackgroundTaskMixin
 from loading_overlay import LoadingOverlay
 
 
+DELIMITED_TEXT_EXTENSIONS = ('.csv', '.txt')
+SUPPORTED_DATA_EXTENSIONS = (*DELIMITED_TEXT_EXTENSIONS, '.xls', '.xlsx')
+
+
 class DropFileFilter(QObject):
     def __init__(self, onFileDropped) -> None:
         super().__init__()
@@ -73,7 +77,7 @@ class DropFileFilter(QObject):
             if not url.isLocalFile():
                 continue
             filePath = url.toLocalFile()
-            if filePath.lower().endswith(('.csv', '.xls', '.xlsx')):
+            if filePath.lower().endswith(SUPPORTED_DATA_EXTENSIONS):
                 return filePath
         return ''
 
@@ -260,6 +264,10 @@ class TabDataWidget(BackgroundTaskMixin):
         self.tabDataWidget.installEventFilter(self.dropFileFilter)
         self.filePathLineEdit.setAcceptDrops(True)
         self.filePathLineEdit.installEventFilter(self.dropFileFilter)
+        self.previewTableWidget.setAcceptDrops(True)
+        self.previewTableWidget.installEventFilter(self.dropFileFilter)
+        self.previewTableWidget.viewport().setAcceptDrops(True)
+        self.previewTableWidget.viewport().installEventFilter(self.dropFileFilter)
         previewFont = self.previewTableWidget.font()
         previewFont.setPointSize(12)
         self.previewTableWidget.setFont(previewFont)
@@ -281,6 +289,7 @@ class TabDataWidget(BackgroundTaskMixin):
         )
 
         self.filePathLineEdit.textChanged.connect(self._invalidate_melted_data)
+        self.filePathLineEdit.returnPressed.connect(self._load_file)
         self.skipRowsSpinBox.valueChanged.connect(self._on_skip_rows_changed)
         self.stubnamesLineEdit.textChanged.connect(self._mark_matching_columns)
         self.stubnamesLineEdit.textChanged.connect(self._invalidate_melted_data)
@@ -313,9 +322,9 @@ class TabDataWidget(BackgroundTaskMixin):
                     defaultDirectory = currentDirectory
         selectedFile, _ = QFileDialog.getOpenFileName(
             self.rootWidget,
-            'Open Excel or CSV',
+            'Open Excel, CSV, or TXT',
             defaultDirectory,
-            'Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)',
+            'Excel Files (*.xlsx *.xls);;Delimited Text Files (*.csv *.txt);;All Files (*)',
         )
         if selectedFile:
             self._invalidate_melted_data()
@@ -405,7 +414,7 @@ class TabDataWidget(BackgroundTaskMixin):
         skipRowsRequest = self._skip_rows_request()
 
         def work() -> dict[str, object]:
-            if filePath.lower().endswith('.csv'):
+            if filePath.lower().endswith(DELIMITED_TEXT_EXTENSIONS):
                 skipRows = self._resolve_skip_rows_for_worker(
                     filePath,
                     skipRowsRequest,
@@ -499,7 +508,7 @@ class TabDataWidget(BackgroundTaskMixin):
             self._set_status('Choose a valid file before loading a sheet.', error=True)
             return
 
-        if filePath.lower().endswith('.csv'):
+        if filePath.lower().endswith(DELIMITED_TEXT_EXTENSIONS):
             self._load_file()
             return
 
@@ -1306,7 +1315,7 @@ class TabDataWidget(BackgroundTaskMixin):
         fallbackSkipRows: int | None = None,
     ) -> int:
         try:
-            if filePath.lower().endswith('.csv'):
+            if filePath.lower().endswith(DELIMITED_TEXT_EXTENSIONS):
                 previewRows = self._read_csv_preview_rows(filePath)
                 previewDf = pd.DataFrame(previewRows)
             else:

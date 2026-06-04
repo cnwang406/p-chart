@@ -4022,15 +4022,15 @@ here.</string>
     </widget>
     <widget class="QWidget" name="logTab">
      <attribute name="title">
-      <string>logTab</string>
+      <string>logChart</string>
      </attribute>
      <widget class="QGroupBox" name="plotGroupBox_2">
       <property name="geometry">
        <rect>
         <x>10</x>
         <y>0</y>
-        <width>961</width>
-        <height>101</height>
+        <width>601</width>
+        <height>121</height>
        </rect>
       </property>
       <property name="font">
@@ -4045,7 +4045,7 @@ here.</string>
       <widget class="QLabel" name="xLabel_2">
        <property name="geometry">
         <rect>
-         <x>20</x>
+         <x>10</x>
          <y>20</y>
          <width>61</width>
          <height>32</height>
@@ -4067,7 +4067,7 @@ here.</string>
          <x>60</x>
          <y>20</y>
          <width>151</width>
-         <height>32</height>
+         <height>22</height>
         </rect>
        </property>
        <property name="font">
@@ -4080,8 +4080,8 @@ here.</string>
       <widget class="QLabel" name="yLabel_2">
        <property name="geometry">
         <rect>
-         <x>380</x>
-         <y>20</y>
+         <x>330</x>
+         <y>10</y>
          <width>61</width>
          <height>32</height>
         </rect>
@@ -4099,10 +4099,10 @@ here.</string>
       <widget class="QComboBox" name="logY1ComboBox">
        <property name="geometry">
         <rect>
-         <x>430</x>
+         <x>380</x>
          <y>20</y>
          <width>151</width>
-         <height>32</height>
+         <height>22</height>
         </rect>
        </property>
        <property name="font">
@@ -4115,7 +4115,7 @@ here.</string>
       <widget class="QLabel" name="seriesLabel_2">
        <property name="geometry">
         <rect>
-         <x>380</x>
+         <x>330</x>
          <y>60</y>
          <width>42</width>
          <height>32</height>
@@ -4137,10 +4137,10 @@ here.</string>
       <widget class="QComboBox" name="logY2ComboBox">
        <property name="geometry">
         <rect>
-         <x>430</x>
-         <y>60</y>
+         <x>380</x>
+         <y>70</y>
          <width>151</width>
-         <height>32</height>
+         <height>22</height>
         </rect>
        </property>
        <property name="font">
@@ -4154,7 +4154,7 @@ here.</string>
        <property name="geometry">
         <rect>
          <x>60</x>
-         <y>70</y>
+         <y>60</y>
          <width>261</width>
          <height>21</height>
         </rect>
@@ -4166,8 +4166,8 @@ here.</string>
       <widget class="QLabel" name="label_30">
        <property name="geometry">
         <rect>
-         <x>20</x>
-         <y>70</y>
+         <x>10</x>
+         <y>60</y>
          <width>31</width>
          <height>16</height>
         </rect>
@@ -4179,8 +4179,8 @@ here.</string>
       <widget class="QLineEdit" name="logY1TitleLineEdit">
        <property name="geometry">
         <rect>
-         <x>590</x>
-         <y>20</y>
+         <x>380</x>
+         <y>46</y>
          <width>211</width>
          <height>21</height>
         </rect>
@@ -4192,14 +4192,40 @@ here.</string>
       <widget class="QLineEdit" name="logY2TitleLineEdit">
        <property name="geometry">
         <rect>
-         <x>590</x>
-         <y>60</y>
+         <x>380</x>
+         <y>93</y>
          <width>211</width>
          <height>21</height>
         </rect>
        </property>
        <property name="text">
         <string>log Title</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_31">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>84</y>
+         <width>51</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>subTitle</string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="logSubTitleLineEdit">
+       <property name="geometry">
+        <rect>
+         <x>60</x>
+         <y>84</y>
+         <width>261</width>
+         <height>21</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>sub log Title</string>
        </property>
       </widget>
      </widget>
@@ -4238,8 +4264,8 @@ here.</string>
      <widget class="QLabel" name="plotlyThemeLabel_2">
       <property name="geometry">
        <rect>
-        <x>160</x>
-        <y>127</y>
+        <x>10</x>
+        <y>130</y>
         <width>46</width>
         <height>16</height>
        </rect>
@@ -4257,8 +4283,8 @@ here.</string>
      <widget class="QPushButton" name="logPlotButton">
       <property name="geometry">
        <rect>
-        <x>11</x>
-        <y>121</y>
+        <x>10</x>
+        <y>150</y>
         <width>100</width>
         <height>32</height>
        </rect>
@@ -4276,10 +4302,10 @@ here.</string>
      <widget class="QComboBox" name="logPlotlyThemeComboBox">
       <property name="geometry">
        <rect>
-        <x>210</x>
-        <y>120</y>
+        <x>60</x>
+        <y>130</y>
         <width>150</width>
-        <height>32</height>
+        <height>22</height>
        </rect>
       </property>
       <property name="font">
@@ -4292,10 +4318,10 @@ here.</string>
      <widget class="QSpinBox" name="logLegendFontSizeSpinButton">
       <property name="geometry">
        <rect>
-        <x>790</x>
-        <y>120</y>
+        <x>380</x>
+        <y>157</y>
         <width>40</width>
-        <height>32</height>
+        <height>22</height>
        </rect>
       </property>
       <property name="font">
@@ -4320,10 +4346,10 @@ here.</string>
      <widget class="QPushButton" name="logDownloadPngButton">
       <property name="geometry">
        <rect>
-        <x>910</x>
-        <y>121</y>
-        <width>60</width>
-        <height>32</height>
+        <x>600</x>
+        <y>160</y>
+        <width>71</width>
+        <height>22</height>
        </rect>
       </property>
       <property name="text">
@@ -4333,9 +4359,9 @@ here.</string>
      <widget class="QLabel" name="plotHeightLabel_4">
       <property name="geometry">
        <rect>
-        <x>740</x>
-        <y>130</y>
-        <width>51</width>
+        <x>340</x>
+        <y>160</y>
+        <width>40</width>
         <height>16</height>
        </rect>
       </property>
@@ -4352,10 +4378,10 @@ here.</string>
      <widget class="QPushButton" name="logDownloadHtmlButton">
       <property name="geometry">
        <rect>
-        <x>830</x>
-        <y>121</y>
+        <x>600</x>
+        <y>130</y>
         <width>70</width>
-        <height>32</height>
+        <height>22</height>
        </rect>
       </property>
       <property name="font">
@@ -4371,8 +4397,8 @@ here.</string>
      <widget class="QLabel" name="plotWidthLabel_2">
       <property name="geometry">
        <rect>
-        <x>380</x>
-        <y>127</y>
+        <x>220</x>
+        <y>130</y>
         <width>45</width>
         <height>16</height>
        </rect>
@@ -4390,10 +4416,10 @@ here.</string>
      <widget class="QSpinBox" name="logPlotWidthSpinBox">
       <property name="geometry">
        <rect>
-        <x>430</x>
-        <y>120</y>
-        <width>91</width>
-        <height>32</height>
+        <x>260</x>
+        <y>130</y>
+        <width>60</width>
+        <height>22</height>
        </rect>
       </property>
       <property name="font">
@@ -4418,8 +4444,8 @@ here.</string>
      <widget class="QLabel" name="plotHeightLabel_5">
       <property name="geometry">
        <rect>
-        <x>540</x>
-        <y>127</y>
+        <x>220</x>
+        <y>160</y>
         <width>51</width>
         <height>16</height>
        </rect>
@@ -4437,10 +4463,10 @@ here.</string>
      <widget class="QSpinBox" name="logPlotHeightSpinBox">
       <property name="geometry">
        <rect>
-        <x>600</x>
-        <y>120</y>
-        <width>91</width>
-        <height>32</height>
+        <x>260</x>
+        <y>160</y>
+        <width>60</width>
+        <height>22</height>
        </rect>
       </property>
       <property name="font">
@@ -4483,6 +4509,285 @@ here.</string>
       <property name="text">
        <string>Boxplot status messages appear
 here.</string>
+      </property>
+     </widget>
+     <widget class="QCheckBox" name="logSymbolCheckBox">
+      <property name="geometry">
+       <rect>
+        <x>340</x>
+        <y>130</y>
+        <width>78</width>
+        <height>19</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>symbol</string>
+      </property>
+     </widget>
+     <widget class="QCheckBox" name="logLineCheckBox">
+      <property name="geometry">
+       <rect>
+        <x>410</x>
+        <y>130</y>
+        <width>41</width>
+        <height>19</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>line</string>
+      </property>
+      <property name="checked">
+       <bool>true</bool>
+      </property>
+     </widget>
+     <widget class="QSpinBox" name="logLineWidthSpinBox">
+      <property name="geometry">
+       <rect>
+        <x>460</x>
+        <y>128</y>
+        <width>42</width>
+        <height>22</height>
+       </rect>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label_32">
+      <property name="geometry">
+       <rect>
+        <x>700</x>
+        <y>10</y>
+        <width>31</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>files</string>
+      </property>
+     </widget>
+     <widget class="QListWidget" name="logFilesList">
+      <property name="geometry">
+       <rect>
+        <x>700</x>
+        <y>49</y>
+        <width>301</width>
+        <height>131</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>9</pointsize>
+       </font>
+      </property>
+      <property name="dragEnabled">
+       <bool>true</bool>
+      </property>
+      <property name="dragDropMode">
+       <enum>QAbstractItemView::DragDropMode::DragDrop</enum>
+      </property>
+      <property name="resizeMode">
+       <enum>QListView::ResizeMode::Adjust</enum>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="logCleanFilesButton">
+      <property name="geometry">
+       <rect>
+        <x>730</x>
+        <y>20</y>
+        <width>60</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>10</pointsize>
+       </font>
+      </property>
+      <property name="text">
+       <string>clean</string>
+      </property>
+     </widget>
+     <widget class="QGroupBox" name="groupBox_11">
+      <property name="geometry">
+       <rect>
+        <x>800</x>
+        <y>0</y>
+        <width>201</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="title">
+       <string>charts</string>
+      </property>
+      <widget class="QRadioButton" name="logOverlapChartsRadioButton">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>20</y>
+         <width>100</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>overlap</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+      <widget class="QRadioButton" name="logSubplotChartsRadioButton">
+       <property name="geometry">
+        <rect>
+         <x>100</x>
+         <y>20</y>
+         <width>100</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>subplot</string>
+       </property>
+      </widget>
+     </widget>
+     <widget class="QLabel" name="plotHeightLabel_6">
+      <property name="geometry">
+       <rect>
+        <x>430</x>
+        <y>160</y>
+        <width>30</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>10</pointsize>
+       </font>
+      </property>
+      <property name="text">
+       <string>font</string>
+      </property>
+     </widget>
+     <widget class="QSpinBox" name="logFontSizeSpinButton">
+      <property name="geometry">
+       <rect>
+        <x>460</x>
+        <y>158</y>
+        <width>40</width>
+        <height>22</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>10</pointsize>
+       </font>
+      </property>
+      <property name="minimum">
+       <number>-8</number>
+      </property>
+      <property name="maximum">
+       <number>8</number>
+      </property>
+      <property name="singleStep">
+       <number>1</number>
+      </property>
+      <property name="value">
+       <number>0</number>
+      </property>
+     </widget>
+     <widget class="QLabel" name="plotHeightLabel_7">
+      <property name="geometry">
+       <rect>
+        <x>510</x>
+        <y>130</y>
+        <width>30</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>10</pointsize>
+       </font>
+      </property>
+      <property name="text">
+       <string>H S</string>
+      </property>
+     </widget>
+     <widget class="QSpinBox" name="logChartsHSpaceSpinButton">
+      <property name="geometry">
+       <rect>
+        <x>540</x>
+        <y>128</y>
+        <width>40</width>
+        <height>22</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>10</pointsize>
+       </font>
+      </property>
+      <property name="minimum">
+       <number>9</number>
+      </property>
+      <property name="maximum">
+       <number>16</number>
+      </property>
+      <property name="singleStep">
+       <number>1</number>
+      </property>
+      <property name="value">
+       <number>12</number>
+      </property>
+     </widget>
+     <widget class="QLabel" name="plotHeightLabel_8">
+      <property name="geometry">
+       <rect>
+        <x>510</x>
+        <y>160</y>
+        <width>30</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>10</pointsize>
+       </font>
+      </property>
+      <property name="text">
+       <string>V S</string>
+      </property>
+     </widget>
+     <widget class="QSpinBox" name="logChartsVSpaceSpinButton">
+      <property name="geometry">
+       <rect>
+        <x>540</x>
+        <y>158</y>
+        <width>40</width>
+        <height>22</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>10</pointsize>
+       </font>
+      </property>
+      <property name="minimum">
+       <number>9</number>
+      </property>
+      <property name="maximum">
+       <number>16</number>
+      </property>
+      <property name="singleStep">
+       <number>1</number>
+      </property>
+      <property name="value">
+       <number>12</number>
       </property>
      </widget>
     </widget>

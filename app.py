@@ -33,7 +33,7 @@ print (f'QT_FRAMEWORK_PATH: {frameworkPath}')
 
 
 import PySide6
-from PySide6.QtCore import QCoreApplication, QEvent, QFile, QObject
+from PySide6.QtCore import QCoreApplication, QEvent, QFile, QObject, QSignalBlocker, QTimer
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QColor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -201,12 +201,18 @@ def copy_update_files(sourceDirectory: Path, targetDirectory: Path) -> None:
 
 
 class ResponsiveUiResizer(QObject):
-    def __init__(self, rootWidget: QWidget) -> None:
+    def __init__(self, rootWidget: QWidget, plotControllers: dict[str, object] | None = None) -> None:
         super().__init__(rootWidget)
         self.rootWidget = rootWidget
+        self.plotControllers = plotControllers or {}
         self.anchorRules = []
         self.rulesByParentId = {}
         self.parentWidgets = {}
+        self.pendingPlotControllers = set()
+        self.plotResizeTimer = QTimer(self)
+        self.plotResizeTimer.setSingleShot(True)
+        self.plotResizeTimer.setInterval(250)
+        self.plotResizeTimer.timeout.connect(self._redraw_resized_plots)
         self._register_default_anchors()
 
     def _register_default_anchors(self) -> None:
@@ -252,10 +258,11 @@ class ResponsiveUiResizer(QObject):
             'widget': widget,
             'parent': parentWidget,
             'geometry': widget.geometry(),
-            'parentSize': parentWidget.size(),
             'stretchWidth': stretchWidth,
             'stretchHeight': stretchHeight,
             'moveY': moveY,
+            'rightMargin': max(0, parentWidget.width() - widget.geometry().right() - 1),
+            'bottomMargin': max(0, parentWidget.height() - widget.geometry().bottom() - 1),
             'minWidth': min(widget.width(), 200),
             'minHeight': min(widget.height(), 120) if stretchHeight else widget.height(),
         }
@@ -268,7 +275,14 @@ class ResponsiveUiResizer(QObject):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         parentId = id(watched)
-        if event.type() == QEvent.Type.Resize and parentId in self.rulesByParentId:
+        if (
+            event.type() in (
+                QEvent.Type.Resize,
+                QEvent.Type.Show,
+                QEvent.Type.ShowToParent,
+            )
+            and parentId in self.rulesByParentId
+        ):
             self._apply_parent_rules(watched)
         return super().eventFilter(watched, event)
 
@@ -280,19 +294,51 @@ class ResponsiveUiResizer(QObject):
         widget = rule['widget']
         parentWidget = rule['parent']
         baseGeometry = rule['geometry']
-        baseParentSize = rule['parentSize']
-        widthDelta = parentWidget.width() - baseParentSize.width()
-        heightDelta = parentWidget.height() - baseParentSize.height()
 
         newX = baseGeometry.x()
-        newY = baseGeometry.y() + heightDelta if rule['moveY'] else baseGeometry.y()
+        newY = baseGeometry.y()
         newWidth = baseGeometry.width()
         newHeight = baseGeometry.height()
         if rule['stretchWidth']:
-            newWidth = max(int(rule['minWidth']), baseGeometry.width() + widthDelta)
+            newWidth = max(
+                int(rule['minWidth']),
+                parentWidget.width() - newX - int(rule['rightMargin']),
+            )
         if rule['stretchHeight']:
-            newHeight = max(int(rule['minHeight']), baseGeometry.height() + heightDelta)
+            newHeight = max(
+                int(rule['minHeight']),
+                parentWidget.height() - newY - int(rule['bottomMargin']),
+            )
+        if rule['moveY']:
+            newY = max(
+                0,
+                parentWidget.height() - int(rule['bottomMargin']) - newHeight,
+            )
+        sizeChanged = widget.width() != newWidth or widget.height() != newHeight
         widget.setGeometry(newX, newY, newWidth, newHeight)
+        if sizeChanged:
+            self._sync_plot_size(widget)
+
+    def _sync_plot_size(self, plotAreaWidget: QWidget) -> None:
+        plotController = self.plotControllers.get(plotAreaWidget.objectName())
+        if plotController is None:
+            return
+
+        widthBlocker = QSignalBlocker(plotController.plotWidthSpinBox)
+        heightBlocker = QSignalBlocker(plotController.plotHeightSpinBox)
+        plotController.plotWidthSpinBox.setValue(max(200, plotAreaWidget.width()))
+        plotController.plotHeightSpinBox.setValue(max(200, plotAreaWidget.height()))
+        del widthBlocker, heightBlocker
+
+        if plotController.currentPlotFigure is not None:
+            self.pendingPlotControllers.add(plotController)
+            self.plotResizeTimer.start()
+
+    def _redraw_resized_plots(self) -> None:
+        plotControllers = list(self.pendingPlotControllers)
+        self.pendingPlotControllers.clear()
+        for plotController in plotControllers:
+            plotController._draw_plot()
 
     def apply_all(self) -> None:
         for parentWidget in self.parentWidgets.values():
@@ -339,7 +385,14 @@ class AppMain:
         self._center_window()
         self.ui.show()
         self.app.processEvents()
-        self.responsiveUiResizer = ResponsiveUiResizer(self.ui)
+        self.responsiveUiResizer = ResponsiveUiResizer(
+            self.ui,
+            {
+                'plotAreaWidget': self.tabScatterWidget,
+                'boxPlotAreaWidget': self.tabBoxplotWidget,
+                'logPlotAreaWidget': self.tabLogWidget,
+            },
+        )
         self.responsiveUiResizer.apply_all()
         self._show_new_version_notice()
 
