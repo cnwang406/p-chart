@@ -124,6 +124,12 @@ class TabLogWidget(BackgroundTaskMixin):
         self.plotAreaWidget = require_child(rootWidget, QWidget, 'logPlotAreaWidget')
         self.statusLabel = require_child(rootWidget, QLabel, 'logStatusLabel')
 
+        self.currentPlotHtml = ''
+        self.currentPlotFigure = None
+        self.currentPlotFilePath = ''
+        self.currentViewerFilePath = ''
+        self._browserViewerOpened = False
+
         self.y1ColumnCombo = CheckableColumnCombo(
             self.y1ComboBox,
             'Select Y1 columns',
@@ -134,11 +140,6 @@ class TabLogWidget(BackgroundTaskMixin):
             'Select Y2 columns',
             self._redraw_existing_plot,
         )
-        self.currentPlotHtml = ''
-        self.currentPlotFigure = None
-        self.currentPlotFilePath = ''
-        self.currentViewerFilePath = ''
-        self._browserViewerOpened = False
 
         self._configure_plot_area()
         self.loadingOverlay = LoadingOverlay(self.plotAreaWidget)
