@@ -4928,7 +4928,7 @@ and {value:.2f} is also accepted.</string>
       <string>Y2 fmt</string>
      </property>
     </widget>
-    <widget class="QCheckBox" name="Y1LogCheckBox">
+    <widget class="QCheckBox" name="logY1LogCheckBox">
      <property name="geometry">
       <rect>
        <x>964</x>
@@ -4941,7 +4941,7 @@ and {value:.2f} is also accepted.</string>
       <string>log</string>
      </property>
     </widget>
-    <widget class="QCheckBox" name="Y2LogCheckBox">
+    <widget class="QCheckBox" name="logY2LogCheckBox">
      <property name="geometry">
       <rect>
        <x>964</x>

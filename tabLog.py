@@ -160,6 +160,9 @@ class TabLogWidget(BackgroundTaskMixin):
         self.subTitleLineEdit = require_child(rootWidget, QLineEdit, 'logSubTitleLineEdit')
         self.y1TitleLineEdit = require_child(rootWidget, QLineEdit, 'logY1TitleLineEdit')
         self.y2TitleLineEdit = require_child(rootWidget, QLineEdit, 'logY2TitleLineEdit')
+        self.xFormatLineEdit = self._optional_child(QLineEdit, 'logXFormatLineEdit')
+        self.y1FormatLineEdit = self._optional_child(QLineEdit, 'logY1FormatLineEdit')
+        self.y2FormatLineEdit = self._optional_child(QLineEdit, 'logY2FormatLineEdit')
         self.plotButton = require_child(rootWidget, QPushButton, 'logPlotButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'logDownloadHtmlButton')
         self.downloadPngButton = require_child(rootWidget, QPushButton, 'logDownloadPngButton')
@@ -174,6 +177,16 @@ class TabLogWidget(BackgroundTaskMixin):
         self.verticalSpaceSpinBox = require_child(rootWidget, QSpinBox, 'logChartsVSpaceSpinButton')
         self.symbolCheckBox = require_child(rootWidget, QCheckBox, 'logSymbolCheckBox')
         self.lineCheckBox = require_child(rootWidget, QCheckBox, 'logLineCheckBox')
+        self.y1LogCheckBox = self._optional_child(
+            QCheckBox,
+            'logY1LogCheckBox',
+            'Y1LogCheckBox',
+        )
+        self.y2LogCheckBox = self._optional_child(
+            QCheckBox,
+            'logY2LogCheckBox',
+            'Y2LogCheckBox',
+        )
         self.overlapRadioButton = require_child(rootWidget, QRadioButton, 'logOverlapChartsRadioButton')
         self.subplotRadioButton = require_child(rootWidget, QRadioButton, 'logSubplotChartsRadioButton')
         self.filesList = require_child(rootWidget, QListWidget, 'logFilesList')
@@ -209,6 +222,13 @@ class TabLogWidget(BackgroundTaskMixin):
         self._configure_defaults()
         self._configure_signals()
         self._apply_chart_mode()
+
+    def _optional_child(self, childType, *objectNames):
+        for objectName in objectNames:
+            child = self.rootWidget.findChild(childType, objectName)
+            if child is not None:
+                return child
+        return None
 
     def _configure_plot_area(self) -> None:
         if self.preferWebEngine and WEB_ENGINE_AVAILABLE and QWebEngineView is not None:
@@ -306,6 +326,16 @@ class TabLogWidget(BackgroundTaskMixin):
         self.subTitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
         self.y1TitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
         self.y2TitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
+        for formatLineEdit in (
+            self.xFormatLineEdit,
+            self.y1FormatLineEdit,
+            self.y2FormatLineEdit,
+        ):
+            if formatLineEdit is not None:
+                formatLineEdit.editingFinished.connect(self._draw_plot_when_ready)
+        for logCheckBox in (self.y1LogCheckBox, self.y2LogCheckBox):
+            if logCheckBox is not None:
+                logCheckBox.stateChanged.connect(self._redraw_existing_plot)
 
     def set_tab_data(self, tabDataWidget) -> None:
         self.tabDataWidget = tabDataWidget
@@ -930,9 +960,13 @@ class TabLogWidget(BackgroundTaskMixin):
                     includeFileName=includeFileName,
                 )
 
-        self._apply_common_layout(figure, xColumn, y1Columns, y2Columns)
-        if any(bool(source['xIsDate']) for source in sources):
-            figure.update_xaxes(tickformat='%Y/%m/%d %H:%M')
+        self._apply_common_layout(
+            figure,
+            xColumn,
+            y1Columns,
+            y2Columns,
+            xIsDate=any(bool(source['xIsDate']) for source in sources),
+        )
         return figure
 
     def _build_subplot_figure(
@@ -973,27 +1007,25 @@ class TabLogWidget(BackgroundTaskMixin):
             for yColumn in y2Columns:
                 trace = self._make_trace(source, xColumn, yColumn, includeFileName=False)
                 figure.add_trace(trace, row=rowIndex, col=columnIndex, secondary_y=True)
-            figure.update_xaxes(title_text=xColumn, row=rowIndex, col=columnIndex)
-            if source['xIsDate']:
-                figure.update_xaxes(
-                    tickformat='%Y/%m/%d %H:%M',
-                    row=rowIndex,
-                    col=columnIndex,
-                )
+            xAxisOptions = {'title_text': xColumn}
+            xTickFormat = self._x_tick_format(bool(source['xIsDate']))
+            if xTickFormat:
+                xAxisOptions['tickformat'] = xTickFormat
+            figure.update_xaxes(**xAxisOptions, row=rowIndex, col=columnIndex)
             if y1Columns:
-                figure.update_yaxes(
-                    title_text=self.y1TitleLineEdit.text().strip() or 'Y1',
-                    row=rowIndex,
-                    col=columnIndex,
-                    secondary_y=False,
+                y1AxisOptions = self._y_axis_options(
+                    self.y1TitleLineEdit.text().strip() or 'Y1',
+                    self.y1FormatLineEdit,
+                    self.y1LogCheckBox,
                 )
+                figure.update_yaxes(**y1AxisOptions, row=rowIndex, col=columnIndex, secondary_y=False)
             if y2Columns:
-                figure.update_yaxes(
-                    title_text=self.y2TitleLineEdit.text().strip() or 'Y2',
-                    row=rowIndex,
-                    col=columnIndex,
-                    secondary_y=True,
+                y2AxisOptions = self._y_axis_options(
+                    self.y2TitleLineEdit.text().strip() or 'Y2',
+                    self.y2FormatLineEdit,
+                    self.y2LogCheckBox,
                 )
+                figure.update_yaxes(**y2AxisOptions, row=rowIndex, col=columnIndex, secondary_y=True)
         self._apply_common_layout(
             figure,
             xColumn,
@@ -1059,6 +1091,7 @@ class TabLogWidget(BackgroundTaskMixin):
         y1Columns: list[str],
         y2Columns: list[str],
         applyAxes: bool = True,
+        xIsDate: bool = False,
     ) -> None:
         plotlyTheme = self.plotlyThemeComboBox.currentText().strip()
         plotlyTheme = None if plotlyTheme == 'none' else plotlyTheme or 'plotly'
@@ -1080,17 +1113,103 @@ class TabLogWidget(BackgroundTaskMixin):
             margin={'t': 90, 'r': 180 if y2Columns else 100, 'l': 80, 'b': 70},
         )
         if applyAxes:
-            figure.update_xaxes(title_text=xColumn)
-            figure.update_yaxes(title_text=self.y1TitleLineEdit.text().strip() or 'Y1')
-        if applyAxes and y2Columns:
-            figure.update_layout(
-                yaxis2=dict(
-                    title=self.y2TitleLineEdit.text().strip() or 'Y2',
-                    overlaying='y',
-                    side='right',
+            xAxisOptions = {'title_text': xColumn}
+            xTickFormat = self._x_tick_format(xIsDate)
+            if xTickFormat:
+                xAxisOptions['tickformat'] = xTickFormat
+            figure.update_xaxes(**xAxisOptions)
+            figure.update_yaxes(
+                **self._y_axis_options(
+                    self.y1TitleLineEdit.text().strip() or 'Y1',
+                    self.y1FormatLineEdit,
+                    self.y1LogCheckBox,
                 )
             )
+        if applyAxes and y2Columns:
+            y2AxisOptions = self._y_axis_layout(
+                self.y2TitleLineEdit.text().strip() or 'Y2',
+                self.y2FormatLineEdit,
+                self.y2LogCheckBox,
+            )
+            y2AxisOptions.update(overlaying='y', side='right')
+            figure.update_layout(yaxis2=y2AxisOptions)
         self._apply_non_legend_fonts(figure)
+
+    def _line_edit_text(self, lineEdit: QLineEdit | None) -> str:
+        return lineEdit.text().strip() if lineEdit is not None else ''
+
+    def _check_box_checked(self, checkBox: QCheckBox | None) -> bool:
+        return bool(checkBox is not None and checkBox.isChecked())
+
+    def _x_tick_format(self, xIsDate: bool) -> str:
+        formatText = self._line_edit_text(self.xFormatLineEdit)
+        if formatText:
+            return self._date_tick_format(formatText) if xIsDate else formatText
+        return '%Y/%m/%d %H:%M' if xIsDate else ''
+
+    def _y_axis_options(
+        self,
+        title: str,
+        formatLineEdit: QLineEdit | None,
+        logCheckBox: QCheckBox | None,
+    ) -> dict[str, str]:
+        axisOptions = {'title_text': title}
+        tickFormat = self._line_edit_text(formatLineEdit)
+        if tickFormat:
+            axisOptions['tickformat'] = tickFormat
+        if self._check_box_checked(logCheckBox):
+            axisOptions['type'] = 'log'
+        return axisOptions
+
+    def _y_axis_layout(
+        self,
+        title: str,
+        formatLineEdit: QLineEdit | None,
+        logCheckBox: QCheckBox | None,
+    ) -> dict[str, str]:
+        axisLayout = {'title': title}
+        tickFormat = self._line_edit_text(formatLineEdit)
+        if tickFormat:
+            axisLayout['tickformat'] = tickFormat
+        if self._check_box_checked(logCheckBox):
+            axisLayout['type'] = 'log'
+        return axisLayout
+
+    def _date_tick_format(self, formatText: str) -> str:
+        formatText = formatText.strip() or 'mm/dd'
+        if '%' in formatText:
+            return formatText
+
+        convertedParts = []
+        index = 0
+        while index < len(formatText):
+            remainingText = formatText[index:]
+            if remainingText.startswith(('yyyy', 'YYYY')):
+                convertedParts.append('%Y')
+                index += 4
+            elif remainingText.startswith(('yy', 'YY')):
+                convertedParts.append('%y')
+                index += 2
+            elif remainingText.startswith(('HH', 'hh')):
+                convertedParts.append('%H')
+                index += 2
+            elif remainingText.startswith(('SS', 'ss')):
+                convertedParts.append('%S')
+                index += 2
+            elif remainingText.startswith('MM'):
+                previousChar = formatText[index - 1] if index > 0 else ''
+                convertedParts.append('%M' if previousChar == ':' else '%m')
+                index += 2
+            elif remainingText.startswith('mm'):
+                convertedParts.append('%m')
+                index += 2
+            elif remainingText.startswith(('dd', 'DD')):
+                convertedParts.append('%d')
+                index += 2
+            else:
+                convertedParts.append(formatText[index])
+                index += 1
+        return ''.join(convertedParts)
 
     def _font_sizes(self) -> dict[str, int]:
         adjustment = self.fontSizeSpinBox.value()
