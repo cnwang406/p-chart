@@ -61,7 +61,7 @@ QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
 APP_VERSION = 'v2.7.0'
 APP_AUTHOR = 'cnwang'
-APP_DATE = '2024/04'
+APP_DATE = 'build 0605'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
 APP_ICON_FILENAME = os.path.join(
     'AppIcon.appiconset',

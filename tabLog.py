@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 import webbrowser
+from io import StringIO
 from pathlib import Path
 
 import pandas as pd
@@ -45,6 +46,7 @@ except ImportError:
 
 FILE_PATH_ROLE = int(Qt.ItemDataRole.UserRole)
 PRIMARY_FILE_ROLE = FILE_PATH_ROLE + 1
+LOG_EXTRA_INFO_ROLE = PRIMARY_FILE_ROLE + 1
 LOG_FILE_EXTENSIONS = ('.csv', '.txt')
 
 
@@ -465,6 +467,7 @@ class TabLogWidget(BackgroundTaskMixin):
         item = QListWidgetItem(displayName)
         item.setData(FILE_PATH_ROLE, filePath)
         item.setData(PRIMARY_FILE_ROLE, primary)
+        item.setData(LOG_EXTRA_INFO_ROLE, self._build_log_file_extra_info(filePath, displayName))
         item.setToolTip(filePath or 'TabData current processed data')
         self.filesList.addItem(item)
         item.setSelected(selected)
@@ -554,6 +557,7 @@ class TabLogWidget(BackgroundTaskMixin):
                     'name': item.text(),
                     'path': str(item.data(FILE_PATH_ROLE) or ''),
                     'primary': bool(item.data(PRIMARY_FILE_ROLE)),
+                    'extraInfo': str(item.data(LOG_EXTRA_INFO_ROLE) or ''),
                 })
         return entries[:1] if self._single_chart_mode() else entries
 
@@ -563,8 +567,11 @@ class TabLogWidget(BackgroundTaskMixin):
     def _update_auto_subtitle(self) -> None:
         if self.subtitleEdited:
             return
-        fileNames = [str(entry['name']) for entry in self._selected_file_entries()]
-        self.subTitleLineEdit.setText(', '.join(fileNames))
+        subtitleParts = [
+            str(entry.get('extraInfo') or entry['name'])
+            for entry in self._selected_file_entries()
+        ]
+        self.subTitleLineEdit.setText(', '.join(subtitleParts))
 
     def _on_trace_style_changed(self, *_args) -> None:
         if not self.lineCheckBox.isChecked() and not self.symbolCheckBox.isChecked():
@@ -586,6 +593,140 @@ class TabLogWidget(BackgroundTaskMixin):
     def _draw_plot_when_ready(self, *_args) -> None:
         if self.hasDrawRequest:
             self._draw_plot()
+
+    def _build_log_file_extra_info(self, filePath: str, displayName: str) -> str:
+        profile = self._detect_log_file_profile(filePath)
+        if not profile or not profile.get('extraFields'):
+            return displayName
+
+        rawLines = self._read_log_file_raw_lines(
+            filePath,
+            int(profile.get('extraMaxLine', 0)),
+        )
+        encoding = self._detect_log_file_encoding(filePath)
+        extraParts = []
+        for lineNumber, fieldIndexes in profile['extraFields']:
+            lineIndex = int(lineNumber) - 1
+            if lineIndex < 0 or lineIndex >= len(rawLines):
+                continue
+            lineText = self._decode_log_line(rawLines[lineIndex], encoding).strip()
+            fields = self._split_log_info_line(lineText)
+            for fieldIndex in fieldIndexes:
+                if fieldIndex < len(fields) and fields[fieldIndex]:
+                    extraParts.append(fields[fieldIndex])
+
+        return ', '.join([*extraParts, displayName]) if extraParts else displayName
+
+    def _detect_log_file_profile(self, filePath: str) -> dict[str, object] | None:
+        if not filePath or not filePath.lower().endswith(LOG_FILE_EXTENSIONS):
+            return None
+
+        rawLines = self._read_log_file_raw_lines(filePath, 1)
+        if not rawLines:
+            return None
+
+        encoding = self._detect_log_file_encoding(filePath)
+        firstLineCandidates = self._decode_log_line_candidates(rawLines[0], encoding)
+        for firstLine in firstLineCandidates:
+            normalizedLine = firstLine.strip().lstrip('\ufeff')
+            if normalizedLine == 'Run#,ProcIdent,StartDate,StartTime,Version':
+                return {
+                    'type': 'Evatek',
+                    'skipLines': {4},
+                    'headerLine': 3,
+                    'dataStartLine': 6,
+                    'extraFields': [(2, [0, 1])],
+                    'extraMaxLine': 2,
+                    'implemented': True,
+                }
+            if normalizedLine.startswith('RunNumber:') or normalizedLine.startswith('RunNumber：'):
+                return {
+                    'type': 'AST',
+                    'skipLines': {4},
+                    'headerLine': 8,
+                    'dataStartLine': 9,
+                    'extraFields': [(3, [1]), (5, [1])],
+                    'extraMaxLine': 5,
+                    'implemented': True,
+                }
+            if normalizedLine == 'BEGIN RECIPE,Date,Time,':
+                return {
+                    'type': 'Temescal',
+                    'implemented': False,
+                }
+        return None
+
+    def _read_profiled_log_data(
+        self,
+        filePath: str,
+        profile: dict[str, object],
+    ) -> pd.DataFrame:
+        rawLines = self._read_log_file_raw_lines(filePath)
+        headerLine = int(profile['headerLine'])
+        dataStartLine = int(profile['dataStartLine'])
+        skipLines = set(profile.get('skipLines', set()))
+        encoding = self._detect_log_file_encoding(filePath)
+
+        decodedLines = []
+        for lineNumber, rawLine in enumerate(rawLines, start=1):
+            if lineNumber in skipLines:
+                continue
+            if lineNumber == headerLine or lineNumber >= dataStartLine:
+                decodedLines.append(self._decode_log_line(rawLine, encoding))
+
+        if not decodedLines:
+            raise ValueError(f'{profile.get("type", "log")} profile has no readable rows.')
+
+        csvText = ''.join(decodedLines)
+        delimiter = self.tabDataWidget._detect_csv_delimiter(csvText)
+        dataFrame = pd.read_csv(StringIO(csvText), sep=delimiter)
+        return dataFrame
+
+    def _read_log_file_raw_lines(
+        self,
+        filePath: str,
+        maxRows: int | None = None,
+    ) -> list[bytes]:
+        rows = []
+        with open(filePath, 'rb') as logFile:
+            for rowIndex, rawLine in enumerate(logFile):
+                if maxRows is not None and rowIndex >= maxRows:
+                    break
+                rows.append(rawLine)
+        return rows
+
+    def _detect_log_file_encoding(self, filePath: str) -> str:
+        if self.tabDataWidget is not None:
+            sampleBytes = self.tabDataWidget._read_csv_sample_bytes(filePath)
+            return self.tabDataWidget._detect_csv_encoding(sampleBytes)
+        return 'utf-8-sig'
+
+    def _decode_log_line(self, rawLine: bytes, encoding: str) -> str:
+        try:
+            return rawLine.decode(encoding, errors='replace')
+        except LookupError:
+            return rawLine.decode('utf-8-sig', errors='replace')
+
+    def _decode_log_line_candidates(self, rawLine: bytes, preferredEncoding: str) -> list[str]:
+        candidates = []
+        for encoding in (preferredEncoding, 'utf-8-sig', 'cp950', 'big5', 'latin1'):
+            if not encoding or encoding in candidates:
+                continue
+            candidates.append(encoding)
+
+        decodedLines = []
+        for encoding in candidates:
+            try:
+                decodedLines.append(rawLine.decode(encoding, errors='ignore'))
+            except LookupError:
+                continue
+        return decodedLines
+
+    def _split_log_info_line(self, lineText: str) -> list[str]:
+        return [
+            field.strip()
+            for field in re.split(r'[\t,：:]+', lineText)
+        ]
 
     def _draw_plot(self) -> None:
         if self.tabDataWidget is None:
@@ -648,6 +789,13 @@ class TabLogWidget(BackgroundTaskMixin):
         )
 
     def _read_external_data(self, filePath: str, fallbackSkipRows: int) -> pd.DataFrame:
+        profile = self._detect_log_file_profile(filePath)
+        if profile and profile.get('implemented'):
+            dataFrame = self._read_profiled_log_data(filePath, profile)
+            dataFrame = self.tabDataWidget._strip_csv_dataframe_spaces(dataFrame)
+            self.tabDataWidget._normalize_loaded_datetime_formats(dataFrame)
+            return dataFrame
+
         skipRows = self.tabDataWidget._detect_skip_rows(
             filePath,
             fallbackSkipRows=fallbackSkipRows,
