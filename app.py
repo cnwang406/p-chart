@@ -33,7 +33,7 @@ print (f'QT_FRAMEWORK_PATH: {frameworkPath}')
 
 
 import PySide6
-from PySide6.QtCore import QCoreApplication, QFile
+from PySide6.QtCore import QCoreApplication, QEvent, QFile, QObject, QSignalBlocker, QTimer
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QColor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -52,15 +52,16 @@ from PySide6.QtWidgets import (
 from qt_helpers import require_child
 from tabBoxplot import TabBoxplotWidget
 from tabData import TabDataWidget
+from tabLog import TabLogWidget
 from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 from tabWafermap import TabWafermapWidget
 
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.5.2'
+APP_VERSION = 'v2.7.0'
 APP_AUTHOR = 'cnwang'
-APP_DATE = '2024/04'
+APP_DATE = 'build 0605'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
 APP_ICON_FILENAME = os.path.join(
     'AppIcon.appiconset',
@@ -199,6 +200,151 @@ def copy_update_files(sourceDirectory: Path, targetDirectory: Path) -> None:
             shutil.copy2(sourcePath, targetPath)
 
 
+class ResponsiveUiResizer(QObject):
+    def __init__(self, rootWidget: QWidget, plotControllers: dict[str, object] | None = None) -> None:
+        super().__init__(rootWidget)
+        self.rootWidget = rootWidget
+        self.plotControllers = plotControllers or {}
+        self.anchorRules = []
+        self.rulesByParentId = {}
+        self.parentWidgets = {}
+        self.pendingPlotControllers = set()
+        self.plotResizeTimer = QTimer(self)
+        self.plotResizeTimer.setSingleShot(True)
+        self.plotResizeTimer.setInterval(250)
+        self.plotResizeTimer.timeout.connect(self._redraw_resized_plots)
+        self._register_default_anchors()
+
+    def _register_default_anchors(self) -> None:
+        self._add_anchor('tabWidget', stretchWidth=True, stretchHeight=True)
+
+        for widgetName in (
+            'previewTableWidget',
+            'plotAreaWidget',
+            'boxPlotAreaWidget',
+            'logPlotAreaWidget',
+            'waferMapPlotAreaWidget',
+        ):
+            self._add_anchor(widgetName, stretchWidth=True, stretchHeight=True)
+
+        for widgetName in (
+            'statisticLabel',
+            'boxStatisticLabel',
+        ):
+            self._add_anchor(widgetName, stretchWidth=True)
+
+        for widgetName in (
+            'statusLabelTab1',
+            'statusLabelTab2',
+            'boxStatusLabel',
+            'logStatusLabel',
+            'waferMapStatusLabelx',
+        ):
+            self._add_anchor(widgetName, stretchWidth=True, moveY=True)
+
+    def _add_anchor(
+        self,
+        widgetName: str,
+        stretchWidth: bool = False,
+        stretchHeight: bool = False,
+        moveY: bool = False,
+    ) -> None:
+        widget = self.rootWidget.findChild(QWidget, widgetName)
+        if widget is None or widget.parentWidget() is None:
+            return
+
+        parentWidget = widget.parentWidget()
+        rule = {
+            'widget': widget,
+            'parent': parentWidget,
+            'geometry': widget.geometry(),
+            'stretchWidth': stretchWidth,
+            'stretchHeight': stretchHeight,
+            'moveY': moveY,
+            'rightMargin': max(0, parentWidget.width() - widget.geometry().right() - 1),
+            'bottomMargin': max(0, parentWidget.height() - widget.geometry().bottom() - 1),
+            'minWidth': min(widget.width(), 200),
+            'minHeight': min(widget.height(), 120) if stretchHeight else widget.height(),
+        }
+        self.anchorRules.append(rule)
+        parentId = id(parentWidget)
+        self.rulesByParentId.setdefault(parentId, []).append(rule)
+        if parentId not in self.parentWidgets:
+            self.parentWidgets[parentId] = parentWidget
+            parentWidget.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        parentId = id(watched)
+        if (
+            event.type() in (
+                QEvent.Type.Resize,
+                QEvent.Type.Show,
+                QEvent.Type.ShowToParent,
+            )
+            and parentId in self.rulesByParentId
+        ):
+            self._apply_parent_rules(watched)
+        return super().eventFilter(watched, event)
+
+    def _apply_parent_rules(self, parentWidget: QWidget) -> None:
+        for rule in self.rulesByParentId.get(id(parentWidget), []):
+            self._apply_rule(rule)
+
+    def _apply_rule(self, rule: dict[str, object]) -> None:
+        widget = rule['widget']
+        parentWidget = rule['parent']
+        baseGeometry = rule['geometry']
+
+        newX = baseGeometry.x()
+        newY = baseGeometry.y()
+        newWidth = baseGeometry.width()
+        newHeight = baseGeometry.height()
+        if rule['stretchWidth']:
+            newWidth = max(
+                int(rule['minWidth']),
+                parentWidget.width() - newX - int(rule['rightMargin']),
+            )
+        if rule['stretchHeight']:
+            newHeight = max(
+                int(rule['minHeight']),
+                parentWidget.height() - newY - int(rule['bottomMargin']),
+            )
+        if rule['moveY']:
+            newY = max(
+                0,
+                parentWidget.height() - int(rule['bottomMargin']) - newHeight,
+            )
+        sizeChanged = widget.width() != newWidth or widget.height() != newHeight
+        widget.setGeometry(newX, newY, newWidth, newHeight)
+        if sizeChanged:
+            self._sync_plot_size(widget)
+
+    def _sync_plot_size(self, plotAreaWidget: QWidget) -> None:
+        plotController = self.plotControllers.get(plotAreaWidget.objectName())
+        if plotController is None:
+            return
+
+        widthBlocker = QSignalBlocker(plotController.plotWidthSpinBox)
+        heightBlocker = QSignalBlocker(plotController.plotHeightSpinBox)
+        plotController.plotWidthSpinBox.setValue(max(200, plotAreaWidget.width()))
+        plotController.plotHeightSpinBox.setValue(max(200, plotAreaWidget.height()))
+        del widthBlocker, heightBlocker
+
+        if plotController.currentPlotFigure is not None:
+            self.pendingPlotControllers.add(plotController)
+            self.plotResizeTimer.start()
+
+    def _redraw_resized_plots(self) -> None:
+        plotControllers = list(self.pendingPlotControllers)
+        self.pendingPlotControllers.clear()
+        for plotController in plotControllers:
+            plotController._draw_plot()
+
+    def apply_all(self) -> None:
+        for parentWidget in self.parentWidgets.values():
+            self._apply_parent_rules(parentWidget)
+
+
 class AppMain:
     def __init__(self) -> None:
         self.runtimeOptions = remove_runtime_args()
@@ -228,14 +374,26 @@ class AppMain:
         self.tabScatterWidget = TabScatterWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabBoxplotWidget = TabBoxplotWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabWafermapWidget = TabWafermapWidget(self.ui)
+        self.tabLogWidget = TabLogWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabScatterWidget.set_tab_data(self.tabDataWidget)
         self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)
         self.tabWafermapWidget.set_tab_data(self.tabDataWidget)
+        self.tabLogWidget.set_tab_data(self.tabDataWidget)
         self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
         self.aboutButton.clicked.connect(self._show_about_dialog)
         self.tabWidget.setCurrentIndex(0)
         self._center_window()
         self.ui.show()
+        self.app.processEvents()
+        self.responsiveUiResizer = ResponsiveUiResizer(
+            self.ui,
+            {
+                'plotAreaWidget': self.tabScatterWidget,
+                'boxPlotAreaWidget': self.tabBoxplotWidget,
+                'logPlotAreaWidget': self.tabLogWidget,
+            },
+        )
+        self.responsiveUiResizer.apply_all()
         self._show_new_version_notice()
 
     def _configure_application_metadata(self) -> None:
@@ -281,7 +439,7 @@ class AppMain:
         self.ui.move(windowFrame.topLeft())
 
     def _warn_if_plotting_loaded_data(self, tabIndex: int) -> None:
-        if tabIndex not in [1, 2, 3]:
+        if tabIndex not in [1, 2, 3, 4]:
             return
         if (
             not self.tabDataWidget.has_loaded_data()
@@ -297,6 +455,8 @@ class AppMain:
             self.tabBoxplotWidget._set_status(warningText, error=True)
         elif tabIndex == 3:
             self.tabWafermapWidget._set_status(warningText, error=True)
+        elif tabIndex == 4:
+            self.tabLogWidget._set_status(warningText, error=True)
         self._show_app_icon_warning(warningText)
 
     def _show_app_icon_warning(self, message: str) -> None:

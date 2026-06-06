@@ -3,6 +3,11 @@ import os
 import re
 from html import escape
 
+try:
+    import chardet
+except ImportError:
+    chardet = None
+
 import pandas as pd
 from PySide6.QtCore import (
     QAbstractTableModel,
@@ -43,6 +48,10 @@ from async_helpers import BackgroundTaskMixin
 from loading_overlay import LoadingOverlay
 
 
+DELIMITED_TEXT_EXTENSIONS = ('.csv', '.txt')
+SUPPORTED_DATA_EXTENSIONS = (*DELIMITED_TEXT_EXTENSIONS, '.xls', '.xlsx')
+
+
 class DropFileFilter(QObject):
     def __init__(self, onFileDropped) -> None:
         super().__init__()
@@ -68,7 +77,7 @@ class DropFileFilter(QObject):
             if not url.isLocalFile():
                 continue
             filePath = url.toLocalFile()
-            if filePath.lower().endswith(('.csv', '.xls', '.xlsx')):
+            if filePath.lower().endswith(SUPPORTED_DATA_EXTENSIONS):
                 return filePath
         return ''
 
@@ -255,6 +264,10 @@ class TabDataWidget(BackgroundTaskMixin):
         self.tabDataWidget.installEventFilter(self.dropFileFilter)
         self.filePathLineEdit.setAcceptDrops(True)
         self.filePathLineEdit.installEventFilter(self.dropFileFilter)
+        self.previewTableWidget.setAcceptDrops(True)
+        self.previewTableWidget.installEventFilter(self.dropFileFilter)
+        self.previewTableWidget.viewport().setAcceptDrops(True)
+        self.previewTableWidget.viewport().installEventFilter(self.dropFileFilter)
         previewFont = self.previewTableWidget.font()
         previewFont.setPointSize(12)
         self.previewTableWidget.setFont(previewFont)
@@ -276,6 +289,7 @@ class TabDataWidget(BackgroundTaskMixin):
         )
 
         self.filePathLineEdit.textChanged.connect(self._invalidate_melted_data)
+        self.filePathLineEdit.returnPressed.connect(self._load_file)
         self.skipRowsSpinBox.valueChanged.connect(self._on_skip_rows_changed)
         self.stubnamesLineEdit.textChanged.connect(self._mark_matching_columns)
         self.stubnamesLineEdit.textChanged.connect(self._invalidate_melted_data)
@@ -296,11 +310,21 @@ class TabDataWidget(BackgroundTaskMixin):
         self._load_file()
 
     def _browse_file(self) -> None:
+        currentFilePath = self.filePathLineEdit.text().strip()
+        defaultDirectory = os.getcwd()
+        if currentFilePath:
+            currentPath = os.path.abspath(currentFilePath)
+            if os.path.isdir(currentPath):
+                defaultDirectory = currentPath
+            else:
+                currentDirectory = os.path.dirname(currentPath)
+                if os.path.isdir(currentDirectory):
+                    defaultDirectory = currentDirectory
         selectedFile, _ = QFileDialog.getOpenFileName(
             self.rootWidget,
-            'Open Excel or CSV',
-            os.getcwd(),
-            'Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)',
+            'Open Excel, CSV, or TXT',
+            defaultDirectory,
+            'Excel Files (*.xlsx *.xls);;Delimited Text Files (*.csv *.txt);;All Files (*)',
         )
         if selectedFile:
             self._invalidate_melted_data()
@@ -390,12 +414,19 @@ class TabDataWidget(BackgroundTaskMixin):
         skipRowsRequest = self._skip_rows_request()
 
         def work() -> dict[str, object]:
-            if filePath.lower().endswith('.csv'):
+            if filePath.lower().endswith(DELIMITED_TEXT_EXTENSIONS):
                 skipRows = self._resolve_skip_rows_for_worker(
                     filePath,
                     skipRowsRequest,
                 )
-                dataFrame = pd.read_csv(filePath, skiprows=skipRows)
+                csvOptions = self._detect_csv_read_options(filePath)
+                dataFrame = pd.read_csv(
+                    filePath,
+                    skiprows=skipRows,
+                    encoding=csvOptions['encoding'],
+                    sep=csvOptions['delimiter'],
+                )
+                dataFrame = self._strip_csv_dataframe_spaces(dataFrame)
                 normalizedColumns = self._normalize_loaded_datetime_formats(dataFrame)
                 warnings = self._loaded_data_warnings(dataFrame)
                 return {
@@ -403,6 +434,7 @@ class TabDataWidget(BackgroundTaskMixin):
                     'filePath': filePath,
                     'dataFrame': dataFrame,
                     'skipRows': skipRows,
+                    'csvDelimiter': csvOptions['delimiter'],
                     'normalizedColumns': normalizedColumns,
                     'warnings': warnings,
                 }
@@ -437,11 +469,13 @@ class TabDataWidget(BackgroundTaskMixin):
             self.sheetComboBox.addItem('csv')
             self.sheetComboBox.setEnabled(False)
             self.loadButton.setEnabled(False)
-            statusText = 'CSV loaded successfully.'
+            statusText = f'CSV loaded successfully. read {len(self.loadedDataFrame)} lines.'
             skipRows = int(result.get('skipRows', 0))
             normalizedColumns = list(result.get('normalizedColumns', []))
             if skipRows:
                 statusText += f' skiprows={skipRows}.'
+            if result.get('csvDelimiter') == '\t':
+                statusText += ' delimiter=tab.'
             if normalizedColumns:
                 statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
             if warnings:
@@ -474,7 +508,7 @@ class TabDataWidget(BackgroundTaskMixin):
             self._set_status('Choose a valid file before loading a sheet.', error=True)
             return
 
-        if filePath.lower().endswith('.csv'):
+        if filePath.lower().endswith(DELIMITED_TEXT_EXTENSIONS):
             self._load_file()
             return
 
@@ -540,7 +574,7 @@ class TabDataWidget(BackgroundTaskMixin):
         self._show_preview(self.loadedDataFrame)
         self._notify_data_changed()
         sheetName = str(result.get('sheetName', ''))
-        statusText = f'Sheet "{sheetName}" loaded successfully.'
+        statusText = f'Sheet "{sheetName}" loaded successfully. read {len(self.loadedDataFrame)} lines.'
         skipRows = int(result.get('skipRows', 0))
         normalizedColumns = list(result.get('normalizedColumns', []))
         if skipRows:
@@ -1281,7 +1315,7 @@ class TabDataWidget(BackgroundTaskMixin):
         fallbackSkipRows: int | None = None,
     ) -> int:
         try:
-            if filePath.lower().endswith('.csv'):
+            if filePath.lower().endswith(DELIMITED_TEXT_EXTENSIONS):
                 previewRows = self._read_csv_preview_rows(filePath)
                 previewDf = pd.DataFrame(previewRows)
             else:
@@ -1314,13 +1348,68 @@ class TabDataWidget(BackgroundTaskMixin):
 
     def _read_csv_preview_rows(self, filePath: str, maxRows: int = 30) -> list[list[str]]:
         rows = []
-        with open(filePath, newline='', encoding='utf-8-sig') as csvFile:
-            reader = csv.reader(csvFile)
+        csvOptions = self._detect_csv_read_options(filePath)
+        with open(filePath, newline='', encoding=csvOptions['encoding']) as csvFile:
+            reader = csv.reader(csvFile, delimiter=csvOptions['delimiter'])
             for rowIndex, row in enumerate(reader):
                 if rowIndex >= maxRows:
                     break
-                rows.append(row)
+                rows.append([cell.strip() for cell in row])
         return rows
+
+    def _strip_csv_dataframe_spaces(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
+        strippedDataFrame = dataFrame.copy()
+        usedColumnNames = set()
+        strippedColumns = []
+        for columnName in strippedDataFrame.columns:
+            strippedColumnName = str(columnName).strip()
+            uniqueColumnName = self._unique_column_name(strippedColumnName, usedColumnNames)
+            usedColumnNames.add(uniqueColumnName)
+            strippedColumns.append(uniqueColumnName)
+        strippedDataFrame.columns = strippedColumns
+
+        for columnName in strippedDataFrame.columns:
+            series = strippedDataFrame[columnName]
+            if not (
+                pd.api.types.is_object_dtype(series)
+                or pd.api.types.is_string_dtype(series)
+            ):
+                continue
+            strippedDataFrame[columnName] = series.map(
+                lambda value: value.strip() if isinstance(value, str) else value
+            )
+        return strippedDataFrame
+
+    def _detect_csv_read_options(self, filePath: str) -> dict[str, str]:
+        sampleBytes = self._read_csv_sample_bytes(filePath)
+        encoding = self._detect_csv_encoding(sampleBytes)
+        sampleText = self._decode_csv_sample(sampleBytes, encoding)
+        return {
+            'encoding': encoding,
+            'delimiter': self._detect_csv_delimiter(sampleText),
+        }
+
+    def _read_csv_sample_bytes(self, filePath: str) -> bytes:
+        with open(filePath, 'rb') as sampleFile:
+            return sampleFile.read(1024 * 100)
+
+    def _detect_csv_encoding(self, sampleBytes: bytes) -> str:
+        if chardet is not None:
+            detectedEncoding = chardet.detect(sampleBytes).get('encoding')
+            if detectedEncoding:
+                return str(detectedEncoding)
+        return 'utf-8-sig'
+
+    def _decode_csv_sample(self, sampleBytes: bytes, encoding: str) -> str:
+        try:
+            return sampleBytes.decode(encoding, errors='ignore')
+        except LookupError:
+            return sampleBytes.decode('utf-8-sig', errors='ignore')
+
+    def _detect_csv_delimiter(self, sampleText: str) -> str:
+        if ',' not in sampleText and '\t' in sampleText:
+            return '\t'
+        return ','
 
     def _score_header_row(self, previewDf: pd.DataFrame, rowIndex: int) -> float:
         rowTexts = self._row_text_values(previewDf.iloc[rowIndex])
