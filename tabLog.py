@@ -307,20 +307,20 @@ class TabLogWidget(BackgroundTaskMixin):
         self.downloadPngButton.clicked.connect(self._download_png)
         self.cleanFilesButton.clicked.connect(self._clean_external_files)
         self.filesList.itemSelectionChanged.connect(self._on_file_selection_changed)
-        self.plotlyThemeComboBox.currentTextChanged.connect(self._redraw_existing_plot)
-        self.plotWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
-        self.plotHeightSpinBox.valueChanged.connect(self._redraw_existing_plot)
-        self.legendFontSizeSpinBox.valueChanged.connect(self._redraw_existing_plot)
-        self.lineWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
-        self.fontSizeSpinBox.valueChanged.connect(self._redraw_existing_plot)
-        self.horizontalSpaceSpinBox.valueChanged.connect(self._redraw_existing_plot)
-        self.verticalSpaceSpinBox.valueChanged.connect(self._redraw_existing_plot)
+        self.plotlyThemeComboBox.currentTextChanged.connect(self._mark_plot_pending)
+        self.plotWidthSpinBox.valueChanged.connect(self._mark_plot_pending)
+        self.plotHeightSpinBox.valueChanged.connect(self._mark_plot_pending)
+        self.legendFontSizeSpinBox.valueChanged.connect(self._mark_plot_pending)
+        self.lineWidthSpinBox.valueChanged.connect(self._mark_plot_pending)
+        self.fontSizeSpinBox.valueChanged.connect(self._mark_plot_pending)
+        self.horizontalSpaceSpinBox.valueChanged.connect(self._mark_plot_pending)
+        self.verticalSpaceSpinBox.valueChanged.connect(self._mark_plot_pending)
         self.symbolCheckBox.stateChanged.connect(self._on_trace_style_changed)
         self.lineCheckBox.stateChanged.connect(self._on_trace_style_changed)
         self.overlapRadioButton.toggled.connect(self._on_presentation_changed)
         self.subplotRadioButton.toggled.connect(self._on_presentation_changed)
         self.xComboBox.currentTextChanged.connect(self._update_plot_title)
-        self.xComboBox.currentTextChanged.connect(self._redraw_existing_plot)
+        self.xComboBox.currentTextChanged.connect(self._mark_plot_pending)
         self.plotTitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
         self.subTitleLineEdit.textEdited.connect(self._mark_subtitle_edited)
         self.subTitleLineEdit.editingFinished.connect(self._draw_plot_when_ready)
@@ -335,7 +335,7 @@ class TabLogWidget(BackgroundTaskMixin):
                 formatLineEdit.editingFinished.connect(self._draw_plot_when_ready)
         for logCheckBox in (self.y1LogCheckBox, self.y2LogCheckBox):
             if logCheckBox is not None:
-                logCheckBox.stateChanged.connect(self._redraw_existing_plot)
+                logCheckBox.stateChanged.connect(self._mark_plot_pending)
 
     def set_tab_data(self, tabDataWidget) -> None:
         self.tabDataWidget = tabDataWidget
@@ -365,7 +365,7 @@ class TabLogWidget(BackgroundTaskMixin):
         self.y1ColumnCombo.set_items(columnNames, currentY1.intersection(columnNames))
         self.y2ColumnCombo.set_items(columnNames, currentY2.intersection(columnNames))
         self._update_plot_title()
-        self._redraw_existing_plot()
+        self._draw_plot_when_ready()
 
     def _default_x_column(self, columnNames: list[str]) -> str:
         for columnName in columnNames:
@@ -380,7 +380,7 @@ class TabLogWidget(BackgroundTaskMixin):
             'Y1',
         )
         self._apply_chart_mode()
-        self._redraw_existing_plot()
+        self._mark_plot_pending()
 
     def _on_y2_columns_changed(self) -> None:
         self._sync_axis_title(
@@ -389,7 +389,7 @@ class TabLogWidget(BackgroundTaskMixin):
             'Y2',
         )
         self._apply_chart_mode()
-        self._redraw_existing_plot()
+        self._mark_plot_pending()
 
     def _sync_axis_title(
         self,
@@ -485,7 +485,7 @@ class TabLogWidget(BackgroundTaskMixin):
         self._apply_chart_mode()
         self._update_auto_subtitle()
         if addedCount:
-            self._redraw_existing_plot()
+            self._mark_plot_pending()
 
     def _add_file_item(
         self,
@@ -508,12 +508,10 @@ class TabLogWidget(BackgroundTaskMixin):
             item = self.filesList.item(rowIndex)
             if not bool(item.data(PRIMARY_FILE_ROLE)):
                 self.filesList.takeItem(rowIndex)
-        if self.filesList.count() and not self.filesList.selectedItems():
-            self.filesList.item(0).setSelected(True)
         self._updatingFilesList = False
         self._apply_chart_mode()
         self._update_auto_subtitle()
-        self._redraw_existing_plot()
+        self._mark_plot_pending()
 
     def _normalized_path(self, filePath: str) -> str:
         return os.path.normcase(os.path.abspath(filePath))
@@ -524,49 +522,30 @@ class TabLogWidget(BackgroundTaskMixin):
         self._ensure_valid_file_selection()
         self._update_auto_subtitle()
         self._set_mode_status()
-        self._redraw_existing_plot()
+        self._mark_plot_pending()
 
     def _ensure_valid_file_selection(self) -> None:
-        if not self.filesList.count():
-            return
-        selectedItems = self.filesList.selectedItems()
-        if not selectedItems:
-            self._updatingFilesList = True
-            self.filesList.item(0).setSelected(True)
-            self._updatingFilesList = False
-            return
-        if self._single_chart_mode() and len(selectedItems) > 1:
-            keepItem = self.filesList.currentItem() or selectedItems[0]
-            self._updatingFilesList = True
-            for item in selectedItems:
-                item.setSelected(item is keepItem)
-            self._updatingFilesList = False
+        return
 
     def _single_chart_mode(self) -> bool:
-        return (
-            len(self.y1ColumnCombo.checked_items()) > 1
-            or len(self.y2ColumnCombo.checked_items()) > 1
-        )
+        return False
 
     def _apply_chart_mode(self) -> None:
-        singleMode = self._single_chart_mode()
-        selectionMode = (
-            QAbstractItemView.SelectionMode.SingleSelection
-            if singleMode
-            else QAbstractItemView.SelectionMode.MultiSelection
-        )
-        self.filesList.setSelectionMode(selectionMode)
-        self.overlapRadioButton.setEnabled(not singleMode)
-        self.subplotRadioButton.setEnabled(not singleMode)
+        self.filesList.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        self.overlapRadioButton.setEnabled(True)
+        self.subplotRadioButton.setEnabled(True)
         self._ensure_valid_file_selection()
         self._update_auto_subtitle()
         self._set_mode_status()
 
     def _mode_text(self) -> str:
-        if self._single_chart_mode():
-            return 'single chart mode'
+        selectedCount = len(self._selected_file_entries())
+        if selectedCount <= 0:
+            return 'no file selected'
         presentation = 'subplot' if self.subplotRadioButton.isChecked() else 'overlap'
-        return f'multiple charts mode: {presentation}'
+        if selectedCount == 1:
+            return f'1 file: {presentation}'
+        return f'{selectedCount} files: {presentation}'
 
     def _set_mode_status(self) -> None:
         if (
@@ -589,7 +568,7 @@ class TabLogWidget(BackgroundTaskMixin):
                     'primary': bool(item.data(PRIMARY_FILE_ROLE)),
                     'extraInfo': str(item.data(LOG_EXTRA_INFO_ROLE) or ''),
                 })
-        return entries[:1] if self._single_chart_mode() else entries
+        return entries
 
     def _mark_subtitle_edited(self, *_args) -> None:
         self.subtitleEdited = True
@@ -608,17 +587,23 @@ class TabLogWidget(BackgroundTaskMixin):
             blocker = QSignalBlocker(self.lineCheckBox)
             self.lineCheckBox.setChecked(True)
             del blocker
-        self._redraw_existing_plot()
+        self._mark_plot_pending()
 
     def _on_presentation_changed(self, checked: bool) -> None:
         if not checked:
             return
         self._set_mode_status()
-        self._redraw_existing_plot()
+        self._mark_plot_pending()
 
     def _redraw_existing_plot(self, *_args) -> None:
         if self.hasDrawRequest:
             self._draw_plot()
+
+    def _mark_plot_pending(self, *_args) -> None:
+        if self.hasDrawRequest:
+            self._set_status(f'Plot settings changed. Click Refresh Plot. {self._mode_text()}')
+            return
+        self._set_mode_status()
 
     def _draw_plot_when_ready(self, *_args) -> None:
         if self.hasDrawRequest:
@@ -763,26 +748,27 @@ class TabLogWidget(BackgroundTaskMixin):
             self._set_status('No data source attached to log tab.', error=True)
             return
 
+        xColumn = self.xComboBox.currentText().strip()
+        y1Columns = self.y1ColumnCombo.checked_items()
+        y2Columns = self.y2ColumnCombo.checked_items()
+        selectedEntries = self._selected_file_entries()
+        self.hasDrawRequest = True
+        if not selectedEntries:
+            self._clear_plot_area('No file selected. Plot area cleared.')
+            return
+
         primaryDataFrame = self.tabDataWidget.get_plot_data()
         if primaryDataFrame.empty:
             self._set_status('No data available for log plot.', error=True)
             return
 
-        xColumn = self.xComboBox.currentText().strip()
-        y1Columns = self.y1ColumnCombo.checked_items()
-        y2Columns = self.y2ColumnCombo.checked_items()
-        selectedEntries = self._selected_file_entries()
         if not xColumn:
             self._set_status('Choose a valid X column first.', error=True)
             return
         if not y1Columns and not y2Columns:
             self._set_status('Choose at least one Y1 or Y2 column first.', error=True)
             return
-        if not selectedEntries:
-            self._set_status('Select at least one file first.', error=True)
-            return
 
-        self.hasDrawRequest = True
         skipRows = self.tabDataWidget.get_skip_rows()
         self._set_status(f'Loading selected files. {self._mode_text()}')
         self.loadingOverlay.show('Loading files...')
@@ -917,14 +903,28 @@ class TabLogWidget(BackgroundTaskMixin):
 
         if not preparedSources:
             return None, warnings
-        if not self._single_chart_mode() and self.subplotRadioButton.isChecked():
-            return self._build_subplot_figure(
+        if len(preparedSources) == 1:
+            if self.subplotRadioButton.isChecked():
+                return self._build_y_item_subplot_figure(
+                    preparedSources,
+                    xColumn,
+                    y1Columns,
+                    y2Columns,
+                ), warnings
+            return self._build_overlap_figure(
                 preparedSources,
                 xColumn,
                 y1Columns,
                 y2Columns,
             ), warnings
-        return self._build_overlap_figure(
+        if self.subplotRadioButton.isChecked():
+            return self._build_source_subplot_figure(
+                preparedSources,
+                xColumn,
+                y1Columns,
+                y2Columns,
+            ), warnings
+        return self._build_y_item_subplot_figure(
             preparedSources,
             xColumn,
             y1Columns,
@@ -969,31 +969,18 @@ class TabLogWidget(BackgroundTaskMixin):
         )
         return figure
 
-    def _build_subplot_figure(
+    def _build_source_subplot_figure(
         self,
         sources: list[dict[str, object]],
         xColumn: str,
         y1Columns: list[str],
         y2Columns: list[str],
     ) -> go.Figure:
-        sourceCount = len(sources)
-        columnCount = math.ceil(math.sqrt(sourceCount))
-        rowCount = math.ceil(sourceCount / columnCount)
-        specs = []
-        for rowIndex in range(rowCount):
-            rowSpecs = []
-            for columnIndex in range(columnCount):
-                sourceIndex = rowIndex * columnCount + columnIndex
-                rowSpecs.append(
-                    {'secondary_y': bool(y2Columns)}
-                    if sourceIndex < sourceCount
-                    else None
-                )
-            specs.append(rowSpecs)
+        rowCount, columnCount = self._best_subplot_grid(len(sources))
         figure = make_subplots(
             rows=rowCount,
             cols=columnCount,
-            specs=specs,
+            specs=self._subplot_specs(len(sources), rowCount, columnCount, bool(y2Columns)),
             subplot_titles=[str(source['name']) for source in sources],
             horizontal_spacing=self._subplot_spacing(self.horizontalSpaceSpinBox, columnCount),
             vertical_spacing=self._subplot_spacing(self.verticalSpaceSpinBox, rowCount),
@@ -1007,25 +994,16 @@ class TabLogWidget(BackgroundTaskMixin):
             for yColumn in y2Columns:
                 trace = self._make_trace(source, xColumn, yColumn, includeFileName=False)
                 figure.add_trace(trace, row=rowIndex, col=columnIndex, secondary_y=True)
-            xAxisOptions = {'title_text': xColumn}
-            xTickFormat = self._x_tick_format(bool(source['xIsDate']))
-            if xTickFormat:
-                xAxisOptions['tickformat'] = xTickFormat
-            figure.update_xaxes(**xAxisOptions, row=rowIndex, col=columnIndex)
-            if y1Columns:
-                y1AxisOptions = self._y_axis_options(
-                    self.y1TitleLineEdit.text().strip() or 'Y1',
-                    self.y1FormatLineEdit,
-                    self.y1LogCheckBox,
-                )
-                figure.update_yaxes(**y1AxisOptions, row=rowIndex, col=columnIndex, secondary_y=False)
-            if y2Columns:
-                y2AxisOptions = self._y_axis_options(
-                    self.y2TitleLineEdit.text().strip() or 'Y2',
-                    self.y2FormatLineEdit,
-                    self.y2LogCheckBox,
-                )
-                figure.update_yaxes(**y2AxisOptions, row=rowIndex, col=columnIndex, secondary_y=True)
+            self._apply_subplot_axes(
+                figure,
+                rowIndex,
+                columnIndex,
+                xColumn,
+                bool(source['xIsDate']),
+                y1Columns,
+                y2Columns,
+                sourceIndex > 0,
+            )
         self._apply_common_layout(
             figure,
             xColumn,
@@ -1034,6 +1012,115 @@ class TabLogWidget(BackgroundTaskMixin):
             applyAxes=False,
         )
         return figure
+
+    def _build_y_item_subplot_figure(
+        self,
+        sources: list[dict[str, object]],
+        xColumn: str,
+        y1Columns: list[str],
+        y2Columns: list[str],
+    ) -> go.Figure:
+        subplotKeys = y1Columns or ['Y2']
+        rowCount, columnCount = self._best_subplot_grid(len(subplotKeys))
+        figure = make_subplots(
+            rows=rowCount,
+            cols=columnCount,
+            specs=self._subplot_specs(len(subplotKeys), rowCount, columnCount, bool(y2Columns)),
+            subplot_titles=subplotKeys,
+            horizontal_spacing=self._subplot_spacing(self.horizontalSpaceSpinBox, columnCount),
+            vertical_spacing=self._subplot_spacing(self.verticalSpaceSpinBox, rowCount),
+        )
+        includeFileName = len(sources) > 1
+        anyXIsDate = any(bool(source['xIsDate']) for source in sources)
+        for subplotIndex, y1Column in enumerate(subplotKeys):
+            rowIndex = subplotIndex // columnCount + 1
+            columnIndex = subplotIndex % columnCount + 1
+            activeY1Columns = [] if not y1Columns else [y1Column]
+            for source in sources:
+                for yColumn in activeY1Columns:
+                    trace = self._make_trace(source, xColumn, yColumn, includeFileName)
+                    figure.add_trace(trace, row=rowIndex, col=columnIndex, secondary_y=False)
+                for yColumn in y2Columns:
+                    trace = self._make_trace(source, xColumn, yColumn, includeFileName)
+                    figure.add_trace(trace, row=rowIndex, col=columnIndex, secondary_y=True)
+            self._apply_subplot_axes(
+                figure,
+                rowIndex,
+                columnIndex,
+                xColumn,
+                anyXIsDate,
+                activeY1Columns,
+                y2Columns,
+                subplotIndex > 0,
+            )
+        self._apply_common_layout(
+            figure,
+            xColumn,
+            y1Columns,
+            y2Columns,
+            applyAxes=False,
+        )
+        return figure
+
+    def _best_subplot_grid(self, subplotCount: int) -> tuple[int, int]:
+        columnCount = math.ceil(math.sqrt(max(1, subplotCount)))
+        rowCount = math.ceil(max(1, subplotCount) / columnCount)
+        return rowCount, columnCount
+
+    def _subplot_specs(
+        self,
+        subplotCount: int,
+        rowCount: int,
+        columnCount: int,
+        hasSecondaryY: bool,
+    ) -> list[list[dict[str, bool] | None]]:
+        specs = []
+        for rowIndex in range(rowCount):
+            rowSpecs = []
+            for columnIndex in range(columnCount):
+                subplotIndex = rowIndex * columnCount + columnIndex
+                rowSpecs.append(
+                    {'secondary_y': hasSecondaryY}
+                    if subplotIndex < subplotCount
+                    else None
+                )
+            specs.append(rowSpecs)
+        return specs
+
+    def _apply_subplot_axes(
+        self,
+        figure: go.Figure,
+        rowIndex: int,
+        columnIndex: int,
+        xColumn: str,
+        xIsDate: bool,
+        y1Columns: list[str],
+        y2Columns: list[str],
+        lockToFirst: bool,
+    ) -> None:
+        xAxisOptions = {'title_text': xColumn}
+        xTickFormat = self._x_tick_format(xIsDate)
+        if xTickFormat:
+            xAxisOptions['tickformat'] = xTickFormat
+        figure.update_xaxes(**xAxisOptions, row=rowIndex, col=columnIndex)
+        if y1Columns:
+            y1AxisOptions = self._y_axis_options(
+                self.y1TitleLineEdit.text().strip() or 'Y1',
+                self.y1FormatLineEdit,
+                self.y1LogCheckBox,
+            )
+            if lockToFirst:
+                y1AxisOptions['matches'] = 'y'
+            figure.update_yaxes(**y1AxisOptions, row=rowIndex, col=columnIndex, secondary_y=False)
+        if y2Columns:
+            y2AxisOptions = self._y_axis_options(
+                self.y2TitleLineEdit.text().strip() or 'Y2',
+                self.y2FormatLineEdit,
+                self.y2LogCheckBox,
+            )
+            if lockToFirst:
+                y2AxisOptions['matches'] = 'y2'
+            figure.update_yaxes(**y2AxisOptions, row=rowIndex, col=columnIndex, secondary_y=True)
 
     def _subplot_spacing(self, spinBox: QSpinBox, axisCount: int) -> float:
         if axisCount <= 1:
@@ -1248,6 +1335,21 @@ class TabLogWidget(BackgroundTaskMixin):
             return False
         parsedDates = pd.to_datetime(nonNullSeries, errors='coerce')
         return parsedDates.notna().mean() >= 0.8
+
+    def _clear_plot_area(self, statusText: str) -> None:
+        self.loadingOverlay.hide()
+        self.currentPlotHtml = ''
+        self.currentPlotFigure = None
+        self.currentPlotFilePath = ''
+        self.currentViewerFilePath = ''
+        self.pendingRenderStatus = ''
+        self.pendingRenderStatusError = False
+        try:
+            self.chartView.setHtml('')
+        except Exception:
+            if isinstance(self.chartView, QTextBrowser):
+                self.chartView.clear()
+        self._set_status(statusText)
 
     def _render_figure(self, figure) -> None:
         self.currentPlotFigure = figure
