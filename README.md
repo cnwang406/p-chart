@@ -19,6 +19,8 @@ License: MIT
   display options, Y lines, and selectable per-box annotations.
 - Create wafer maps with frame/die layout, matplotlib contour maps, and KGD-like
   die heatmaps.
+- Compare CSV/TXT log files with selectable X, Y1, and Y2 columns in overlay
+  or subplot layouts.
 - Support drag-and-drop loading, date-aware scatter X axes, and copyable pivot
   summary tables.
 - Use embedded Qt WebEngine for Plotly charts, with system-browser fallback for
@@ -67,7 +69,7 @@ image, app icons, and Windows `.ico`.
 2. app will auto find out  `Stubnames`, `Suffix regex`, and suffix output column.
 3. Confirm auto generated matching columns in `Columns (a/b)`.
 4. Click `wide_to_long`.
-5. Use the enabled Scatter , Boxplot tab, or wafermap tab.
+5. Use the enabled Scatter, Boxplot, Wafermap, or Log tab.
 
 Scatter charts draw automatically after X and Y are selected. Reference lines
 support color, opacity/width, auto ranges, and Y-based statistics including Ca,
@@ -92,6 +94,14 @@ So the smallest column and row in the loaded data are always drawn at map
 position `(1, 1)`.
 without X,Y,Z selected, a wafer map with frame and die map will be generated.
 
+Log charts use the Data-tab dataset as the primary file and can compare
+additional dropped CSV/TXT log files. Select X plus one or more Y1/Y2 columns,
+then choose overlap or subplot mode and click Refresh Plot. With one selected
+file, overlap draws all Y1/Y2 items in one chart; subplot splits by Y1 item.
+With multiple selected files, overlap splits by Y1 item and draws every file in
+the same subplot, while subplot mode splits by file. If no file is selected,
+Refresh Plot clears the plot area and export state.
+
 ## Files
 
 - `app.py`: application entry point.
@@ -100,6 +110,7 @@ without X,Y,Z selected, a wafer map with frame and die map will be generated.
 - `plotly_local.py`: local Plotly HTML helper for offline chart rendering.
 - `tabData.py`, `tabScatter.py`, `tabBoxplot.py`: tab controllers.
 - `tabWafermap.py`, `wafermap_core.py`: wafer map controller and geometry logic.
+- `tabLog.py`: multi-file log chart controller.
 - `p-chart.spec`: PyInstaller build config.
 - `LICENSE`: MIT License.
 

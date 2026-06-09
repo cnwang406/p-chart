@@ -380,7 +380,13 @@ class TabDataWidget(BackgroundTaskMixin):
 
 3. 有些情況不需要, 比如 AVG -> Y, 時間 --> X, 打算用機台, product 當作 category, 這時候就不需要轉換了, 直接用原來的寬格式資料就好.
 
-4. 這個 app 輸出用 HTML + JavaScript 功能來顯示互動式圖表, 這樣就算是複雜的交互式圖表也能在app裡面直接看, 不需要再開一個 Excel 或 Python 的視窗.
+4. 新增家的 boxplot 可以很簡單的畫出 boxplot. 當然也可以用 UEDA. 這沒太多其他功能
+
+5. wafer map 可以根據輸入的 frames 資訊畫出 frames. 也可以收 WAT 的 mapping, 那是個很奇怪的格式, 也可以收大部分有定義 X, Y 的 mapping.
+
+6. log 是拿來看 x 是 time 的. 可以直接丟 evatek, AST 的 log 進去. Temescal 的有空再做. 可以畫 multi-charts, Y1,Y2...
+
+7. 這個 app 輸出用 HTML + JavaScript 功能來顯示互動式圖表, 這樣就算是複雜的交互式圖表也能在app裡面直接看, 不需要再開一個 Excel 或 Python 的視窗.
 但是如果電腦環境不支援 PySide6.WebEngine, 就會退回到在系統瀏覽器裡面看圖, 這時候app 的字體可能會變得很大很醜,
 這 不 是 我 的 錯
 , 是 PySide6.WebEngine 的問題. 但是產生的 HTML 應該還是正常的,可以放大縮小移動 balabala
