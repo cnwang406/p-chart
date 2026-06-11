@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
 
 from qt_helpers import require_child
 from tabBoxplot import TabBoxplotWidget
+from tabContour import TabContourWidget
 from tabData import TabDataWidget
 from tabLog import TabLogWidget
 from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
@@ -59,9 +60,9 @@ from tabWafermap import TabWafermapWidget
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.7.0'
+APP_VERSION = 'v2.8.0'
 APP_AUTHOR = 'cnwang'
-APP_DATE = 'build 0605'
+APP_DATE = 'build 0612'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
 APP_ICON_FILENAME = os.path.join(
     'AppIcon.appiconset',
@@ -222,6 +223,7 @@ class ResponsiveUiResizer(QObject):
             'previewTableWidget',
             'plotAreaWidget',
             'boxPlotAreaWidget',
+            'contourPlotAreaWidget',
             'logPlotAreaWidget',
             'waferMapPlotAreaWidget',
         ):
@@ -237,6 +239,7 @@ class ResponsiveUiResizer(QObject):
             'statusLabelTab1',
             'statusLabelTab2',
             'boxStatusLabel',
+            'contourStatusLabel',
             'logStatusLabel',
             'waferMapStatusLabelx',
         ):
@@ -324,11 +327,12 @@ class ResponsiveUiResizer(QObject):
         if plotController is None:
             return
 
-        widthBlocker = QSignalBlocker(plotController.plotWidthSpinBox)
-        heightBlocker = QSignalBlocker(plotController.plotHeightSpinBox)
-        plotController.plotWidthSpinBox.setValue(max(200, plotAreaWidget.width()))
-        plotController.plotHeightSpinBox.setValue(max(200, plotAreaWidget.height()))
-        del widthBlocker, heightBlocker
+        if hasattr(plotController, 'plotWidthSpinBox') and hasattr(plotController, 'plotHeightSpinBox'):
+            widthBlocker = QSignalBlocker(plotController.plotWidthSpinBox)
+            heightBlocker = QSignalBlocker(plotController.plotHeightSpinBox)
+            plotController.plotWidthSpinBox.setValue(max(200, plotAreaWidget.width()))
+            plotController.plotHeightSpinBox.setValue(max(200, plotAreaWidget.height()))
+            del widthBlocker, heightBlocker
 
         if plotController.currentPlotFigure is not None:
             self.pendingPlotControllers.add(plotController)
@@ -374,10 +378,12 @@ class AppMain:
         self.tabScatterWidget = TabScatterWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabBoxplotWidget = TabBoxplotWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabWafermapWidget = TabWafermapWidget(self.ui)
+        self.tabContourWidget = TabContourWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabLogWidget = TabLogWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabScatterWidget.set_tab_data(self.tabDataWidget)
         self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)
         self.tabWafermapWidget.set_tab_data(self.tabDataWidget)
+        self.tabContourWidget.set_tab_data(self.tabDataWidget)
         self.tabLogWidget.set_tab_data(self.tabDataWidget)
         self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
         self.aboutButton.clicked.connect(self._show_about_dialog)
@@ -390,6 +396,7 @@ class AppMain:
             {
                 'plotAreaWidget': self.tabScatterWidget,
                 'boxPlotAreaWidget': self.tabBoxplotWidget,
+                'contourPlotAreaWidget': self.tabContourWidget,
                 'logPlotAreaWidget': self.tabLogWidget,
             },
         )
@@ -439,7 +446,7 @@ class AppMain:
         self.ui.move(windowFrame.topLeft())
 
     def _warn_if_plotting_loaded_data(self, tabIndex: int) -> None:
-        if tabIndex not in [1, 2, 3, 4]:
+        if tabIndex not in [1, 2, 3, 4, 5]:
             return
         if (
             not self.tabDataWidget.has_loaded_data()
@@ -456,6 +463,8 @@ class AppMain:
         elif tabIndex == 3:
             self.tabWafermapWidget._set_status(warningText, error=True)
         elif tabIndex == 4:
+            self.tabContourWidget._set_status(warningText, error=True)
+        elif tabIndex == 5:
             self.tabLogWidget._set_status(warningText, error=True)
         self._show_app_icon_warning(warningText)
 
