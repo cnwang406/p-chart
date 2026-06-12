@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # pyright: reportUndefinedVariable=false
 
+import os
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules,   collect_all
 
 
@@ -17,6 +18,9 @@ datas = [
    ('w2l.png', '.'),
    ('AppIcon.appiconset/icon-ios-marketing-1024x1024-1x.png', 'AppIcon.appiconset'),
 ]
+for coord_filename in ('coord-49.csv', 'coord-81.csv'):
+   if os.path.exists(coord_filename):
+      datas.append((coord_filename, '.'))
 datas += collect_data_files('plotly')
 datas += collect_data_files('kaleido')
 datas += np_datas + pd_datas

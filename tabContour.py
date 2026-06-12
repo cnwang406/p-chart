@@ -1,6 +1,7 @@
 import math
 import os
 import re
+import sys
 import tempfile
 import webbrowser
 from pathlib import Path
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QSpinBox,
@@ -49,6 +51,11 @@ PRIMARY_FILE_ROLE = FILE_PATH_ROLE + 1
 DATAFRAME_ROLE = PRIMARY_FILE_ROLE + 1
 COLUMNS_ROLE = DATAFRAME_ROLE + 1
 CONTOUR_FILE_EXTENSIONS = ('.csv', '.txt')
+CONTOUR_NONE_TEXT = 'none'
+VIRTUAL_COORD_OPTIONS = {
+    '49點': ('coord-49.csv', 49),
+    '81點': ('coord-81.csv', 81),
+}
 
 
 class ContourFileDropFilter(QObject):
@@ -425,9 +432,14 @@ class TabContourWidget:
             return
         columnNames = self._active_columns()
         self._updatingControls = True
-        self._populate_combo(self.xComboBox, columnNames, self._default_xy_column(columnNames, ('x', 'rx', 'dx')))
-        self._populate_combo(self.yComboBox, columnNames, self._default_xy_column(columnNames, ('y', 'ry', 'dy')))
-        selectedXY = {self.xComboBox.currentText().strip(), self.yComboBox.currentText().strip()}
+        xyColumnNames = [CONTOUR_NONE_TEXT, *columnNames]
+        self._populate_combo(self.xComboBox, xyColumnNames, self._default_xy_column(columnNames, ('x', 'dx', 'rx')))
+        self._populate_combo(self.yComboBox, xyColumnNames, self._default_xy_column(columnNames, ('y', 'dy', 'ry')))
+        selectedXY = {
+            columnName
+            for columnName in [self.xComboBox.currentText().strip(), self.yComboBox.currentText().strip()]
+            if not self._is_none_column(columnName)
+        }
         currentZ = self.zComboBox.currentText().strip()
         defaultZ = (
             currentZ
@@ -461,14 +473,18 @@ class TabContourWidget:
         for candidate in candidates:
             if candidate in normalizedMap:
                 return normalizedMap[candidate]
-        return columnNames[0] if columnNames else ''
+        return CONTOUR_NONE_TEXT
 
     def _default_z_column(self, columnNames: list[str]) -> str:
         source = self._active_source()
         if source is None:
             return columnNames[0] if columnNames else ''
         dataFrame = source['dataFrame']
-        selectedXY = {self.xComboBox.currentText().strip(), self.yComboBox.currentText().strip()}
+        selectedXY = {
+            columnName
+            for columnName in [self.xComboBox.currentText().strip(), self.yComboBox.currentText().strip()]
+            if not self._is_none_column(columnName)
+        }
         for columnName in columnNames:
             if columnName in selectedXY:
                 continue
@@ -489,6 +505,9 @@ class TabContourWidget:
 
     def _normalize_name(self, columnName: str) -> str:
         return re.sub(r'[\s_-]+', '', str(columnName).strip().lower())
+
+    def _is_none_column(self, columnName: str) -> bool:
+        return self._normalize_name(columnName) == CONTOUR_NONE_TEXT
 
     def _on_wafer_column_changed(self, *_args) -> None:
         if self._updatingControls:
@@ -666,15 +685,13 @@ class TabContourWidget:
 
     def _draw_plot_when_ready(self, *_args) -> None:
         if not self._has_minimum_plot_inputs():
-            self._set_status('Contour settings ready. Load data and choose X/Y/Z/wafer columns.')
+            self._set_status('Contour settings ready. Load data and choose Z/wafer columns.')
             return
         self._draw_plot()
 
     def _has_minimum_plot_inputs(self) -> bool:
         return bool(
             self._selected_sources()
-            and self.xComboBox.currentText().strip()
-            and self.yComboBox.currentText().strip()
             and self.zComboBox.currentText().strip()
         )
 
@@ -682,6 +699,8 @@ class TabContourWidget:
         self.hasDrawRequest = True
         if not self._has_minimum_plot_inputs():
             self._clear_plot_area('No usable contour data selected.')
+            return
+        if self._needs_virtual_coordinates() and not self._apply_virtual_coordinates_from_dialog():
             return
         try:
             figure, statusText, warningText = self._build_figure()
@@ -694,6 +713,124 @@ class TabContourWidget:
             return
         self.currentPlotFigure = figure
         self._render_figure(figure, statusText, warningText)
+
+    def _needs_virtual_coordinates(self) -> bool:
+        return (
+            self._is_none_column(self.xComboBox.currentText())
+            or self._is_none_column(self.yComboBox.currentText())
+        )
+
+    def _apply_virtual_coordinates_from_dialog(self) -> bool:
+        zColumn = self.zComboBox.currentText().strip()
+        activeSource = self._active_source()
+        if activeSource is None or zColumn not in activeSource['dataFrame'].columns:
+            self._set_status('Choose a valid Z column before generating virtual coordinates.', error=True)
+            return False
+
+        zRowCount = len(activeSource['dataFrame'][zColumn])
+        selectedOption = self._ask_virtual_coordinate_option(zColumn, zRowCount)
+        if selectedOption is None:
+            self._set_status('Virtual coordinate generation cancelled.')
+            return False
+
+        csvFilename, expectedRows = selectedOption
+        try:
+            coordDataFrame = self._load_virtual_coordinate_file(csvFilename, expectedRows)
+            updatedCount = self._apply_virtual_coordinates_to_selected_sources(
+                coordDataFrame,
+                zColumn,
+            )
+        except Exception as exc:
+            QMessageBox.warning(self.rootWidget, 'Contour', str(exc))
+            self._set_status(f'Virtual coordinate error: {exc}', error=True)
+            return False
+
+        if updatedCount <= 0:
+            self._set_status('No selected source can use the virtual coordinates.', error=True)
+            return False
+
+        self._set_xy_combo_text('x', 'y')
+        self._set_status(f'Virtual coordinates added from {csvFilename}. sources={updatedCount}')
+        return True
+
+    def _ask_virtual_coordinate_option(
+        self,
+        zColumn: str,
+        zRowCount: int,
+    ) -> tuple[str, int] | None:
+        messageBox = QMessageBox(self.rootWidget)
+        messageBox.setWindowTitle('Contour')
+        messageBox.setIcon(QMessageBox.Icon.Question)
+        messageBox.setText(
+            '沒有看到x y的可能欄位，你要我幫你產生虛擬座標？\n\n'
+            f'Z({zColumn}) 目前有 {zRowCount} 列資料'
+        )
+        optionButtons = {}
+        for buttonText, option in VIRTUAL_COORD_OPTIONS.items():
+            optionButtons[messageBox.addButton(buttonText, QMessageBox.ButtonRole.AcceptRole)] = option
+        cancelButton = messageBox.addButton(QMessageBox.StandardButton.Cancel)
+        messageBox.setDefaultButton(cancelButton)
+        messageBox.exec()
+        return optionButtons.get(messageBox.clickedButton())
+
+    def _load_virtual_coordinate_file(
+        self,
+        csvFilename: str,
+        expectedRows: int,
+    ) -> pd.DataFrame:
+        csvPath = self._resource_path(csvFilename)
+        if not csvPath.exists():
+            raise ValueError(f'Missing virtual coordinate file: {csvFilename}')
+
+        coordDataFrame = pd.read_csv(csvPath)
+        normalizedColumns = {
+            self._normalize_name(columnName): columnName
+            for columnName in coordDataFrame.columns.astype(str)
+        }
+        if 'x' not in normalizedColumns or 'y' not in normalizedColumns:
+            raise ValueError(f'{csvFilename} must include x,y headers.')
+
+        coordDataFrame = coordDataFrame[[normalizedColumns['x'], normalizedColumns['y']]].copy()
+        coordDataFrame.columns = ['x', 'y']
+        coordDataFrame = coordDataFrame.apply(pd.to_numeric, errors='coerce')
+        coordDataFrame = coordDataFrame.dropna(subset=['x', 'y']).reset_index(drop=True)
+        if len(coordDataFrame) != expectedRows:
+            raise ValueError(f'{csvFilename} must contain {expectedRows} coordinate rows.')
+        return coordDataFrame
+
+    def _resource_path(self, filename: str) -> Path:
+        basePath = getattr(sys, '_MEIPASS', os.path.dirname(__file__))
+        return Path(basePath) / filename
+
+    def _apply_virtual_coordinates_to_selected_sources(
+        self,
+        coordDataFrame: pd.DataFrame,
+        zColumn: str,
+    ) -> int:
+        coordValues = coordDataFrame[['x', 'y']].to_numpy(dtype=float)
+        updatedCount = 0
+        for item in self._selected_file_items():
+            dataFrame = item.data(DATAFRAME_ROLE)
+            if not isinstance(dataFrame, pd.DataFrame) or zColumn not in dataFrame.columns:
+                continue
+            if dataFrame.empty:
+                continue
+            sourceDataFrame = dataFrame.copy()
+            coordIndexes = np.arange(len(sourceDataFrame)) % len(coordValues)
+            sourceDataFrame['x'] = coordValues[coordIndexes, 0]
+            sourceDataFrame['y'] = coordValues[coordIndexes, 1]
+            item.setData(DATAFRAME_ROLE, sourceDataFrame)
+            item.setData(COLUMNS_ROLE, list(sourceDataFrame.columns.astype(str)))
+            updatedCount += 1
+        return updatedCount
+
+    def _set_xy_combo_text(self, xColumn: str, yColumn: str) -> None:
+        self._updatingControls = True
+        for comboBox, columnName in ((self.xComboBox, xColumn), (self.yComboBox, yColumn)):
+            if comboBox.findText(columnName) < 0:
+                comboBox.addItem(columnName)
+            comboBox.setCurrentText(columnName)
+        self._updatingControls = False
 
     def _build_figure(self) -> tuple[go.Figure | None, str, str]:
         sources = self._selected_sources()
@@ -833,6 +970,8 @@ class TabContourWidget:
         yColumn = self.yComboBox.currentText().strip()
         zColumn = self.zComboBox.currentText().strip()
         waferColumn = self.waferColComboBox.currentText().strip()
+        if self._is_none_column(xColumn) or self._is_none_column(yColumn):
+            return pd.DataFrame(), 'missing X/Y coordinates'
         requiredColumns = [xColumn, yColumn, zColumn]
         if waferColumn:
             requiredColumns.append(waferColumn)
