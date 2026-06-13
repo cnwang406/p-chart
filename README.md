@@ -91,9 +91,10 @@ checkboxes and are displayed in a fixed order: `N`, `max`, `1/4Q`, `median`,
 `average`, `3/4Q`, `min`, `standard deviation`, and `range`. Numeric formatting
 accepts Python specifiers such as `.2f`, `.3g`, `,.1f`, or `{value:.2f}`.
 
-Wafermap heatmap mode treats the selected X/Y/Z columns as KGD-style
-`column / row / value` data. The map origin is the lower-left die. Data
-coordinates are normalized before plotting:
+Wafermap draws the wafer edge, effective edge, frames, die grid, optional die
+row/column labels, and optional laser mark. Heat map mode treats the selected
+X/Y/Z columns as KGD-style `column / row / value` data. The map origin is the
+lower-left die. Data coordinates are normalized before plotting:
 
 ```python
 col_on_map = col_on_data - min(col_on_data) + 1
@@ -102,7 +103,9 @@ row_on_map = row_on_data - min(row_on_data) + 1
 
 So the smallest column and row in the loaded data are always drawn at map
 position `(1, 1)`.
-without X,Y,Z selected, a wafer map with frame and die map will be generated.
+Without X/Y/Z selected, a wafer map with frame and die map will be generated.
+Wafermap `Contour map` mode is deprecated; use the Contour tab for real X/Y
+contour mapping.
 
 Contour charts use the Data-tab dataset as the primary file. Select X, Y, and
 Z/value columns, then choose a wafer column when the data has multiple wafers.

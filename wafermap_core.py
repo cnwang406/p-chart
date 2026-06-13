@@ -7,7 +7,6 @@ import tempfile
 
 os.environ.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
 
-import matplotlib.tri as mtri
 import numpy as np
 import pandas as pd
 from matplotlib.axes import Axes
@@ -201,105 +200,6 @@ def build_effective_outline(
     if not np.allclose(bestSegment[0], bestSegment[-1]):
         bestSegment = np.vstack((bestSegment, bestSegment[0]))
     return bestSegment
-
-
-def calculate_positions(
-    df: pd.DataFrame,
-    stepXUm: float,
-    stepYUm: float,
-    offsetXUm: float,
-    offsetYUm: float,
-    coordinateMode: str = "index",
-    indexBaseYUm: float = 0.0,
-) -> pd.DataFrame:
-    result = df.copy()
-    if coordinateMode == "mm":
-        result["posXMm"] = result["siteX"]
-        result["posYMm"] = result["siteY"]
-        result["posXUm"] = result["posXMm"] * 1000.0
-        result["posYUm"] = result["posYMm"] * 1000.0
-    else:
-        siteXIndex = result["siteX"].astype(float)
-        siteYIndex = result["siteY"].astype(float)
-
-        # Auto-detect 1-based integer site indexing and convert to 0-based.
-        if ((siteXIndex - np.round(siteXIndex)).abs() < 1e-9).all() and float(siteXIndex.min()) >= 1.0:
-            siteXIndex = siteXIndex - 1.0
-        if ((siteYIndex - np.round(siteYIndex)).abs() < 1e-9).all() and float(siteYIndex.min()) >= 1.0:
-            siteYIndex = siteYIndex - 1.0
-
-        result["posXUm"] = siteXIndex * stepXUm + offsetXUm - (stepXUm / 2.0)
-        result["posYUm"] = siteYIndex * stepYUm + offsetYUm + indexBaseYUm
-        result["posXMm"] = result["posXUm"] / 1000.0
-        result["posYMm"] = result["posYUm"] / 1000.0
-    return result
-
-
-def collapse_duplicate_points(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    duplicateCount = int(
-        df.duplicated(subset=["posXMm", "posYMm"], keep=False).sum()
-    )
-    groupedDf = (
-        df.groupby(["posXMm", "posYMm"], as_index=False)
-        .agg(
-            thickness=("thickness", "mean"),
-            posXUm=("posXUm", "first"),
-            posYUm=("posYUm", "first"),
-        )
-        .sort_values(["posYMm", "posXMm"])
-        .reset_index(drop=True)
-    )
-    return groupedDf, duplicateCount
-
-
-def count_points_outside_outline(pointsDf: pd.DataFrame, outline: np.ndarray) -> int:
-    outlinePath = MplPath(outline)
-    points = pointsDf[["posXMm", "posYMm"]].to_numpy(dtype=float)
-    inside = outlinePath.contains_points(points)
-    return int((~inside).sum())
-
-
-def build_interpolated_grid(
-    pointsDf: pd.DataFrame,
-    outline: np.ndarray,
-    gridSize: int = 320,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
-    points = pointsDf[["posXMm", "posYMm"]].to_numpy(dtype=float)
-    values = pointsDf["thickness"].to_numpy(dtype=float)
-    if len(points) < 3:
-        return None
-
-    centered = points - points.mean(axis=0, keepdims=True)
-    if np.linalg.matrix_rank(centered) < 2:
-        return None
-
-    xMin, yMin = outline.min(axis=0)
-    xMax, yMax = outline.max(axis=0)
-    gridX, gridY = np.meshgrid(
-        np.linspace(xMin, xMax, gridSize),
-        np.linspace(yMin, yMax, gridSize),
-    )
-
-    triangulation = mtri.Triangulation(points[:, 0], points[:, 1])
-    linearInterpolator = mtri.LinearTriInterpolator(triangulation, values)
-    linearGrid = linearInterpolator(gridX, gridY)
-    if np.ma.isMaskedArray(linearGrid):
-        gridZ = linearGrid.filled(np.nan)
-    else:
-        gridZ = np.asarray(linearGrid, dtype=float)
-
-    missingMask = np.isnan(gridZ)
-    if np.any(missingMask):
-        missingPoints = np.column_stack((gridX[missingMask], gridY[missingMask]))
-        nearestValues = nearest_value_lookup(points, values, missingPoints)
-        gridZ[missingMask] = nearestValues
-
-    outlinePath = MplPath(outline)
-    inside = outlinePath.contains_points(
-        np.column_stack((gridX.ravel(), gridY.ravel()))
-    ).reshape(gridX.shape)
-    gridZ = np.where(inside, gridZ, np.nan)
-    return gridX, gridY, gridZ
 
 
 def build_frame_origins(
@@ -870,12 +770,9 @@ def count_complete_frames(
 
 
 def render_figure(
-    pointsDf: pd.DataFrame,
     waferOutline: np.ndarray,
     effectiveOutline: np.ndarray,
     title: str,
-    contourGrid: tuple[np.ndarray, np.ndarray, np.ndarray] | None,
-    valueLabel: str,
     stepXUm: float,
     stepYUm: float,
     arrayX: int,
@@ -886,9 +783,6 @@ def render_figure(
     bottomMm: float,
     topReferenceY: float,
     bottomReferenceY: float,
-    showContour: bool,
-    contourStyle: str,
-    showContourGrid: bool,
     showInfoPanel: bool,
     showDieLabels: bool,
     infoPanelText: str,
@@ -897,7 +791,6 @@ def render_figure(
     dieLineColor: str,
     effectiveEdgeColor: str,
     waferEdgeColor: str,
-    contourGridColor: str,
     frameLineWidth: float = 0.9,
     dieLineWidth: float = 0.6,
     effectiveEdgeLineWidth: float = 1.4,
@@ -911,8 +804,6 @@ def render_figure(
     infoPanelFontSize: int = 6,
 ) -> Figure:
     radius = np.max(np.linalg.norm(waferOutline, axis=1))
-    hasPoints = not pointsDf.empty
-    canRenderContour = showContour and contourGrid is not None
     figureWidth = 10.2 if showInfoPanel else 8.0
     fig = Figure(figsize=(figureWidth, 8), dpi=200)
     ax = fig.add_subplot(111)
@@ -920,76 +811,6 @@ def render_figure(
     ax.set_facecolor("#f8fbff")
     if showInfoPanel:
         fig.subplots_adjust(right=0.64)
-
-    def add_thickness_colorbar(mappable) -> None:
-        colorbar = fig.colorbar(mappable, ax=ax, fraction=0.046, pad=0.04)
-        colorbar.set_label(valueLabel)
-
-    if canRenderContour:
-        gridX, gridY, gridZ = contourGrid
-        contourMappable = None
-        if contourStyle == "lines":
-            contourMappable = ax.contour(
-                gridX,
-                gridY,
-                gridZ,
-                levels=14,
-                cmap="viridis",
-                linewidths=1.0,
-                alpha=0.95,
-            )
-        elif contourStyle == "filled + lines":
-            contourMappable = ax.contourf(
-                gridX,
-                gridY,
-                gridZ,
-                levels=18,
-                cmap="viridis",
-                alpha=0.86,
-            )
-            ax.contour(
-                gridX,
-                gridY,
-                gridZ,
-                levels=14,
-                colors="#2a2a2a",
-                linewidths=0.55,
-                alpha=0.55,
-            )
-        elif contourStyle == "heatmap":
-            contourMappable = ax.imshow(
-                gridZ,
-                extent=(float(np.nanmin(gridX)), float(np.nanmax(gridX)), float(np.nanmin(gridY)), float(np.nanmax(gridY))),
-                origin="lower",
-                cmap="viridis",
-                alpha=0.88,
-                interpolation="bilinear",
-            )
-        else:
-            contourMappable = ax.contourf(
-                gridX,
-                gridY,
-                gridZ,
-                levels=18,
-                cmap="viridis",
-                alpha=0.88,
-            )
-        add_thickness_colorbar(contourMappable)
-
-    if hasPoints:
-        scatter = ax.scatter(
-            pointsDf["posXMm"],
-            pointsDf["posYMm"],
-            c=pointsDf["thickness"],
-            cmap="viridis",
-            s=46,
-            edgecolors="black",
-            linewidths=0.6,
-            zorder=3,
-        )
-
-        if not canRenderContour:
-            add_thickness_colorbar(scatter)
 
     draw_dies(
         ax,
@@ -1029,7 +850,7 @@ def render_figure(
             linewidth=effectiveEdgeLineWidth,
             zorder=4,
         )
-    laserMarkPolygon = draw_laser_mark(
+    draw_laser_mark(
         ax=ax,
         waferOutline=waferOutline,
         showLaserMark=showLaserMark,
@@ -1040,18 +861,6 @@ def render_figure(
         lineColor=laserMarkColor,
     )
 
-    if hasPoints:
-        for row in pointsDf.itertuples():
-            ax.annotate(
-                f"{row.thickness:.1f}",
-                (row.posXMm, row.posYMm),
-                textcoords="offset points",
-                xytext=(5, 5),
-                fontsize=8,
-                color="#1a1a1a",
-                bbox={"boxstyle": "round,pad=0.18", "fc": "white", "ec": "none", "alpha": 0.7},
-            )
-
     margin = max(radius * 0.06, 5.0)
     ax.set_xlim(waferOutline[:, 0].min() - margin, waferOutline[:, 0].max() + margin)
     ax.set_ylim(waferOutline[:, 1].min() - margin, waferOutline[:, 1].max() + margin)
@@ -1059,10 +868,7 @@ def render_figure(
     ax.set_xlabel("X (mm)")
     ax.set_ylabel("Y (mm)")
     ax.set_title(title)
-    if showContourGrid:
-        ax.grid(True, color=contourGridColor, linestyle="--", linewidth=0.6, alpha=0.9)
-    else:
-        ax.grid(False)
+    ax.grid(False)
 
     if showInfoPanel and infoPanelText:
         fig.text(
