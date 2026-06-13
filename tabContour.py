@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 from loading_overlay import LoadingOverlay
+from pivot_helpers import build_pivot_table, show_pivot_dialog
 from plot_export_helpers import save_plotly_png_and_copy_to_clipboard
 from plotly_local import local_plotly_html
 from qt_helpers import require_child
@@ -134,6 +135,7 @@ class TabContourWidget:
         self.showDetailCheckBox = require_child(rootWidget, QCheckBox, 'contourShowDetailCheckBox')
         self.showValueCheckBox = require_child(rootWidget, QCheckBox, 'contourShowValueCheckBox')
         self.fontSizeSpinBox = require_child(rootWidget, QSpinBox, 'contourFontSizeSpinBox')
+        self.pivotPushButton = require_child(rootWidget, QPushButton, 'pivotPushButton')
         self.downloadPngButton = require_child(rootWidget, QPushButton, 'contourDownloadPngButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'contourDownloadHtmlButton')
 
@@ -205,7 +207,7 @@ class TabContourWidget:
         self.waferDiameterComboBox.setCurrentText('150')
         self.waferFlatComboBox.clear()
         self.waferFlatComboBox.addItems(['47.5 mm', '57.5 mm', 'notch-135', 'notch-180'])
-        self.waferFlatComboBox.setCurrentText('47.5 mm')
+        self.waferFlatComboBox.setCurrentText('57.5 mm')
         self.styleComboBox.clear()
         self.styleComboBox.addItems(CONTOUR_STYLE_OPTIONS)
         self.styleComboBox.setCurrentText(CONTOUR_STYLE_LINEAR)
@@ -220,6 +222,7 @@ class TabContourWidget:
 
     def _configure_signals(self) -> None:
         self.cleanFilesButton.clicked.connect(self._clean_external_files)
+        self.pivotPushButton.clicked.connect(self._show_pivot_table)
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.downloadPngButton.clicked.connect(self._download_png)
         self.filesList.itemSelectionChanged.connect(self._on_file_selection_changed)
@@ -787,6 +790,100 @@ class TabContourWidget:
             and self.yComboBox.currentText().strip()
             and self.zComboBox.currentText().strip()
         )
+
+    def _show_pivot_table(self) -> None:
+        sources = self._selected_sources()
+        if not sources:
+            self._set_status('No contour source available for pivot.', error=True)
+            return
+
+        zColumn = self.zComboBox.currentText().strip()
+        if not zColumn:
+            self._set_status('Choose a valid Z column before pivot.', error=True)
+            return
+
+        xColumn = self.xComboBox.currentText().strip()
+        xColumn = '' if self._is_none_column(xColumn) else xColumn
+        waferColumn = self.waferColComboBox.currentText().strip()
+        hasWaferColumn = bool(waferColumn and not self._is_none_column(waferColumn))
+        selectedWaferIds = self._selected_wafer_ids() if hasWaferColumn else []
+        if hasWaferColumn and not selectedWaferIds:
+            self._set_status('Choose at least one wafer ID before pivot.', error=True)
+            return
+
+        existingColumns = set()
+        for source in sources:
+            dataFrame = source['dataFrame']
+            if isinstance(dataFrame, pd.DataFrame):
+                existingColumns.update(dataFrame.columns.astype(str))
+        sourceGroupColumn = self._unique_column_name('source', existingColumns)
+        waferGroupColumn = self._unique_column_name('wafer', existingColumns | {sourceGroupColumn})
+
+        pivotFrames = []
+        skippedSources = []
+        for source in sources:
+            sourceName = str(source.get('name') or 'source')
+            dataFrame = source['dataFrame']
+            if not isinstance(dataFrame, pd.DataFrame) or dataFrame.empty:
+                skippedSources.append(f'{sourceName}: empty')
+                continue
+            if zColumn not in dataFrame.columns:
+                skippedSources.append(f'{sourceName}: missing {zColumn}')
+                continue
+
+            frameColumns = [zColumn]
+            activeXColumn = xColumn if xColumn and xColumn in dataFrame.columns else ''
+            if activeXColumn:
+                frameColumns.append(activeXColumn)
+            if hasWaferColumn:
+                if waferColumn not in dataFrame.columns:
+                    skippedSources.append(f'{sourceName}: missing {waferColumn}')
+                    continue
+                frameColumns.append(waferColumn)
+
+            pivotFrame = dataFrame[frameColumns].copy()
+            if hasWaferColumn:
+                pivotFrame[waferGroupColumn] = pivotFrame[waferColumn].map(self._format_wafer_value)
+                pivotFrame = pivotFrame.loc[pivotFrame[waferGroupColumn].isin(selectedWaferIds)]
+            if len(sources) > 1:
+                pivotFrame[sourceGroupColumn] = sourceName
+            if pivotFrame.empty:
+                skippedSources.append(f'{sourceName}: no selected rows')
+                continue
+            pivotFrames.append(pivotFrame)
+
+        if not pivotFrames:
+            message = 'No data available for contour pivot.'
+            if skippedSources:
+                message += ' ' + '; '.join(skippedSources)
+            self._set_status(message, error=True)
+            return
+
+        pivotInputData = pd.concat(pivotFrames, ignore_index=True)
+        groupColumns = []
+        if len(sources) > 1:
+            groupColumns.append(sourceGroupColumn)
+        if hasWaferColumn:
+            groupColumns.append(waferGroupColumn)
+
+        pivotData = build_pivot_table(pivotInputData, zColumn, groupColumns, xColumn)
+        if pivotData.empty:
+            self._set_status('No numeric Z data available for contour pivot.', error=True)
+            return
+
+        show_pivot_dialog(self.rootWidget, 'Contour pivot', pivotData)
+        message = f'Contour pivot ready. rows={len(pivotData)}'
+        if skippedSources:
+            message += ' skipped: ' + '; '.join(skippedSources)
+        self._set_status(message, error=bool(skippedSources))
+
+    def _unique_column_name(self, baseName: str, existingColumns: set[str]) -> str:
+        columnName = baseName
+        suffix = 2
+        while columnName in existingColumns:
+            columnName = f'{baseName}_{suffix}'
+            suffix += 1
+        return columnName
 
     def _draw_plot(self) -> None:
         if not self.isActiveTab:
@@ -1752,13 +1849,14 @@ class TabContourWidget:
             self._default_export_filename('.png'),
             'PNG Files (*.png);;All Files (*)',
         )
-        if not selectedFile:
-            return
-        if not selectedFile.lower().endswith('.png'):
+        if selectedFile and not selectedFile.lower().endswith('.png'):
             selectedFile = f'{selectedFile}.png'
         try:
             save_plotly_png_and_copy_to_clipboard(self.currentPlotFigure, selectedFile)
-            self._set_status(f'Contour PNG saved to {selectedFile} and copied to clipboard.')
+            if selectedFile:
+                self._set_status(f'Contour PNG saved to {selectedFile} and copied to clipboard.')
+            else:
+                self._set_status('Contour PNG copied to clipboard.')
         except Exception as exc:
             self._set_status(f'Failed to save contour PNG: {exc}', error=True)
 
