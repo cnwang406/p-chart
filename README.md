@@ -17,8 +17,10 @@ License: MIT
   reference lines, auto ranges, and Y statistics.
 - Create Plotly box plots with Y, Group 1, Group 2, sorted X categories, point
   display options, Y lines, and selectable per-box annotations.
-- Create wafer maps with frame/die layout, matplotlib contour maps, and KGD-like
-  die heatmaps.
+- Create wafer maps with frame/die layout and KGD-like die heatmaps.
+- Create contour maps from real X/Y coordinates or generated 49/81-point
+  virtual coordinates, with wafer-ID subplot grids and selectable interpolation
+  styles.
 - Compare CSV/TXT log files with selectable X, Y1, and Y2 columns in overlay
   or subplot layouts.
 - Support drag-and-drop loading, date-aware scatter X axes, and copyable pivot
@@ -48,6 +50,14 @@ To force the system-browser Plotly fallback:
 .venv/bin/python app.py -W
 ```
 
+If the local PySide6 environment fails to launch on macOS, `run2.sh` can restore
+the alternate checked-local virtual environment:
+
+```bash
+sh run2.sh
+.venv/bin/python app.py --no-webengine
+```
+
 ## Package
 
 ```bash
@@ -69,7 +79,7 @@ image, app icons, and Windows `.ico`.
 2. app will auto find out  `Stubnames`, `Suffix regex`, and suffix output column.
 3. Confirm auto generated matching columns in `Columns (a/b)`.
 4. Click `wide_to_long`.
-5. Use the enabled Scatter, Boxplot, Wafermap, or Log tab.
+5. Use the enabled Scatter, Boxplot, Wafermap, Contour, or Log tab.
 
 Scatter charts draw automatically after X and Y are selected. Reference lines
 support color, opacity/width, auto ranges, and Y-based statistics including Ca,
@@ -94,6 +104,22 @@ So the smallest column and row in the loaded data are always drawn at map
 position `(1, 1)`.
 without X,Y,Z selected, a wafer map with frame and die map will be generated.
 
+Contour charts use the Data-tab dataset as the primary file. Select X, Y, and
+Z/value columns, then choose a wafer column when the data has multiple wafers.
+The wafer column picker includes `none` first, but auto-selects `waferID`,
+`wafer`, or `id` when those columns exist. If X/Y are missing, the Contour tab
+can generate virtual coordinates from bundled `coord-49.csv` or `coord-81.csv`;
+those generated X/Y columns are also written back to the Data tab preview so the
+mapping can be inspected before exporting or redrawing.
+
+Contour maps support filled heatmap mode or line-only mode. Line-only mode uses
+the line-space value, which defaults to `z range / 10`. Site markers are drawn
+on top of the contour map, and value labels can be toggled. Available
+interpolation styles are `Linear triangulation`, `Cubic triangulation`,
+`IDW, inverse distance weighting`, and `Kriging / Gaussian process`. In grid
+mode, wafer subplots keep their own fixed X/Y aspect ratio so each wafer remains
+round.
+
 Log charts use the Data-tab dataset as the primary file and can compare
 additional dropped CSV/TXT log files. Select X plus one or more Y1/Y2 columns,
 then choose overlap or subplot mode and click Refresh Plot. With one selected
@@ -110,7 +136,11 @@ Refresh Plot clears the plot area and export state.
 - `plotly_local.py`: local Plotly HTML helper for offline chart rendering.
 - `tabData.py`, `tabScatter.py`, `tabBoxplot.py`: tab controllers.
 - `tabWafermap.py`, `wafermap_core.py`: wafer map controller and geometry logic.
+- `tabContour.py`, `coord-49.csv`, `coord-81.csv`: contour controller and
+  bundled virtual coordinate templates.
 - `tabLog.py`: multi-file log chart controller.
+- `demo/demo_contour_1.csv`, `demo/demo_contour_3.csv`: small contour demo
+  datasets for one-wafer and three-wafer virtual-coordinate checks.
 - `p-chart.spec`: PyInstaller build config.
 - `LICENSE`: MIT License.
 

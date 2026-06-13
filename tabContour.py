@@ -52,6 +52,16 @@ DATAFRAME_ROLE = PRIMARY_FILE_ROLE + 1
 COLUMNS_ROLE = DATAFRAME_ROLE + 1
 CONTOUR_FILE_EXTENSIONS = ('.csv', '.txt')
 CONTOUR_NONE_TEXT = 'none'
+CONTOUR_STYLE_LINEAR = 'Linear triangulation'
+CONTOUR_STYLE_CUBIC = 'Cubic triangulation'
+CONTOUR_STYLE_IDW = 'IDW, inverse distance weighting'
+CONTOUR_STYLE_GAUSSIAN = 'Kriging / Gaussian process'
+CONTOUR_STYLE_OPTIONS = [
+    CONTOUR_STYLE_LINEAR,
+    CONTOUR_STYLE_CUBIC,
+    CONTOUR_STYLE_IDW,
+    CONTOUR_STYLE_GAUSSIAN,
+]
 VIRTUAL_COORD_OPTIONS = {
     '49點': ('coord-49.csv', 49),
     '81點': ('coord-81.csv', 81),
@@ -102,9 +112,12 @@ class TabContourWidget:
         self.zComboBox = require_child(rootWidget, QComboBox, 'contourZComboBox')
         self.waferIDComboBox = require_child(rootWidget, QComboBox, 'contourWaferIDComboBox')
         self.waferColComboBox = require_child(rootWidget, QComboBox, 'contourWaferColComboBox')
+        self.styleComboBox = require_child(rootWidget, QComboBox, 'contourStyleComboBox')
         self.titleLineEdit = require_child(rootWidget, QLineEdit, 'contourTitleLineEdit')
         self.limitHighLineEdit = require_child(rootWidget, QLineEdit, 'contourLimitHighLineEdit')
         self.limitLowLineEdit = require_child(rootWidget, QLineEdit, 'contourLimitLowLineEdit')
+        self.fillCheckBox = require_child(rootWidget, QCheckBox, 'contourFillCheckBox')
+        self.lineSpaceLineEdit = require_child(rootWidget, QLineEdit, 'contourLineSpaceLineEdit')
         self.limitHighColorLabel = require_child(rootWidget, QLabel, 'contourLimitHighColorLabel')
         self.limitLowColorLabel = require_child(rootWidget, QLabel, 'contourLimitLowColorLabel')
         self.singleRadioButton = require_child(rootWidget, QRadioButton, 'contourChartsSingleRadioButton')
@@ -119,6 +132,7 @@ class TabContourWidget:
         self.waferDiameterComboBox = require_child(rootWidget, QComboBox, 'contourWaferDiameterComboBox')
         self.waferFlatComboBox = require_child(rootWidget, QComboBox, 'contourWaferFlatComboBox')
         self.showDetailCheckBox = require_child(rootWidget, QCheckBox, 'contourShowDetailCheckBox')
+        self.showValueCheckBox = require_child(rootWidget, QCheckBox, 'contourShowValueCheckBox')
         self.fontSizeSpinBox = require_child(rootWidget, QSpinBox, 'contourFontSizeSpinBox')
         self.downloadPngButton = require_child(rootWidget, QPushButton, 'contourDownloadPngButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'contourDownloadHtmlButton')
@@ -135,6 +149,11 @@ class TabContourWidget:
         self._checkableWaferMode = False
         self._updatingWaferChecks = False
         self._lastPolarWarning = ''
+        self.isActiveTab = False
+        self.cancelledVirtualCoordinateKey = None
+        self._contourGridCache = {}
+        self._virtualCoordinateDialogOpen = False
+        self._applyingVirtualCoordinates = False
 
         self.waferIdModel = QStandardItemModel(self.waferIDComboBox)
         self.waferIDComboBox.setModel(self.waferIdModel)
@@ -187,8 +206,12 @@ class TabContourWidget:
         self.waferFlatComboBox.clear()
         self.waferFlatComboBox.addItems(['47.5 mm', '57.5 mm', 'notch-135', 'notch-180'])
         self.waferFlatComboBox.setCurrentText('47.5 mm')
+        self.styleComboBox.clear()
+        self.styleComboBox.addItems(CONTOUR_STYLE_OPTIONS)
+        self.styleComboBox.setCurrentText(CONTOUR_STYLE_LINEAR)
         if not self.titleLineEdit.text().strip():
             self.titleLineEdit.setText('Contour Map')
+        self._update_contour_fill_controls()
         self.filesList.setAcceptDrops(True)
         self.filesList.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
         self.filesList.installEventFilter(self.fileDropFilter)
@@ -203,16 +226,24 @@ class TabContourWidget:
         self.singleRadioButton.toggled.connect(self._on_chart_mode_toggled)
         self.gridRadioButton.toggled.connect(self._on_chart_mode_toggled)
         self.waferColComboBox.currentTextChanged.connect(self._on_wafer_column_changed)
+        self.styleComboBox.currentTextChanged.connect(self._on_contour_style_changed)
         self.xComboBox.currentTextChanged.connect(self._on_column_selection_changed)
         self.yComboBox.currentTextChanged.connect(self._on_column_selection_changed)
         self.zComboBox.currentTextChanged.connect(self._on_z_column_changed)
         self.waferIDComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
-        for lineEdit in [self.titleLineEdit, self.limitHighLineEdit, self.limitLowLineEdit]:
+        for lineEdit in [
+            self.titleLineEdit,
+            self.limitHighLineEdit,
+            self.limitLowLineEdit,
+            self.lineSpaceLineEdit,
+        ]:
             lineEdit.editingFinished.connect(self._draw_plot_when_ready)
+        self.fillCheckBox.stateChanged.connect(self._on_contour_fill_changed)
         self.waferDiameterComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
         self.waferFlatComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
         self.excludeSpinBox.valueChanged.connect(self._draw_plot_when_ready)
         self.showDetailCheckBox.stateChanged.connect(self._draw_plot_when_ready)
+        self.showValueCheckBox.stateChanged.connect(self._draw_plot_when_ready)
         self.fontSizeSpinBox.valueChanged.connect(self._draw_plot_when_ready)
 
     def set_tab_data(self, tabDataWidget) -> None:
@@ -221,9 +252,20 @@ class TabContourWidget:
             self.tabDataWidget.add_data_changed_callback(self._sync_primary_data)
         self._sync_primary_data()
 
+    def set_active_tab(self, isActive: bool) -> None:
+        wasActive = self.isActiveTab
+        self.isActiveTab = isActive
+        if isActive and not wasActive:
+            self.cancelledVirtualCoordinateKey = None
+            self._draw_plot_when_ready()
+
     def _sync_primary_data(self) -> None:
         if self.tabDataWidget is None:
             return
+        if self._applyingVirtualCoordinates:
+            return
+        self._clear_virtual_coordinate_cancel()
+        self._clear_contour_cache()
         dataFrame = self.tabDataWidget.get_plot_data()
         normalizedPath = self._normalized_path(self.tabDataWidget.loadedFilePath) if self.tabDataWidget.loadedFilePath else ''
         primaryKey = normalizedPath if normalizedPath else '<tabdata-current>'
@@ -278,6 +320,8 @@ class TabContourWidget:
         if self.tabDataWidget is None:
             self._set_status('Load data tab once before adding contour files.', error=True)
             return
+        self._clear_virtual_coordinate_cancel()
+        self._clear_contour_cache()
 
         existingPaths = {
             str(self.filesList.item(rowIndex).data(FILE_PATH_ROLE) or '')
@@ -337,6 +381,8 @@ class TabContourWidget:
         return dataFrame
 
     def _clean_external_files(self) -> None:
+        self._clear_virtual_coordinate_cancel()
+        self._clear_contour_cache()
         self._updatingFilesList = True
         for rowIndex in range(self.filesList.count() - 1, -1, -1):
             item = self.filesList.item(rowIndex)
@@ -353,6 +399,7 @@ class TabContourWidget:
     def _on_file_selection_changed(self) -> None:
         if self._updatingFilesList:
             return
+        self._clear_virtual_coordinate_cancel()
         self._apply_chart_mode()
         self._refresh_column_options()
         self._draw_plot_when_ready()
@@ -360,6 +407,7 @@ class TabContourWidget:
     def _on_chart_mode_toggled(self, checked: bool) -> None:
         if not checked:
             return
+        self._clear_virtual_coordinate_cancel()
         self._apply_chart_mode()
         self._refresh_wafer_id_values()
         self._draw_plot_when_ready()
@@ -447,7 +495,8 @@ class TabContourWidget:
             else self._default_z_column(columnNames)
         )
         self._populate_combo(self.zComboBox, columnNames, defaultZ, preserveCurrent=False)
-        self._populate_combo(self.waferColComboBox, columnNames, self._default_wafer_column(columnNames))
+        waferColumnNames = [CONTOUR_NONE_TEXT, *columnNames]
+        self._populate_combo(self.waferColComboBox, waferColumnNames, self._default_wafer_column(columnNames))
         self._updatingControls = False
         self._refresh_wafer_id_values()
         self._update_limits_from_z_column()
@@ -494,10 +543,14 @@ class TabContourWidget:
         return columnNames[0] if columnNames else ''
 
     def _default_wafer_column(self, columnNames: list[str]) -> str:
+        normalizedMap = {self._normalize_name(columnName): columnName for columnName in columnNames}
+        for candidate in ('waferid', 'wafer', 'id'):
+            if candidate in normalizedMap:
+                return normalizedMap[candidate]
         for columnName in columnNames:
             if self._is_wafer_column(columnName):
                 return columnName
-        return columnNames[0] if columnNames else ''
+        return CONTOUR_NONE_TEXT
 
     def _is_wafer_column(self, columnName: str) -> bool:
         normalizedText = self._normalize_name(columnName)
@@ -512,27 +565,52 @@ class TabContourWidget:
     def _on_wafer_column_changed(self, *_args) -> None:
         if self._updatingControls:
             return
+        self._clear_virtual_coordinate_cancel()
+        self._clear_contour_cache()
         self._refresh_wafer_id_values()
         self._draw_plot_when_ready()
 
     def _on_column_selection_changed(self, *_args) -> None:
         if self._updatingControls:
             return
+        self._clear_virtual_coordinate_cancel()
+        self._clear_contour_cache()
         self._update_limits_from_z_column()
         self._draw_plot_when_ready()
 
     def _on_z_column_changed(self, *_args) -> None:
         if self._updatingControls:
             return
+        self._clear_virtual_coordinate_cancel()
+        self._clear_contour_cache()
         self._update_limits_from_z_column()
         self._draw_plot_when_ready()
+
+    def _on_contour_style_changed(self, *_args) -> None:
+        self._clear_contour_cache()
+        self._draw_plot_when_ready()
+
+    def _on_contour_fill_changed(self, *_args) -> None:
+        self._update_contour_fill_controls()
+        self._draw_plot_when_ready()
+
+    def _update_contour_fill_controls(self) -> None:
+        fillEnabled = self.fillCheckBox.isChecked()
+        for widget in (
+            self.limitHighLineEdit,
+            self.limitLowLineEdit,
+            self.limitHighColorLabel,
+            self.limitLowColorLabel,
+        ):
+            widget.setEnabled(fillEnabled)
+        self.lineSpaceLineEdit.setEnabled(not fillEnabled)
 
     def _refresh_wafer_id_values(self) -> None:
         source = self._active_source()
         columnName = self.waferColComboBox.currentText().strip()
-        values = []
+        values = ['1'] if self._is_none_column(columnName) else []
         seenValues = set()
-        if source is not None:
+        if source is not None and not self._is_none_column(columnName):
             dataFrame = source['dataFrame']
             if columnName in dataFrame.columns:
                 for value in dataFrame[columnName]:
@@ -601,6 +679,7 @@ class TabContourWidget:
     def _on_wafer_item_changed(self, item: QStandardItem) -> None:
         if self._updatingWaferChecks or not self._checkableWaferMode:
             return
+        self._clear_virtual_coordinate_cancel()
         self._updatingWaferChecks = True
         if item.row() == 0:
             targetState = item.checkState()
@@ -637,6 +716,8 @@ class TabContourWidget:
         return checkedItems
 
     def _selected_wafer_ids(self) -> list[str]:
+        if self._is_none_column(self.waferColComboBox.currentText()):
+            return ['1']
         if self._checkableWaferMode:
             checkedItems = self._checked_wafer_items()
             if 'all' in checkedItems:
@@ -673,29 +754,44 @@ class TabContourWidget:
         numericSeries = pd.to_numeric(dataFrame[zColumn], errors='coerce').dropna()
         if numericSeries.empty:
             return
+        zRange = float(numericSeries.max() - numericSeries.min())
         self.limitHighLineEdit.blockSignals(True)
         self.limitLowLineEdit.blockSignals(True)
+        self.lineSpaceLineEdit.blockSignals(True)
         self.limitHighLineEdit.setText(self._format_limit(float(numericSeries.max())))
         self.limitLowLineEdit.setText(self._format_limit(float(numericSeries.min())))
+        if zRange > 0:
+            self.lineSpaceLineEdit.setText(self._format_limit(zRange / 10.0))
         self.limitHighLineEdit.blockSignals(False)
         self.limitLowLineEdit.blockSignals(False)
+        self.lineSpaceLineEdit.blockSignals(False)
 
     def _format_limit(self, value: float) -> str:
         return f'{value:.6g}'
 
     def _draw_plot_when_ready(self, *_args) -> None:
+        if self._virtualCoordinateDialogOpen or self._applyingVirtualCoordinates:
+            return
         if not self._has_minimum_plot_inputs():
             self._set_status('Contour settings ready. Load data and choose Z/wafer columns.')
+            return
+        if not self.isActiveTab:
+            self._set_status('Contour settings ready. Switch to Contour tab to draw.')
             return
         self._draw_plot()
 
     def _has_minimum_plot_inputs(self) -> bool:
         return bool(
             self._selected_sources()
+            and self.xComboBox.currentText().strip()
+            and self.yComboBox.currentText().strip()
             and self.zComboBox.currentText().strip()
         )
 
     def _draw_plot(self) -> None:
+        if not self.isActiveTab:
+            self._set_status('Contour settings ready. Switch to Contour tab to draw.')
+            return
         self.hasDrawRequest = True
         if not self._has_minimum_plot_inputs():
             self._clear_plot_area('No usable contour data selected.')
@@ -727,31 +823,89 @@ class TabContourWidget:
             self._set_status('Choose a valid Z column before generating virtual coordinates.', error=True)
             return False
 
-        zRowCount = len(activeSource['dataFrame'][zColumn])
-        selectedOption = self._ask_virtual_coordinate_option(zColumn, zRowCount)
+        promptKey = self._virtual_coordinate_prompt_key(zColumn)
+        if promptKey == self.cancelledVirtualCoordinateKey:
+            self._cancel_virtual_coordinate_generation()
+            return False
+
+        zRowCount = int(pd.to_numeric(activeSource['dataFrame'][zColumn], errors='coerce').notna().sum())
+        sourceSnapshots = self._virtual_coordinate_source_snapshots()
+        self._virtualCoordinateDialogOpen = True
+        try:
+            selectedOption = self._ask_virtual_coordinate_option(zColumn, zRowCount)
+        finally:
+            self._virtualCoordinateDialogOpen = False
         if selectedOption is None:
-            self._set_status('Virtual coordinate generation cancelled.')
+            self.cancelledVirtualCoordinateKey = promptKey
+            self._cancel_virtual_coordinate_generation(sourceSnapshots)
             return False
 
         csvFilename, expectedRows = selectedOption
         try:
+            self._applyingVirtualCoordinates = True
             coordDataFrame = self._load_virtual_coordinate_file(csvFilename, expectedRows)
             updatedCount = self._apply_virtual_coordinates_to_selected_sources(
                 coordDataFrame,
                 zColumn,
             )
+            if updatedCount > 0:
+                self._set_xy_combo_text('x', 'y')
         except Exception as exc:
             QMessageBox.warning(self.rootWidget, 'Contour', str(exc))
             self._set_status(f'Virtual coordinate error: {exc}', error=True)
             return False
+        finally:
+            self._applyingVirtualCoordinates = False
 
         if updatedCount <= 0:
             self._set_status('No selected source can use the virtual coordinates.', error=True)
             return False
 
-        self._set_xy_combo_text('x', 'y')
+        self._clear_virtual_coordinate_cancel()
+        self._clear_contour_cache()
         self._set_status(f'Virtual coordinates added from {csvFilename}. sources={updatedCount}')
         return True
+
+    def _virtual_coordinate_prompt_key(self, zColumn: str) -> tuple[str, tuple[tuple[str, int], ...]]:
+        sourceKeys = []
+        for source in self._selected_sources():
+            dataFrame = source['dataFrame']
+            if zColumn not in dataFrame.columns:
+                continue
+            usableCount = int(pd.to_numeric(dataFrame[zColumn], errors='coerce').notna().sum())
+            sourceKeys.append((str(source['path'] or source['name']), usableCount))
+        return zColumn, tuple(sourceKeys)
+
+    def _clear_virtual_coordinate_cancel(self) -> None:
+        self.cancelledVirtualCoordinateKey = None
+
+    def _virtual_coordinate_source_snapshots(self) -> list[tuple[QListWidgetItem, pd.DataFrame, list[str]]]:
+        snapshots = []
+        for item in self._selected_file_items():
+            dataFrame = item.data(DATAFRAME_ROLE)
+            if isinstance(dataFrame, pd.DataFrame):
+                snapshots.append((item, dataFrame.copy(), list(dataFrame.columns.astype(str))))
+        return snapshots
+
+    def _restore_virtual_coordinate_sources(
+        self,
+        snapshots: list[tuple[QListWidgetItem, pd.DataFrame, list[str]]],
+    ) -> None:
+        for item, dataFrame, columns in snapshots:
+            item.setData(DATAFRAME_ROLE, dataFrame)
+            item.setData(COLUMNS_ROLE, columns)
+
+    def _cancel_virtual_coordinate_generation(
+        self,
+        sourceSnapshots: list[tuple[QListWidgetItem, pd.DataFrame, list[str]]] | None = None,
+    ) -> None:
+        if sourceSnapshots:
+            self._restore_virtual_coordinate_sources(sourceSnapshots)
+        self.hasDrawRequest = False
+        self._clear_plot_area('Virtual coordinate generation cancelled. No contour plot created.')
+
+    def _clear_contour_cache(self) -> None:
+        self._contourGridCache.clear()
 
     def _ask_virtual_coordinate_option(
         self,
@@ -795,7 +949,10 @@ class TabContourWidget:
         coordDataFrame = coordDataFrame.apply(pd.to_numeric, errors='coerce')
         coordDataFrame = coordDataFrame.dropna(subset=['x', 'y']).reset_index(drop=True)
         if len(coordDataFrame) != expectedRows:
-            raise ValueError(f'{csvFilename} must contain {expectedRows} coordinate rows.')
+            raise ValueError(
+                f'{csvFilename} has {len(coordDataFrame)} coordinate data rows; '
+                f'expected {expectedRows}. CSV header is not counted.'
+            )
         return coordDataFrame
 
     def _resource_path(self, filename: str) -> Path:
@@ -815,22 +972,37 @@ class TabContourWidget:
                 continue
             if dataFrame.empty:
                 continue
+            usableMask = pd.to_numeric(dataFrame[zColumn], errors='coerce').notna()
+            usableCount = int(usableMask.sum())
+            if usableCount <= 0 or usableCount % len(coordValues) != 0:
+                raise ValueError(
+                    f'{item.text()}: Z({zColumn}) has {usableCount} numeric data rows; '
+                    f'expected a multiple of {len(coordValues)}. CSV header is not counted.'
+                )
             sourceDataFrame = dataFrame.copy()
-            coordIndexes = np.arange(len(sourceDataFrame)) % len(coordValues)
-            sourceDataFrame['x'] = coordValues[coordIndexes, 0]
-            sourceDataFrame['y'] = coordValues[coordIndexes, 1]
+            coordIndexes = np.arange(usableCount) % len(coordValues)
+            sourceDataFrame.loc[usableMask, 'x'] = coordValues[coordIndexes, 0]
+            sourceDataFrame.loc[usableMask, 'y'] = coordValues[coordIndexes, 1]
             item.setData(DATAFRAME_ROLE, sourceDataFrame)
             item.setData(COLUMNS_ROLE, list(sourceDataFrame.columns.astype(str)))
+            if bool(item.data(PRIMARY_FILE_ROLE)) and self.tabDataWidget is not None:
+                if hasattr(self.tabDataWidget, 'apply_virtual_coordinates'):
+                    self.tabDataWidget.apply_virtual_coordinates(sourceDataFrame)
             updatedCount += 1
         return updatedCount
 
     def _set_xy_combo_text(self, xColumn: str, yColumn: str) -> None:
         self._updatingControls = True
-        for comboBox, columnName in ((self.xComboBox, xColumn), (self.yComboBox, yColumn)):
-            if comboBox.findText(columnName) < 0:
-                comboBox.addItem(columnName)
-            comboBox.setCurrentText(columnName)
-        self._updatingControls = False
+        blockers = []
+        try:
+            for comboBox, columnName in ((self.xComboBox, xColumn), (self.yComboBox, yColumn)):
+                blockers.append(QSignalBlocker(comboBox))
+                if comboBox.findText(columnName) < 0:
+                    comboBox.addItem(columnName)
+                comboBox.setCurrentText(columnName)
+        finally:
+            blockers.clear()
+            self._updatingControls = False
 
     def _build_figure(self) -> tuple[go.Figure | None, str, str]:
         sources = self._selected_sources()
@@ -864,11 +1036,18 @@ class TabContourWidget:
             vertical_spacing=0.08,
         )
         waferOutline, effectiveOutline = self._wafer_outlines()
-        limitLow, limitHigh = self._color_limits()
-        colorScale = [
-            [0.0, self._label_color(self.limitLowColorLabel, '#2171ff')],
-            [1.0, self._label_color(self.limitHighColorLabel, '#ff540e')],
-        ]
+        fillContour = self.fillCheckBox.isChecked()
+        limitLow = None
+        limitHigh = None
+        colorScale = []
+        if fillContour:
+            limitLow, limitHigh = self._color_limits()
+            colorScale = [
+                [0.0, self._label_color(self.limitLowColorLabel, '#2171ff')],
+                [1.0, self._label_color(self.limitHighColorLabel, '#ff540e')],
+            ]
+        else:
+            self._contour_line_space()
         warnings = []
         plottedCount = 0
         emptyCount = 0
@@ -876,33 +1055,39 @@ class TabContourWidget:
         for subplotIndex, (source, waferId) in enumerate(subplotJobs):
             rowIndex = subplotIndex // columnCount + 1
             columnIndex = subplotIndex % columnCount + 1
-            preparedData, dataWarning = self._prepared_source_data(source, waferId, effectiveOutline)
+            cacheKey = self._contour_cache_key(source, waferId)
+            cachedContour = self._contourGridCache.get(cacheKey)
+            if cachedContour is None:
+                preparedData, dataWarning = self._prepared_source_data(source, waferId, effectiveOutline)
+                contourGrid = None if preparedData.empty else self._build_contour_grid(preparedData, effectiveOutline)
+                siteData = preparedData[['x', 'y', 'z']].copy() if not preparedData.empty else pd.DataFrame()
+                self._contourGridCache[cacheKey] = (dataWarning, contourGrid, siteData)
+            else:
+                dataWarning, contourGrid, siteData = cachedContour
             if dataWarning:
                 warnings.append(f'{source["name"]} #{waferId}: {dataWarning}')
-            if preparedData.empty:
+            if contourGrid is None:
                 self._add_empty_subplot(figure, rowIndex, columnIndex, waferOutline, effectiveOutline)
+                if not dataWarning:
+                    warnings.append(f'{source["name"]} #{waferId}: insufficient contour points')
                 emptyCount += 1
             else:
-                contourGrid = self._build_contour_grid(preparedData, effectiveOutline)
-                if contourGrid is None:
-                    self._add_empty_subplot(figure, rowIndex, columnIndex, waferOutline, effectiveOutline)
-                    warnings.append(f'{source["name"]} #{waferId}: insufficient contour points')
-                    emptyCount += 1
-                else:
-                    self._add_contour_subplot(
-                        figure,
-                        rowIndex,
-                        columnIndex,
-                        contourGrid,
-                        waferOutline,
-                        effectiveOutline,
-                        colorScale,
-                        limitLow,
-                        limitHigh,
-                        showScale=plottedCount == 0,
-                    )
-                    plottedCount += 1
-            self._apply_subplot_axes(figure, rowIndex, columnIndex, waferOutline)
+                self._add_contour_subplot(
+                    figure,
+                    rowIndex,
+                    columnIndex,
+                    contourGrid,
+                    waferOutline,
+                    effectiveOutline,
+                    colorScale,
+                    limitLow,
+                    limitHigh,
+                    fillContour,
+                    showScale=plottedCount == 0,
+                )
+                self._add_site_markers(figure, rowIndex, columnIndex, siteData)
+                plottedCount += 1
+            self._apply_subplot_axes(figure, rowIndex, columnIndex, columnCount, waferOutline)
 
         if plottedCount <= 0:
             statusText = 'No usable contour points in selected wafer area.'
@@ -913,6 +1098,20 @@ class TabContourWidget:
         warningText = '; '.join(dict.fromkeys([warning for warning in warnings if warning]))
         self._apply_common_layout(figure, rowCount, columnCount)
         return figure, statusText, warningText
+
+    def _contour_cache_key(self, source: dict[str, object], waferId: str) -> tuple[object, ...]:
+        return (
+            str(source.get('path') or source.get('name') or ''),
+            waferId,
+            self.xComboBox.currentText().strip(),
+            self.yComboBox.currentText().strip(),
+            self.zComboBox.currentText().strip(),
+            self.waferColComboBox.currentText().strip(),
+            self._contour_style(),
+            self._wafer_diameter(),
+            self._flat_option(),
+            float(self.excludeSpinBox.value()),
+        )
 
     def _subplot_title(self, sourceName: str, waferId: str) -> str:
         return f'{sourceName} #{waferId}' if waferId else sourceName
@@ -959,6 +1158,28 @@ class TabContourWidget:
             raise ValueError('Contour high limit must be greater than low limit.')
         return limitLow, limitHigh
 
+    def _contour_line_space(self) -> float:
+        try:
+            lineSpace = float(self.lineSpaceLineEdit.text().strip())
+        except ValueError:
+            raise ValueError('Contour line space must be numeric.')
+        if lineSpace <= 0:
+            raise ValueError('Contour line space must be greater than zero.')
+        return lineSpace
+
+    def _contour_line_range(self, gridZ: np.ndarray) -> tuple[float, float]:
+        finiteValues = gridZ[np.isfinite(gridZ)]
+        if finiteValues.size <= 0:
+            raise ValueError('No finite contour values for line contour.')
+        lineSpace = self._contour_line_space()
+        valueMin = float(finiteValues.min())
+        valueMax = float(finiteValues.max())
+        lineStart = math.floor(valueMin / lineSpace) * lineSpace
+        lineEnd = math.ceil(valueMax / lineSpace) * lineSpace
+        if lineEnd <= lineStart:
+            lineEnd = lineStart + lineSpace
+        return lineStart, lineEnd
+
     def _prepared_source_data(
         self,
         source: dict[str, object],
@@ -973,14 +1194,14 @@ class TabContourWidget:
         if self._is_none_column(xColumn) or self._is_none_column(yColumn):
             return pd.DataFrame(), 'missing X/Y coordinates'
         requiredColumns = [xColumn, yColumn, zColumn]
-        if waferColumn:
+        if waferColumn and not self._is_none_column(waferColumn):
             requiredColumns.append(waferColumn)
         missingColumns = [column for column in requiredColumns if column not in dataFrame.columns]
         if missingColumns:
             return pd.DataFrame(), f'missing {", ".join(missingColumns)}'
 
         filteredData = dataFrame
-        if waferId and waferColumn in filteredData.columns:
+        if waferId and not self._is_none_column(waferColumn) and waferColumn in filteredData.columns:
             waferSeries = filteredData[waferColumn].map(self._format_wafer_value)
             filteredData = filteredData.loc[waferSeries == waferId]
         if filteredData.empty:
@@ -1039,6 +1260,10 @@ class TabContourWidget:
     def _effective_radius(self) -> float:
         return max(0.0, self._wafer_diameter() / 2.0 - float(self.excludeSpinBox.value()))
 
+    def _contour_style(self) -> str:
+        styleText = self.styleComboBox.currentText().strip()
+        return styleText if styleText in CONTOUR_STYLE_OPTIONS else CONTOUR_STYLE_LINEAR
+
     def _build_contour_grid(
         self,
         plotData: pd.DataFrame,
@@ -1059,13 +1284,15 @@ class TabContourWidget:
             np.linspace(xMin, xMax, gridSize),
             np.linspace(yMin, yMax, gridSize),
         )
-        triangulation = mtri.Triangulation(points[:, 0], points[:, 1])
-        linearInterpolator = mtri.LinearTriInterpolator(triangulation, values)
-        linearGrid = linearInterpolator(gridX, gridY)
-        if np.ma.isMaskedArray(linearGrid):
-            gridZ = linearGrid.filled(np.nan)
+        styleText = self._contour_style()
+        if styleText == CONTOUR_STYLE_CUBIC:
+            gridZ = self._triangulated_grid(points, values, gridX, gridY, cubic=True)
+        elif styleText == CONTOUR_STYLE_IDW:
+            gridZ = self._idw_grid(points, values, gridX, gridY)
+        elif styleText == CONTOUR_STYLE_GAUSSIAN:
+            gridZ = self._gaussian_process_grid(points, values, gridX, gridY)
         else:
-            gridZ = np.asarray(linearGrid, dtype=float)
+            gridZ = self._triangulated_grid(points, values, gridX, gridY, cubic=False)
 
         missingMask = np.isnan(gridZ)
         if np.any(missingMask):
@@ -1079,6 +1306,88 @@ class TabContourWidget:
         gridZ = np.where(inside, gridZ, np.nan)
         return gridX, gridY, gridZ
 
+    def _triangulated_grid(
+        self,
+        points: np.ndarray,
+        values: np.ndarray,
+        gridX: np.ndarray,
+        gridY: np.ndarray,
+        cubic: bool,
+    ) -> np.ndarray:
+        triangulation = mtri.Triangulation(points[:, 0], points[:, 1])
+        interpolator = (
+            mtri.CubicTriInterpolator(triangulation, values)
+            if cubic
+            else mtri.LinearTriInterpolator(triangulation, values)
+        )
+        linearGrid = interpolator(gridX, gridY)
+        if np.ma.isMaskedArray(linearGrid):
+            return linearGrid.filled(np.nan)
+        return np.asarray(linearGrid, dtype=float)
+
+    def _idw_grid(
+        self,
+        points: np.ndarray,
+        values: np.ndarray,
+        gridX: np.ndarray,
+        gridY: np.ndarray,
+        power: float = 2.0,
+        chunkSize: int = 4096,
+    ) -> np.ndarray:
+        queryPoints = np.column_stack((gridX.ravel(), gridY.ravel()))
+        gridValues = np.empty(len(queryPoints), dtype=float)
+        for startIndex in range(0, len(queryPoints), chunkSize):
+            chunk = queryPoints[startIndex:startIndex + chunkSize]
+            distances = np.linalg.norm(chunk[:, None, :] - points[None, :, :], axis=2)
+            exactMask = distances <= 1e-12
+            weights = 1.0 / np.maximum(distances, 1e-12) ** power
+            chunkValues = (weights @ values) / weights.sum(axis=1)
+            if np.any(exactMask):
+                exactRows = np.where(exactMask.any(axis=1))[0]
+                nearestIndexes = exactMask[exactRows].argmax(axis=1)
+                chunkValues[exactRows] = values[nearestIndexes]
+            gridValues[startIndex:startIndex + len(chunk)] = chunkValues
+        return gridValues.reshape(gridX.shape)
+
+    def _gaussian_process_grid(
+        self,
+        points: np.ndarray,
+        values: np.ndarray,
+        gridX: np.ndarray,
+        gridY: np.ndarray,
+        chunkSize: int = 4096,
+    ) -> np.ndarray:
+        center = points.mean(axis=0, keepdims=True)
+        scale = max(float(np.ptp(points[:, 0])), float(np.ptp(points[:, 1])), 1.0)
+        scaledPoints = (points - center) / scale
+        pairwiseDistances = np.linalg.norm(
+            scaledPoints[:, None, :] - scaledPoints[None, :, :],
+            axis=2,
+        )
+        nonZeroDistances = pairwiseDistances[pairwiseDistances > 0]
+        lengthScale = float(np.median(nonZeroDistances)) if nonZeroDistances.size else 1.0
+        lengthScale = max(lengthScale, 1e-3)
+        kernelMatrix = np.exp(-0.5 * (pairwiseDistances / lengthScale) ** 2)
+        kernelMatrix += np.eye(len(points)) * 0.05
+        valueMean = float(values.mean())
+        valueStd = float(values.std())
+        if valueStd <= 0:
+            return np.full(gridX.shape, valueMean, dtype=float)
+        centeredValues = (values - valueMean) / valueStd
+        try:
+            alpha = np.linalg.solve(kernelMatrix, centeredValues)
+        except np.linalg.LinAlgError:
+            alpha = np.linalg.lstsq(kernelMatrix, centeredValues, rcond=None)[0]
+
+        queryPoints = np.column_stack((gridX.ravel(), gridY.ravel()))
+        gridValues = np.empty(len(queryPoints), dtype=float)
+        for startIndex in range(0, len(queryPoints), chunkSize):
+            chunk = (queryPoints[startIndex:startIndex + chunkSize] - center) / scale
+            distances = np.linalg.norm(chunk[:, None, :] - scaledPoints[None, :, :], axis=2)
+            queryKernel = np.exp(-0.5 * (distances / lengthScale) ** 2)
+            gridValues[startIndex:startIndex + len(chunk)] = queryKernel @ alpha * valueStd + valueMean
+        return gridValues.reshape(gridX.shape)
+
     def _add_contour_subplot(
         self,
         figure: go.Figure,
@@ -1088,28 +1397,92 @@ class TabContourWidget:
         waferOutline: np.ndarray,
         effectiveOutline: np.ndarray,
         colorScale: list[list[float | str]],
-        limitLow: float,
-        limitHigh: float,
+        limitLow: float | None,
+        limitHigh: float | None,
+        fillContour: bool,
         showScale: bool,
     ) -> None:
         gridX, gridY, gridZ = contourGrid
+        if fillContour:
+            contours = dict(coloring='heatmap', showlines=True)
+            traceOptions = {
+                'colorscale': colorScale,
+                'zmin': limitLow,
+                'zmax': limitHigh,
+                'colorbar': dict(title=self.zComboBox.currentText().strip()) if showScale else None,
+                'showscale': showScale,
+            }
+            lineOptions = dict(width=0.4, color='rgba(0,0,0,0.45)')
+        else:
+            lineStart, lineEnd = self._contour_line_range(gridZ)
+            contours = dict(
+                coloring='none',
+                showlines=True,
+                start=lineStart,
+                end=lineEnd,
+                size=self._contour_line_space(),
+            )
+            traceOptions = {
+                'colorscale': [[0.0, '#202020'], [1.0, '#202020']],
+                'showscale': False,
+            }
+            lineOptions = dict(width=1.0, color='rgba(0,0,0,0.80)')
         figure.add_trace(
             go.Contour(
                 x=gridX[0],
                 y=gridY[:, 0],
                 z=gridZ,
-                colorscale=colorScale,
-                zmin=limitLow,
-                zmax=limitHigh,
-                contours=dict(coloring='heatmap', showlines=True),
-                line=dict(width=0.4, color='rgba(0,0,0,0.45)'),
-                colorbar=dict(title=self.zComboBox.currentText().strip()) if showScale else None,
-                showscale=showScale,
+                contours=contours,
+                line=lineOptions,
+                **traceOptions,
             ),
             row=rowIndex,
             col=columnIndex,
         )
         self._add_wafer_outlines(figure, rowIndex, columnIndex, waferOutline, effectiveOutline)
+
+    def _add_site_markers(
+        self,
+        figure: go.Figure,
+        rowIndex: int,
+        columnIndex: int,
+        siteData: pd.DataFrame,
+    ) -> None:
+        if siteData.empty:
+            return
+        showValue = self.showValueCheckBox.isChecked()
+        markerFontSize = self._font_sizes()['value']
+        figure.add_trace(
+            go.Scatter(
+                x=siteData['x'],
+                y=siteData['y'],
+                mode='markers+text' if showValue else 'markers',
+                marker=dict(
+                    symbol='circle-open',
+                    size=max(5, markerFontSize - 2),
+                    color='rgba(0,0,0,0.90)',
+                    line=dict(width=1.2, color='rgba(0,0,0,0.90)'),
+                ),
+                text=[
+                    self._format_site_value(value)
+                    for value in siteData['z']
+                ] if showValue else None,
+                textposition='top center',
+                textfont=dict(size=markerFontSize, color='rgba(0,0,0,0.88)'),
+                name='site',
+                showlegend=False,
+                hovertemplate='x=%{x:.3g}<br>y=%{y:.3g}<br>value=%{customdata:.6g}<extra></extra>',
+                customdata=siteData['z'],
+            ),
+            row=rowIndex,
+            col=columnIndex,
+        )
+
+    def _format_site_value(self, value) -> str:
+        try:
+            return f'{float(value):.6g}'
+        except (TypeError, ValueError):
+            return str(value)
 
     def _add_empty_subplot(
         self,
@@ -1170,12 +1543,17 @@ class TabContourWidget:
         figure: go.Figure,
         rowIndex: int,
         columnIndex: int,
+        columnCount: int,
         waferOutline: np.ndarray,
     ) -> None:
         margin = max(self._wafer_diameter() * 0.03, 3.0)
+        fontSizes = self._font_sizes()
+        xAxisRef = self._subplot_x_axis_ref(rowIndex, columnIndex, columnCount)
         figure.update_xaxes(
             range=[float(waferOutline[:, 0].min()) - margin, float(waferOutline[:, 0].max()) + margin],
             title_text='X (mm)',
+            title_font=dict(size=fontSizes['axis']),
+            tickfont=dict(size=fontSizes['tick']),
             showgrid=False,
             zeroline=False,
             row=rowIndex,
@@ -1184,27 +1562,38 @@ class TabContourWidget:
         figure.update_yaxes(
             range=[float(waferOutline[:, 1].min()) - margin, float(waferOutline[:, 1].max()) + margin],
             title_text='Y (mm)',
+            title_font=dict(size=fontSizes['axis']),
+            tickfont=dict(size=fontSizes['tick']),
             showgrid=False,
             zeroline=False,
-            scaleanchor='x',
+            scaleanchor=xAxisRef,
             scaleratio=1,
             row=rowIndex,
             col=columnIndex,
         )
 
+    def _subplot_x_axis_ref(self, rowIndex: int, columnIndex: int, columnCount: int) -> str:
+        subplotIndex = (rowIndex - 1) * columnCount + columnIndex
+        return 'x' if subplotIndex == 1 else f'x{subplotIndex}'
+
     def _apply_common_layout(self, figure: go.Figure, rowCount: int, columnCount: int) -> None:
         width = max(500, self.plotAreaWidget.width())
         height = max(500, self.plotAreaWidget.height())
-        fontSize = max(8, int(self.fontSizeSpinBox.value()) + 4)
+        fontSizes = self._font_sizes()
         figure.update_layout(
-            title=dict(text=self.titleLineEdit.text().strip() or 'Contour Map', x=0.5),
+            title=dict(
+                text=self.titleLineEdit.text().strip() or 'Contour Map',
+                x=0.5,
+                font=dict(size=fontSizes['title']),
+            ),
             width=width,
             height=height,
             template='plotly_white',
             margin=dict(t=80, r=80, b=60, l=60),
-            font=dict(size=fontSize),
+            font=dict(size=fontSizes['base']),
             showlegend=False,
         )
+        figure.update_annotations(font=dict(size=fontSizes['subplot']))
         if self.showDetailCheckBox.isChecked():
             figure.add_annotation(
                 text='<br>'.join([
@@ -1224,8 +1613,20 @@ class TabContourWidget:
                 align='left',
                 bgcolor='rgba(255,255,255,0.8)',
                 bordercolor='rgba(0,0,0,0.2)',
-                font=dict(size=fontSize),
+                font=dict(size=fontSizes['detail']),
             )
+
+    def _font_sizes(self) -> dict[str, int]:
+        baseSize = max(8, int(self.fontSizeSpinBox.value()) + 4)
+        return {
+            'base': baseSize,
+            'title': baseSize + 8,
+            'subplot': baseSize + 2,
+            'axis': baseSize + 1,
+            'tick': max(7, baseSize - 1),
+            'value': max(7, baseSize - 2),
+            'detail': max(7, baseSize - 1),
+        }
 
     def _label_color(self, label: QLabel, fallback: str) -> str:
         styleSheet = label.styleSheet()
@@ -1240,6 +1641,7 @@ class TabContourWidget:
 
     def _clear_plot_area(self, statusText: str) -> None:
         self.loadingOverlay.hide()
+        self.hasDrawRequest = False
         self.currentPlotHtml = ''
         self.currentPlotFigure = None
         self.currentPlotFilePath = ''

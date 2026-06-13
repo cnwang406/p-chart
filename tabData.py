@@ -1245,6 +1245,24 @@ class TabDataWidget(BackgroundTaskMixin):
             return self._filter_dataframe_by_preview_filters(self.loadedDataFrame)
         return self._filter_dataframe_by_preview_filters(self.meltedDataFrame)
 
+    def apply_virtual_coordinates(self, dataFrame: pd.DataFrame) -> bool:
+        if dataFrame.empty or 'x' not in dataFrame.columns or 'y' not in dataFrame.columns:
+            return False
+        targetDataFrame = self.meltedDataFrame if not self.meltedDataFrame.empty else self.loadedDataFrame
+        if targetDataFrame.empty:
+            return False
+
+        commonIndexes = targetDataFrame.index.intersection(dataFrame.index)
+        if commonIndexes.empty:
+            return False
+
+        for columnName in ('x', 'y'):
+            targetDataFrame.loc[commonIndexes, columnName] = dataFrame.loc[commonIndexes, columnName]
+        self._show_preview(targetDataFrame, self.previewMaxRows, clearFilters=False)
+        self._notify_data_changed()
+        self._set_status(f'Virtual x/y coordinates added to Data tab rows={len(commonIndexes)}.')
+        return True
+
     def get_skip_rows(self) -> int:
         return int(self.skipRowsSpinBox.value())
 

@@ -63,7 +63,7 @@ APP_NAME = 'p-chart'
 APP_VERSION = 'v2.8.0'
 APP_AUTHOR = 'cnwang'
 APP_DATE = 'build 0612'
-WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} by {APP_AUTHOR}, {APP_DATE}'
+WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} {APP_DATE} by {APP_AUTHOR}'
 APP_ICON_FILENAME = os.path.join(
     'AppIcon.appiconset',
     'icon-ios-marketing-1024x1024-1x.png',
@@ -385,7 +385,7 @@ class AppMain:
         self.tabWafermapWidget.set_tab_data(self.tabDataWidget)
         self.tabContourWidget.set_tab_data(self.tabDataWidget)
         self.tabLogWidget.set_tab_data(self.tabDataWidget)
-        self.tabWidget.currentChanged.connect(self._warn_if_plotting_loaded_data)
+        self.tabWidget.currentChanged.connect(self._on_tab_changed)
         self.aboutButton.clicked.connect(self._show_about_dialog)
         self.tabWidget.setCurrentIndex(0)
         self._center_window()
@@ -402,6 +402,12 @@ class AppMain:
         )
         self.responsiveUiResizer.apply_all()
         self._show_new_version_notice()
+
+    def _on_tab_changed(self, tabIndex: int) -> None:
+        self._warn_if_plotting_loaded_data(tabIndex)
+        currentWidget = self.tabWidget.widget(tabIndex)
+        isContourTab = currentWidget is not None and currentWidget.objectName() == 'tabContour'
+        self.tabContourWidget.set_active_tab(isContourTab)
 
     def _configure_application_metadata(self) -> None:
         self.app.setApplicationName(APP_NAME)
