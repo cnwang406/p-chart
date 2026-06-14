@@ -60,6 +60,9 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         self._isApplyingConfig = False
         self._geometryCacheKey = None
         self._geometryCacheData = None
+        self.isActiveTab = False
+        self._pendingDataRefresh = False
+        self._pendingRedraw = False
 
         self.tabWidget = require_child(rootWidget, QWidget, 'tabWafermap')
         self.xComboBox = require_child(rootWidget, QComboBox, 'xColComboBox')
@@ -195,7 +198,23 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         self.tabDataWidget.add_data_changed_callback(self._on_data_changed)
         self._on_data_changed()
 
+    def set_active_tab(self, isActive: bool) -> None:
+        wasActive = self.isActiveTab
+        self.isActiveTab = isActive
+        if not isActive or wasActive:
+            return
+        if self._pendingDataRefresh:
+            self._on_data_changed()
+            return
+        if self._pendingRedraw:
+            self._pendingRedraw = False
+            self._redraw_after_change()
+
     def _on_data_changed(self) -> None:
+        if not self.isActiveTab:
+            self._pendingDataRefresh = True
+            return
+        self._pendingDataRefresh = False
         dataFrame = self._plot_data()
         columnNames = list(dataFrame.columns.astype(str)) if not dataFrame.empty else []
         for comboBox in [self.xComboBox, self.yComboBox, self.zComboBox]:
@@ -308,6 +327,9 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         return f'{baseTitle} {waferSuffix}'
 
     def _draw_plot_when_ready(self, *_args) -> None:
+        if not self.isActiveTab:
+            self._pendingRedraw = True
+            return
         try:
             self.draw_plot()
         except Exception as exc:
@@ -319,6 +341,9 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
 
     def _redraw_after_change(self, *_args) -> None:
         if self._isApplyingConfig:
+            return
+        if not self.isActiveTab:
+            self._pendingRedraw = True
             return
         if self.currentFigure is None:
             self._mark_plot_dirty()

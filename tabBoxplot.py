@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QSignalBlocker, QTimer, QUrl
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -50,6 +50,9 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.currentPlotFilePath = ''
         self.currentViewerFilePath = ''
         self._browserViewerOpened = False
+        self.isActiveTab = False
+        self._pendingDataRefresh = False
+        self._pendingRedraw = False
         self.lineColor = '#ff0000'
         self.annotationColor = '#000000'
 
@@ -115,6 +118,10 @@ class TabBoxplotWidget(BackgroundTaskMixin):
 
         self._configure_plot_area()
         self.loadingOverlay = LoadingOverlay(self.plotAreaWidget)
+        self.redrawTimer = QTimer(self.rootWidget)
+        self.redrawTimer.setSingleShot(True)
+        self.redrawTimer.setInterval(300)
+        self.redrawTimer.timeout.connect(self._draw_plot)
         self._configure_signals()
         self._configure_defaults()
 
@@ -316,10 +323,18 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.plotTitleLineEdit.setText(self._build_auto_plot_title())
 
     def _redraw_existing_plot(self, *_args) -> None:
-        if self.currentPlotHtml:
-            self._draw_plot()
+        if self.currentPlotFigure is None and not self.currentPlotHtml:
+            return
+        if not self.isActiveTab:
+            self._pendingRedraw = True
+            return
+        self._set_status('Boxplot settings changed. Redrawing shortly...')
+        self.redrawTimer.start()
 
     def _draw_plot_when_ready(self, *_args) -> None:
+        if not self.isActiveTab:
+            self._pendingRedraw = True
+            return
         if self.tabDataWidget is None:
             return
 
@@ -353,19 +368,43 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             self.tabDataWidget.add_data_changed_callback(self._refresh_column_options)
         self._refresh_column_options()
 
+    def set_active_tab(self, isActive: bool) -> None:
+        wasActive = self.isActiveTab
+        self.isActiveTab = isActive
+        if not isActive or wasActive:
+            return
+        if self._pendingDataRefresh:
+            self._refresh_column_options()
+            return
+        if self._pendingRedraw:
+            self._pendingRedraw = False
+            self._draw_plot_when_ready()
+
     def _refresh_column_options(self) -> None:
         if self.tabDataWidget is None:
             return
+        if not self.isActiveTab:
+            self._pendingDataRefresh = True
+            return
+        self._pendingDataRefresh = False
 
         dataFrame = self.tabDataWidget.get_plot_data()
         columnNames = list(dataFrame.columns.astype(str))
-        for combo in [self.yComboBox, self.group1ComboBox, self.group2ComboBox]:
-            currentText = combo.currentText()
-            combo.clear()
-            combo.addItem('')
-            combo.addItems(columnNames)
-            if currentText in columnNames:
-                combo.setCurrentText(currentText)
+        combos = [self.yComboBox, self.group1ComboBox, self.group2ComboBox]
+        blockers = [QSignalBlocker(combo) for combo in combos]
+        try:
+            for combo in combos:
+                currentText = combo.currentText()
+                combo.clear()
+                combo.addItem('')
+                combo.addItems(columnNames)
+                if currentText in columnNames:
+                    combo.setCurrentText(currentText)
+        finally:
+            del blockers
+        currentY = self.yComboBox.currentText().strip()
+        if currentY:
+            self._sync_y_title_from_column(currentY)
         self._update_plot_title()
         self._redraw_existing_plot()
 
@@ -686,6 +725,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         )
 
     def _draw_plot(self) -> None:
+        self.redrawTimer.stop()
         if self.tabDataWidget is None:
             self._set_status('No data source attached to boxplot tab.', error=True)
             return
@@ -722,7 +762,12 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         selectedAnnotationStats = self._selected_annotation_stats()
         legendFontSize = self.legendFontSizeSpinBox.value()
 
-        plotData = dataFrame.copy()
+        requiredColumns = list(dict.fromkeys(
+            columnName
+            for columnName in [yColumn, group1Column, group2Column]
+            if columnName
+        ))
+        plotData = dataFrame.loc[:, requiredColumns].copy()
         plotData[yColumn] = pd.to_numeric(plotData[yColumn], errors='coerce')
         dropColumns = [yColumn, *[column for column in [group1Column, group2Column] if column]]
         plotData = plotData.dropna(subset=dropColumns)

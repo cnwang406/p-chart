@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from pandas.api.types import is_datetime64_any_dtype
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QSignalBlocker, QTimer, Qt, QUrl
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -111,9 +111,16 @@ class TabScatterWidget(BackgroundTaskMixin):
         self.currentPlotFilePath = ''
         self.currentViewerFilePath = ''
         self._browserViewerOpened = False
+        self.isActiveTab = False
+        self._pendingDataRefresh = False
+        self._pendingRedraw = False
         self.lineColor = '#ff0000'
         self._configure_plot_area()
         self.loadingOverlay = LoadingOverlay(self.plotAreaWidget)
+        self.redrawTimer = QTimer(self.rootWidget)
+        self.redrawTimer.setSingleShot(True)
+        self.redrawTimer.setInterval(300)
+        self.redrawTimer.timeout.connect(self._draw_plot)
         self._configure_signals()
         self._configure_defaults()
 
@@ -299,10 +306,18 @@ class TabScatterWidget(BackgroundTaskMixin):
         self.plotTitleLineEdit.setText(self._build_auto_plot_title())
 
     def _redraw_existing_plot(self, *_args) -> None:
-        if self.currentPlotHtml:
-            self._draw_plot()
+        if self.currentPlotFigure is None and not self.currentPlotHtml:
+            return
+        if not self.isActiveTab:
+            self._pendingRedraw = True
+            return
+        self._set_status('Plot settings changed. Redrawing shortly...')
+        self.redrawTimer.start()
 
     def _draw_plot_when_xy_ready(self, *_args) -> None:
+        if not self.isActiveTab:
+            self._pendingRedraw = True
+            return
         if self.tabDataWidget is None:
             return
 
@@ -352,13 +367,29 @@ class TabScatterWidget(BackgroundTaskMixin):
             self.tabDataWidget.add_data_changed_callback(self._refresh_column_options)
         self._refresh_column_options()
 
+    def set_active_tab(self, isActive: bool) -> None:
+        wasActive = self.isActiveTab
+        self.isActiveTab = isActive
+        if not isActive or wasActive:
+            return
+        if self._pendingDataRefresh:
+            self._refresh_column_options()
+            return
+        if self._pendingRedraw:
+            self._pendingRedraw = False
+            self._draw_plot_when_xy_ready()
+
     def _refresh_column_options(self) -> None:
         if self.tabDataWidget is None:
             return
+        if not self.isActiveTab:
+            self._pendingDataRefresh = True
+            return
+        self._pendingDataRefresh = False
 
         dataFrame = self.tabDataWidget.get_plot_data()
         columnNames = list(dataFrame.columns.astype(str))
-        for combo in [
+        combos = [
             self.xComboBox,
             self.yComboBox,
             self.seriesComboBox,
@@ -366,13 +397,25 @@ class TabScatterWidget(BackgroundTaskMixin):
             self.colorComboBox,
             self.sizeComboBox,
             self.opacityComboBox,
-        ]:
-            currentText = combo.currentText()
-            combo.clear()
-            combo.addItem('')
-            combo.addItems(columnNames)
-            if currentText in columnNames:
-                combo.setCurrentText(currentText)
+        ]
+        blockers = [QSignalBlocker(combo) for combo in combos]
+        try:
+            for combo in combos:
+                currentText = combo.currentText()
+                combo.clear()
+                combo.addItem('')
+                combo.addItems(columnNames)
+                if currentText in columnNames:
+                    combo.setCurrentText(currentText)
+        finally:
+            del blockers
+        currentX = self.xComboBox.currentText().strip()
+        currentY = self.yComboBox.currentText().strip()
+        if currentX:
+            self._sync_x_title_from_column(currentX)
+            self._sync_x_format_from_column(currentX)
+        if currentY:
+            self._sync_y_title_from_column(currentY)
         self._update_plot_title()
         self._redraw_existing_plot()
 
@@ -754,6 +797,7 @@ class TabScatterWidget(BackgroundTaskMixin):
         show_pivot_dialog(self.rootWidget, dialogTitle, pivotData)
 
     def _draw_plot(self) -> None:
+        self.redrawTimer.stop()
         if self.tabDataWidget is None:
             self._set_status('No data source attached to plot tab.', error=True)
             return
@@ -800,7 +844,20 @@ class TabScatterWidget(BackgroundTaskMixin):
         plotHeight = self.plotHeightSpinBox.value()
         legendFontSize = self.legendFontSizeSpinBox.value()
 
-        plotData = dataFrame.copy()
+        requiredColumns = list(dict.fromkeys(
+            columnName
+            for columnName in [
+                xColumn,
+                yColumn,
+                seriesColumn,
+                symbolColumn,
+                colorColumn,
+                sizeColumn,
+                opacityColumn,
+            ]
+            if columnName
+        ))
+        plotData = dataFrame.loc[:, requiredColumns].copy()
         if xIsDate:
             self.xFormatLineEdit.setText(self.xFormatLineEdit.text().strip() or 'mm/dd')
             plotData[xColumn] = pd.to_datetime(plotData[xColumn], errors='coerce')

@@ -239,6 +239,11 @@ class TabDataWidget(BackgroundTaskMixin):
         self.previewProxyModel = PreviewSortFilterProxyModel()
         self.loadingOverlay = LoadingOverlay(self.previewTableWidget)
         self.previewMaxRows = 1000
+        self.previewAutoResizeMaxCells = 40000
+        self.previewAutoResizeMaxColumns = 40
+        self.previewFilterValueLimit = 500
+        self.previewFilterValueOverflow: dict[int, bool] = {}
+        self.isActiveTab = False
         self.dataChangedCallbacks = []
         self.matchChangedCallbacks = []
         self.matchingColumnCount = 0
@@ -249,6 +254,9 @@ class TabDataWidget(BackgroundTaskMixin):
         self.dropFileFilter = DropFileFilter(self._load_dropped_file)
 
         self._configure_widgets()
+
+    def set_active_tab(self, isActive: bool) -> None:
+        self.isActiveTab = isActive
 
     def _configure_widgets(self) -> None:
         self.browseFileButton.clicked.connect(self._browse_file)
@@ -1003,10 +1011,21 @@ class TabDataWidget(BackgroundTaskMixin):
 
         previewDataFrame = dataFrame.head(maxRows).copy()
         self.previewTableModel.set_data_frame(previewDataFrame)
-        self.previewTableWidget.resizeColumnsToContents()
+        self._resize_preview_columns(previewDataFrame)
         shownRows = len(previewDataFrame)
         if len(dataFrame) > shownRows:
             self._set_status(f'Preview showing first {shownRows}/{len(dataFrame)} rows.')
+
+    def _resize_preview_columns(self, previewDataFrame: pd.DataFrame) -> None:
+        rowCount, columnCount = previewDataFrame.shape
+        if rowCount * columnCount <= self.previewAutoResizeMaxCells:
+            self.previewTableWidget.resizeColumnsToContents()
+            return
+
+        header = self.previewTableWidget.horizontalHeader()
+        header.setDefaultSectionSize(120)
+        for columnIndex in range(min(columnCount, self.previewAutoResizeMaxColumns)):
+            self.previewTableWidget.resizeColumnToContents(columnIndex)
 
     def _show_preview_column_menu(self, columnIndex: int) -> None:
         if self.previewTableModel.columnCount() == 0:
@@ -1037,6 +1056,11 @@ class TabDataWidget(BackgroundTaskMixin):
         valueListWidget.setMaximumHeight(320)
         selectedValues = self.previewProxyModel.columnFilters.get(columnIndex)
         allValues = self._unique_preview_filter_values(columnIndex)
+        if self.previewFilterValueOverflow.get(columnIndex):
+            menu.addAction(
+                f'Showing first {len(allValues)} unique values; narrow data first for more.'
+            ).setEnabled(False)
+            menu.addSeparator()
         if selectedValues is None:
             selectedValues = set(allValues)
         for valueText in allValues:
@@ -1179,17 +1203,29 @@ class TabDataWidget(BackgroundTaskMixin):
             or columnIndex < 0
             or columnIndex >= len(self.previewSourceDataFrame.columns)
         ):
+            self.previewFilterValueOverflow[columnIndex] = False
             return []
 
         series = self.previewSourceDataFrame.iloc[:, columnIndex]
-        return sorted(
-            {self.previewTableModel._format_preview_value(value) for value in series},
-            key=str.lower,
-        )
+        uniqueValues = []
+        seenValues = set()
+        overflow = False
+        for value in series:
+            valueText = self.previewTableModel._format_preview_value(value)
+            if valueText in seenValues:
+                continue
+            if len(uniqueValues) >= self.previewFilterValueLimit:
+                overflow = True
+                break
+            seenValues.add(valueText)
+            uniqueValues.append(valueText)
+
+        self.previewFilterValueOverflow[columnIndex] = overflow
+        return sorted(uniqueValues, key=str.lower)
 
     def _filter_dataframe_by_preview_filters(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
         if dataFrame.empty or not self.previewProxyModel.columnFilters:
-            return dataFrame.copy()
+            return dataFrame
 
         filteredDataFrame = dataFrame
         for columnIndex, selectedValues in self.previewProxyModel.columnFilters.items():
@@ -1200,7 +1236,7 @@ class TabDataWidget(BackgroundTaskMixin):
                 self.previewTableModel._format_preview_value
             )
             filteredDataFrame = filteredDataFrame.loc[seriesText.isin(selectedValues)]
-        return filteredDataFrame.copy()
+        return filteredDataFrame
 
     def _save_melted_data(self) -> None:
         if self.meltedDataFrame.empty:
@@ -1523,8 +1559,13 @@ class TabDataWidget(BackgroundTaskMixin):
             hiddenCount = max(0, len(selectedValueTexts) - 5)
             if hiddenCount:
                 shownValues = f'{shownValues}, ... +{hiddenCount}'
+            allValueCount = (
+                f'{len(allValues)}+'
+                if self.previewFilterValueOverflow.get(columnIndex)
+                else str(len(allValues))
+            )
             filterLines.append(
-                f'{columnName}: {shownValues} ({len(selectedValues)}/{len(allValues)} selected)'
+                f'{columnName}: {shownValues} ({len(selectedValues)}/{allValueCount} selected)'
             )
         return '<br>'.join(filterLines)
 
