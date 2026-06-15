@@ -4519,7 +4519,7 @@ here.</string>
       <property name="title">
        <string>wafer geometry</string>
       </property>
-      <widget class="QLabel" name="contourWaferColorLabel">
+      <widget class="QLabel" name="contourEdgeColorLabel">
        <property name="geometry">
         <rect>
          <x>230</x>
