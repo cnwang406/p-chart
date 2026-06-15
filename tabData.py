@@ -1454,10 +1454,52 @@ class TabDataWidget(BackgroundTaskMixin):
             return sampleFile.read(1024 * 100)
 
     def _detect_csv_encoding(self, sampleBytes: bytes) -> str:
+        candidates = []
+        broadSingleByteEncodings = {
+            'iso-8859-1',
+            'latin-1',
+            'latin1',
+            'windows-1252',
+            'cp1252',
+        }
+        detectedEncoding = ''
+
+        if sampleBytes.startswith(b'\xef\xbb\xbf'):
+            candidates.append('utf-8-sig')
+        elif sampleBytes.startswith((b'\xff\xfe', b'\xfe\xff')):
+            candidates.append('utf-16')
+
         if chardet is not None:
             detectedEncoding = chardet.detect(sampleBytes).get('encoding')
             if detectedEncoding:
-                return str(detectedEncoding)
+                detectedEncoding = str(detectedEncoding)
+                if detectedEncoding.lower() not in broadSingleByteEncodings:
+                    candidates.append(detectedEncoding)
+
+        candidates.extend([
+            'utf-8-sig',
+            'utf-8',
+            'cp950',
+            'big5',
+            'big5hkscs',
+            'gb18030',
+            'shift_jis',
+        ])
+        if detectedEncoding and detectedEncoding.lower() in broadSingleByteEncodings:
+            candidates.append(detectedEncoding)
+
+        checkedEncodings = set()
+        for encoding in candidates:
+            normalizedEncoding = encoding.lower()
+            if normalizedEncoding in checkedEncodings:
+                continue
+            checkedEncodings.add(normalizedEncoding)
+            try:
+                sampleBytes.decode(encoding, errors='strict')
+                return encoding
+            except (UnicodeDecodeError, LookupError):
+                continue
+
         return 'utf-8-sig'
 
     def _decode_csv_sample(self, sampleBytes: bytes, encoding: str) -> str:
