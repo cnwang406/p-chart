@@ -1,3 +1,4 @@
+import math
 import re
 import tempfile
 import webbrowser
@@ -6,16 +7,21 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from PySide6.QtCore import QSignalBlocker, QTimer, QUrl
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
+    QGridLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTextBrowser,
@@ -55,6 +61,11 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self._pendingRedraw = False
         self.lineColor = '#ff0000'
         self.annotationColor = '#000000'
+        self.groupSepLineSettings = {}
+        self.activeGroupSepColumn = None
+        self.currentSepPlotValues = []
+        self.lastGroupSepStatus = ''
+        self.largeGroupSepAcceptedColumn = None
 
         self.rootWidget = rootWidget
         self.yComboBox = require_child(rootWidget, QComboBox, 'boxYComboBox')
@@ -93,8 +104,6 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.yRangeLineEdit = require_child(rootWidget, QLineEdit, 'boxYRangeLineEdit')
         self.hlineLineEdit = require_child(rootWidget, QLineEdit, 'boxYLinesLineEdit')
         self.legendCheckBox = require_child(rootWidget, QCheckBox, 'boxLegendCheckBox')
-        self.singleSpinBox = require_child(rootWidget, QSpinBox, 'boxSingleSpinBox')
-        self.gridSpinBox = require_child(rootWidget, QSpinBox, 'boxGridSpinBox')
         self.gridsLinesPushButton = require_child(
             rootWidget,
             QPushButton,
@@ -172,6 +181,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.autoStatsButton.clicked.connect(self._auto_fill_plot_stats)
         self.lineColorButton.clicked.connect(self._pick_line_color)
         self.annotationColorButton.clicked.connect(self._pick_annotation_color)
+        self.gridsLinesPushButton.clicked.connect(self._show_group_sep_lines_dialog)
         self.legendCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.filterAnnotationCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.pointsComboBox.currentTextChanged.connect(self._redraw_existing_plot)
@@ -196,13 +206,14 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.group1ComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
         self.group2ComboBox.currentTextChanged.connect(self._update_plot_title)
         self.group2ComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
+        self.groupSepComboBox.currentTextChanged.connect(self._on_group_sep_changed)
 
     def _configure_defaults(self) -> None:
         self.legendCheckBox.setChecked(True)
-        self.singleSpinBox.setRange(0, 999)
-        self.singleSpinBox.setValue(1)
-        self.gridSpinBox.setRange(0, 999)
-        self.gridSpinBox.setValue(0)
+        self.gridsLinesPushButton.setEnabled(False)
+        if self.groupSepComboBox.count() == 0:
+            self.groupSepComboBox.addItem('none')
+        self.groupSepComboBox.setCurrentText('none')
         if self.pointsComboBox.count() == 0:
             self.pointsComboBox.addItems(['outliers', 'all', 'jitter', 'none'])
         self.pointsComboBox.setCurrentText('outliers')
@@ -297,6 +308,77 @@ class TabBoxplotWidget(BackgroundTaskMixin):
 
     def _current_combo_text(self, combo: QComboBox) -> str:
         return combo.currentText().strip()
+
+    def _selected_group_sep_column(self) -> str | None:
+        sepColumn = self.groupSepComboBox.currentText().strip()
+        if not sepColumn or sepColumn == 'none':
+            return None
+        return sepColumn
+
+    def _group_sep_values(self, dataFrame: pd.DataFrame, sepColumn: str) -> list[str]:
+        if sepColumn not in dataFrame.columns:
+            return []
+        return self._ordered_categories(dataFrame[sepColumn])
+
+    def _confirm_group_sep_count(self, sepColumn: str) -> list[str] | None:
+        if self.tabDataWidget is None:
+            return []
+        dataFrame = self.tabDataWidget.get_plot_data()
+        sepValues = self._group_sep_values(dataFrame, sepColumn)
+        sepCount = len(sepValues)
+        self.lastGroupSepStatus = f'{sepColumn} unique values: {sepCount}'
+        self._set_status(self.lastGroupSepStatus)
+        if sepCount <= 12:
+            return sepValues
+
+        if self.largeGroupSepAcceptedColumn == sepColumn:
+            return sepValues
+
+        answer = QMessageBox.warning(
+            self.rootWidget,
+            'Boxplot',
+            '分太多圖了！',
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer == QMessageBox.StandardButton.Cancel:
+            return None
+        self.largeGroupSepAcceptedColumn = sepColumn
+        return sepValues
+
+    def _on_group_sep_changed(self, *_args) -> None:
+        sepColumn = self._selected_group_sep_column()
+        if sepColumn != self.activeGroupSepColumn:
+            self.groupSepLineSettings.clear()
+            self.currentSepPlotValues = []
+            self.largeGroupSepAcceptedColumn = None
+            self.gridsLinesPushButton.setEnabled(False)
+        self.activeGroupSepColumn = sepColumn
+
+        if not sepColumn:
+            self.lastGroupSepStatus = ''
+            self._draw_plot_when_ready()
+            return
+
+        sepValues = self._confirm_group_sep_count(sepColumn)
+        if sepValues is None:
+            blocker = QSignalBlocker(self.groupSepComboBox)
+            try:
+                self.groupSepComboBox.setCurrentText('none')
+            finally:
+                del blocker
+            self.activeGroupSepColumn = None
+            self.groupSepLineSettings.clear()
+            self.currentSepPlotValues = []
+            self.largeGroupSepAcceptedColumn = None
+            self.gridsLinesPushButton.setEnabled(False)
+            self.lastGroupSepStatus = ''
+            self._set_status('Separate by canceled.')
+            self._draw_plot_when_ready()
+            return
+
+        self.currentSepPlotValues = sepValues
+        self._draw_plot_when_ready()
 
     def _build_auto_plot_title(self) -> str:
         yTitle = self.yTitleLineEdit.text().strip() or self._current_combo_text(self.yComboBox)
@@ -402,23 +484,33 @@ class TabBoxplotWidget(BackgroundTaskMixin):
 
         dataFrame = self.tabDataWidget.get_plot_data()
         columnNames = list(dataFrame.columns.astype(str))
-        combos = [
-            self.yComboBox,
-            self.group1ComboBox,
-            self.group2ComboBox,
-            self.groupSepComboBox,
-        ]
+        combos = [self.yComboBox, self.group1ComboBox, self.group2ComboBox, self.groupSepComboBox]
         blockers = [QSignalBlocker(combo) for combo in combos]
         try:
-            for combo in combos:
+            for combo in [self.yComboBox, self.group1ComboBox, self.group2ComboBox]:
                 currentText = combo.currentText()
                 combo.clear()
                 combo.addItem('')
                 combo.addItems(columnNames)
                 if currentText in columnNames:
                     combo.setCurrentText(currentText)
+            currentSepText = self.groupSepComboBox.currentText()
+            self.groupSepComboBox.clear()
+            self.groupSepComboBox.addItem('none')
+            self.groupSepComboBox.addItems(columnNames)
+            if currentSepText in columnNames:
+                self.groupSepComboBox.setCurrentText(currentSepText)
+            else:
+                self.groupSepComboBox.setCurrentText('none')
         finally:
             del blockers
+        sepColumn = self._selected_group_sep_column()
+        if sepColumn != self.activeGroupSepColumn:
+            self.groupSepLineSettings.clear()
+            self.currentSepPlotValues = []
+            self.largeGroupSepAcceptedColumn = None
+            self.gridsLinesPushButton.setEnabled(False)
+            self.activeGroupSepColumn = sepColumn
         currentY = self.yComboBox.currentText().strip()
         if currentY:
             self._sync_y_title_from_column(currentY)
@@ -447,6 +539,105 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             except ValueError:
                 continue
         return values
+
+    def _parse_single_line_value(self, value: str) -> float | None:
+        values = self._parse_line_values(value)
+        if not values:
+            return None
+        return values[0]
+
+    def _best_subplot_grid(self, plotCount: int) -> tuple[int, int]:
+        if plotCount <= 1:
+            return 1, 1
+        columnCount = math.ceil(math.sqrt(plotCount))
+        rowCount = math.ceil(plotCount / columnCount)
+        return rowCount, columnCount
+
+    def _group_line_setting(self, sepValue: str) -> dict[str, str]:
+        setting = self.groupSepLineSettings.get(sepValue)
+        if setting is None:
+            setting = {'low': '', 'target': '', 'high': '', 'title': sepValue}
+            self.groupSepLineSettings[sepValue] = setting
+        if not setting.get('title'):
+            setting['title'] = sepValue
+        return setting
+
+    def _setting_line_values(self, sepValue: str) -> list[float]:
+        setting = self._group_line_setting(sepValue)
+        values = []
+        for key in ['low', 'target', 'high']:
+            lineValue = self._parse_single_line_value(setting.get(key, ''))
+            if lineValue is not None:
+                values.append(lineValue)
+        return values
+
+    def _setting_y_range(self, sepValue: str) -> tuple[float, float] | None:
+        setting = self._group_line_setting(sepValue)
+        lowValue = self._parse_single_line_value(setting.get('low', ''))
+        highValue = self._parse_single_line_value(setting.get('high', ''))
+        if lowValue is None or highValue is None:
+            return None
+        lowerValue = min(lowValue, highValue)
+        upperValue = max(lowValue, highValue)
+        if lowerValue == upperValue:
+            return tuple(self._expanded_line_range([lowerValue, upperValue]))
+        if lowerValue >= 0:
+            return lowerValue * 0.9, upperValue * 1.1
+        if upperValue <= 0:
+            return lowerValue * 1.1, upperValue * 0.9
+        return tuple(self._expanded_line_range([lowerValue, upperValue]))
+
+    def _show_group_sep_lines_dialog(self) -> None:
+        sepColumn = self._selected_group_sep_column()
+        if not sepColumn or not self.currentSepPlotValues:
+            self.gridsLinesPushButton.setEnabled(False)
+            return
+
+        dialog = QDialog(self.rootWidget)
+        dialog.setWindowTitle('Boxplot subplot lines')
+        layout = QGridLayout(dialog)
+        headers = ['group1 value', 'lines low', 'lines target', 'lines high', 'title']
+        for columnIndex, headerText in enumerate(headers):
+            layout.addWidget(QLabel(headerText), 0, columnIndex)
+
+        rowEditors = {}
+        for rowIndex, sepValue in enumerate(self.currentSepPlotValues, start=1):
+            setting = self._group_line_setting(sepValue)
+            layout.addWidget(QLabel(sepValue), rowIndex, 0)
+            lowLineEdit = QLineEdit(setting.get('low', ''))
+            targetLineEdit = QLineEdit(setting.get('target', ''))
+            highLineEdit = QLineEdit(setting.get('high', ''))
+            titleLineEdit = QLineEdit(setting.get('title', sepValue) or sepValue)
+            layout.addWidget(lowLineEdit, rowIndex, 1)
+            layout.addWidget(targetLineEdit, rowIndex, 2)
+            layout.addWidget(highLineEdit, rowIndex, 3)
+            layout.addWidget(titleLineEdit, rowIndex, 4)
+            rowEditors[sepValue] = {
+                'low': lowLineEdit,
+                'target': targetLineEdit,
+                'high': highLineEdit,
+                'title': titleLineEdit,
+            }
+
+        buttonBox = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttonRow = len(self.currentSepPlotValues) + 1
+        layout.addWidget(buttonBox, buttonRow, 0, 1, len(headers))
+        buttonBox.accepted.connect(dialog.accept)
+        buttonBox.rejected.connect(dialog.reject)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        for sepValue, editors in rowEditors.items():
+            self.groupSepLineSettings[sepValue] = {
+                key: editor.text().strip()
+                for key, editor in editors.items()
+            }
+            if not self.groupSepLineSettings[sepValue]['title']:
+                self.groupSepLineSettings[sepValue]['title'] = sepValue
+        self._draw_plot_when_ready()
 
     def _format_number(self, value: float) -> str:
         return f'{value:.6g}'
@@ -741,8 +932,198 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             font=annotationFont,
         )
 
+    def _add_reference_lines(
+        self,
+        fig,
+        lineValues: list[float],
+        yTitle: str,
+        lineColor: str,
+        lineWidth: float,
+        row: int | None = None,
+        col: int | None = None,
+    ) -> None:
+        for hValue in lineValues:
+            kwargs = {}
+            if row is not None and col is not None:
+                kwargs.update({'row': row, 'col': col})
+            fig.add_hline(
+                y=hValue,
+                line_dash='dash',
+                line_color=lineColor,
+                line_width=lineWidth,
+                annotation_text=self._format_line_label(yTitle, hValue),
+                annotation_position='top right',
+                annotation_font_color=lineColor,
+                annotation_font_size=10,
+                **kwargs,
+            )
+
+    def _draw_group_sep_boxplot(
+        self,
+        plotData: pd.DataFrame,
+        sepColumn: str,
+        yColumn: str,
+        group1Column: str | None,
+        group2Column: str | None,
+        plotTitle: str,
+        yTitle: str,
+        plotlyTheme: str | None,
+        yRange: tuple | None,
+        legendVisible: bool,
+        hLines: list[float],
+        lineWidth: float,
+        lineColorWithOpacity: str,
+        pointsMode: str | bool,
+        jitterValue: float | None,
+        selectedAnnotationStats: list[str],
+        legendFontSize: int,
+        leftMargin: int,
+        rightMargin: int,
+        bottomMargin: int,
+    ) -> None:
+        sepValues = self._group_sep_values(plotData, sepColumn)
+        sepCount = len(sepValues)
+        self.lastGroupSepStatus = f'{sepColumn} unique values: {sepCount}'
+        if sepCount == 0:
+            self._set_status(f'{sepColumn} has no values for separate plots.', error=True)
+            return
+        if sepCount > 12 and self.largeGroupSepAcceptedColumn != sepColumn:
+            answer = QMessageBox.warning(
+                self.rootWidget,
+                'Boxplot',
+                '分太多圖了！',
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if answer == QMessageBox.StandardButton.Cancel:
+                blocker = QSignalBlocker(self.groupSepComboBox)
+                try:
+                    self.groupSepComboBox.setCurrentText('none')
+                finally:
+                    del blocker
+                self.activeGroupSepColumn = None
+                self.groupSepLineSettings.clear()
+                self.currentSepPlotValues = []
+                self.largeGroupSepAcceptedColumn = None
+                self.gridsLinesPushButton.setEnabled(False)
+                self.lastGroupSepStatus = ''
+                self._draw_plot_when_ready()
+                return
+            self.largeGroupSepAcceptedColumn = sepColumn
+
+        self.currentSepPlotValues = sepValues
+        rowCount, columnCount = self._best_subplot_grid(sepCount)
+        subplotTitles = [
+            self._group_line_setting(sepValue).get('title', sepValue) or sepValue
+            for sepValue in sepValues
+        ]
+        fig = make_subplots(
+            rows=rowCount,
+            cols=columnCount,
+            subplot_titles=subplotTitles,
+            horizontal_spacing=0.04,
+            vertical_spacing=0.12,
+        )
+        xTitle = self._build_x_title(group1Column, group2Column)
+        shownLegendNames = set()
+
+        for sepIndex, sepValue in enumerate(sepValues):
+            row = sepIndex // columnCount + 1
+            col = sepIndex % columnCount + 1
+            subPlotData = plotData[plotData[sepColumn].astype(str) == sepValue].copy()
+            if subPlotData.empty:
+                continue
+            categoryColumn, categoryOrder = self._build_box_category(
+                subPlotData,
+                group1Column,
+                group2Column,
+            )
+            subPlotData[categoryColumn] = pd.Categorical(
+                subPlotData[categoryColumn],
+                categories=categoryOrder,
+                ordered=True,
+            )
+            subPlotData = subPlotData.sort_values(categoryColumn)
+            subFig = px.box(
+                subPlotData,
+                x=categoryColumn,
+                y=yColumn,
+                color=group2Column,
+                points=pointsMode,
+                labels={yColumn: yTitle, categoryColumn: xTitle},
+                category_orders={categoryColumn: categoryOrder},
+                template=plotlyTheme,
+            )
+            if jitterValue is not None:
+                subFig.update_traces(jitter=jitterValue, pointpos=0)
+            for trace in subFig.data:
+                legendName = trace.name or ''
+                trace.showlegend = bool(legendVisible and legendName not in shownLegendNames)
+                shownLegendNames.add(legendName)
+                fig.add_trace(trace, row=row, col=col)
+            fig.update_xaxes(
+                title_text=xTitle,
+                categoryorder='array',
+                categoryarray=categoryOrder,
+                row=row,
+                col=col,
+            )
+            subplotYRange = self._setting_y_range(sepValue) or yRange
+            fig.update_yaxes(
+                title_text=yTitle,
+                range=subplotYRange,
+                row=row,
+                col=col,
+            )
+            self._add_reference_lines(
+                fig,
+                hLines,
+                yTitle,
+                lineColorWithOpacity,
+                lineWidth,
+                row=row,
+                col=col,
+            )
+            self._add_reference_lines(
+                fig,
+                self._setting_line_values(sepValue),
+                yTitle,
+                lineColorWithOpacity,
+                lineWidth,
+                row=row,
+                col=col,
+            )
+
+        plotHeight = max(self.plotHeightSpinBox.value(), 300 * rowCount)
+        fig.update_layout(
+            title_text=plotTitle,
+            template=plotlyTheme,
+            boxmode='group',
+            legend=dict(
+                orientation='v',
+                y=1,
+                x=1.02,
+                title_text='Legend',
+                font=dict(size=legendFontSize),
+                title_font=dict(size=legendFontSize),
+                bordercolor='rgba(0,0,0,0.15)',
+                borderwidth=1,
+            ),
+            margin={'t': 80, 'r': rightMargin, 'l': leftMargin, 'b': bottomMargin},
+            showlegend=legendVisible,
+            width=self.plotWidthSpinBox.value(),
+            height=plotHeight,
+        )
+        if self.filterAnnotationCheckBox.isChecked():
+            add_preview_filter_annotation(
+                fig,
+                self.tabDataWidget.preview_filter_annotation_text(),
+            )
+        self._render_figure(fig)
+
     def _draw_plot(self) -> None:
         self.redrawTimer.stop()
+        self.gridsLinesPushButton.setEnabled(False)
         if self.tabDataWidget is None:
             self._set_status('No data source attached to boxplot tab.', error=True)
             return
@@ -755,13 +1136,14 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         yColumn = self.yComboBox.currentText().strip()
         group1Column = self.group1ComboBox.currentText().strip() or None
         group2Column = self.group2ComboBox.currentText().strip() or None
+        sepColumn = self._selected_group_sep_column()
         if not yColumn:
             self._set_status('Choose a Y column first.', error=True)
             return
         if yColumn not in dataFrame.columns:
             self._set_status('Selected Y column not found in data.', error=True)
             return
-        for groupColumn in [group1Column, group2Column]:
+        for groupColumn in [group1Column, group2Column, sepColumn]:
             if groupColumn and groupColumn not in dataFrame.columns:
                 self._set_status('Selected group column not found in data.', error=True)
                 return
@@ -781,12 +1163,15 @@ class TabBoxplotWidget(BackgroundTaskMixin):
 
         requiredColumns = list(dict.fromkeys(
             columnName
-            for columnName in [yColumn, group1Column, group2Column]
+            for columnName in [yColumn, group1Column, group2Column, sepColumn]
             if columnName
         ))
         plotData = dataFrame.loc[:, requiredColumns].copy()
         plotData[yColumn] = pd.to_numeric(plotData[yColumn], errors='coerce')
-        dropColumns = [yColumn, *[column for column in [group1Column, group2Column] if column]]
+        dropColumns = [
+            yColumn,
+            *[column for column in [group1Column, group2Column, sepColumn] if column],
+        ]
         plotData = plotData.dropna(subset=dropColumns)
         if plotData.empty:
             self._set_status('No numeric Y data available for boxplot.', error=True)
@@ -812,6 +1197,32 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         rightMargin = 230 if selectedAnnotationStats else 180
 
         try:
+            if sepColumn:
+                self._draw_group_sep_boxplot(
+                    plotData,
+                    sepColumn,
+                    yColumn,
+                    group1Column,
+                    group2Column,
+                    plotTitle,
+                    yTitle,
+                    plotlyTheme,
+                    yRange,
+                    legendVisible,
+                    hLines,
+                    lineWidth,
+                    lineColorWithOpacity,
+                    pointsMode,
+                    jitterValue,
+                    selectedAnnotationStats,
+                    legendFontSize,
+                    leftMargin,
+                    rightMargin,
+                    bottomMargin,
+                )
+                return
+
+            self.currentSepPlotValues = []
             fig = px.box(
                 plotData,
                 x=categoryColumn,
@@ -861,17 +1272,13 @@ class TabBoxplotWidget(BackgroundTaskMixin):
                 selectedAnnotationStats,
             )
 
-            for hValue in hLines:
-                fig.add_hline(
-                    y=hValue,
-                    line_dash='dash',
-                    line_color=lineColorWithOpacity,
-                    line_width=lineWidth,
-                    annotation_text=self._format_line_label(yTitle, hValue),
-                    annotation_position='top right',
-                    annotation_font_color=lineColorWithOpacity,
-                    annotation_font_size=10,
-                )
+            self._add_reference_lines(
+                fig,
+                hLines,
+                yTitle,
+                lineColorWithOpacity,
+                lineWidth,
+            )
 
             if self.filterAnnotationCheckBox.isChecked():
                 add_preview_filter_annotation(
@@ -906,12 +1313,17 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             return
         self.loadingOverlay.hide()
         self.currentPlotHtml = result['fullHtml']
+        isGroupSepPlot = bool(self._selected_group_sep_column() and self.currentSepPlotValues)
+        self.gridsLinesPushButton.setEnabled(isGroupSepPlot)
+        statusText = 'Boxplot created successfully.'
+        if isGroupSepPlot and self.lastGroupSepStatus:
+            statusText = f'{statusText} {self.lastGroupSepStatus}.'
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
             try:
                 baseUrl = QUrl.fromLocalFile(str(assetsDir)+'/')
                 self.chartView.setHtml(result.get('embeddedHtml', self.currentPlotHtml), baseUrl)
-                self._set_status('Boxplot created successfully.')
+                self._set_status(statusText)
                 return
             except Exception:
                 self._switch_to_external_browser_view()
@@ -960,12 +1372,13 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             '<p><h1>不是我的錯！</h1></p>'
             '</div>'
         )
-        self._set_status('Boxplot created successfully.')
+        self._set_status(statusText)
 
     def _on_render_figure_failed(self, taskId: int, errorText: str) -> None:
         if taskId != getattr(self, '_activeRenderTaskId', None):
             return
         self.loadingOverlay.hide()
+        self.gridsLinesPushButton.setEnabled(False)
         self._set_status(f'Failed to render boxplot HTML: {errorText}', error=True)
 
     def _download_html(self) -> None:
