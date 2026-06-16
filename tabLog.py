@@ -204,6 +204,10 @@ class TabLogWidget(BackgroundTaskMixin):
         self.hasDrawRequest = False
         self._browserViewerOpened = False
         self._updatingFilesList = False
+        self.isActiveTab = False
+        self._pendingDataRefresh = False
+        self._pendingPrimarySync = False
+        self._pendingRedraw = False
 
         self.y1ColumnCombo = CheckableColumnCombo(
             self.y1ComboBox,
@@ -345,9 +349,27 @@ class TabLogWidget(BackgroundTaskMixin):
             self.tabDataWidget.filePathLineEdit.textChanged.connect(self._sync_primary_file)
         self._refresh_column_options()
 
+    def set_active_tab(self, isActive: bool) -> None:
+        wasActive = self.isActiveTab
+        self.isActiveTab = isActive
+        if not isActive or wasActive:
+            return
+        if self._pendingDataRefresh:
+            self._refresh_column_options()
+            return
+        if self._pendingPrimarySync:
+            self._sync_primary_file()
+        if self._pendingRedraw:
+            self._pendingRedraw = False
+            self._draw_plot_when_ready()
+
     def _refresh_column_options(self) -> None:
         if self.tabDataWidget is None:
             return
+        if not self.isActiveTab:
+            self._pendingDataRefresh = True
+            return
+        self._pendingDataRefresh = False
         self._sync_primary_file()
         dataFrame = self.tabDataWidget.get_plot_data()
         columnNames = list(dataFrame.columns.astype(str))
@@ -411,6 +433,10 @@ class TabLogWidget(BackgroundTaskMixin):
     def _sync_primary_file(self, *_args) -> None:
         if self.tabDataWidget is None:
             return
+        if not self.isActiveTab:
+            self._pendingPrimarySync = True
+            return
+        self._pendingPrimarySync = False
         filePath = self.tabDataWidget.filePathLineEdit.text().strip()
         normalizedPath = self._normalized_path(filePath) if filePath else ''
         hasPrimaryData = self.tabDataWidget.has_loaded_data()
@@ -596,16 +622,25 @@ class TabLogWidget(BackgroundTaskMixin):
         self._mark_plot_pending()
 
     def _redraw_existing_plot(self, *_args) -> None:
+        if not self.isActiveTab:
+            self._pendingRedraw = True
+            return
         if self.hasDrawRequest:
             self._draw_plot()
 
     def _mark_plot_pending(self, *_args) -> None:
+        if not self.isActiveTab:
+            self._pendingRedraw = True
+            return
         if self.hasDrawRequest:
             self._set_status(f'Plot settings changed. Click Refresh Plot. {self._mode_text()}')
             return
         self._set_mode_status()
 
     def _draw_plot_when_ready(self, *_args) -> None:
+        if not self.isActiveTab:
+            self._pendingRedraw = True
+            return
         if self.hasDrawRequest:
             self._draw_plot()
 

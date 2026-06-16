@@ -37,11 +37,7 @@ from wafermap_core import (
     build_complete_die_rectangles,
     build_complete_frame_rectangles,
     build_effective_outline,
-    build_interpolated_grid,
     build_wafer_outline,
-    calculate_positions,
-    collapse_duplicate_points,
-    count_points_outside_outline,
     figure_to_jpg_bytes,
     render_figure,
     top_y_at_x,
@@ -64,6 +60,9 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         self._isApplyingConfig = False
         self._geometryCacheKey = None
         self._geometryCacheData = None
+        self.isActiveTab = False
+        self._pendingDataRefresh = False
+        self._pendingRedraw = False
 
         self.tabWidget = require_child(rootWidget, QWidget, 'tabWafermap')
         self.xComboBox = require_child(rootWidget, QComboBox, 'xColComboBox')
@@ -199,7 +198,23 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         self.tabDataWidget.add_data_changed_callback(self._on_data_changed)
         self._on_data_changed()
 
+    def set_active_tab(self, isActive: bool) -> None:
+        wasActive = self.isActiveTab
+        self.isActiveTab = isActive
+        if not isActive or wasActive:
+            return
+        if self._pendingDataRefresh:
+            self._on_data_changed()
+            return
+        if self._pendingRedraw:
+            self._pendingRedraw = False
+            self._redraw_after_change()
+
     def _on_data_changed(self) -> None:
+        if not self.isActiveTab:
+            self._pendingDataRefresh = True
+            return
+        self._pendingDataRefresh = False
         dataFrame = self._plot_data()
         columnNames = list(dataFrame.columns.astype(str)) if not dataFrame.empty else []
         for comboBox in [self.xComboBox, self.yComboBox, self.zComboBox]:
@@ -312,6 +327,9 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         return f'{baseTitle} {waferSuffix}'
 
     def _draw_plot_when_ready(self, *_args) -> None:
+        if not self.isActiveTab:
+            self._pendingRedraw = True
+            return
         try:
             self.draw_plot()
         except Exception as exc:
@@ -323,6 +341,9 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
 
     def _redraw_after_change(self, *_args) -> None:
         if self._isApplyingConfig:
+            return
+        if not self.isActiveTab:
+            self._pendingRedraw = True
             return
         if self.currentFigure is None:
             self._mark_plot_dirty()
@@ -350,6 +371,7 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
             'yColumn': self.yComboBox.currentText().strip(),
             'zColumn': self.zComboBox.currentText().strip(),
             'isHeatMap': self._is_heatmap_mode(),
+            'modeText': self.heatMapOrContourComboBox.currentText().strip(),
             'showDetail': self.showDetailCheckBox.isChecked(),
             'showDieLabels': self.showDieRCCheckBox.isChecked(),
             'frameLineColor': self._label_color(self.frameLineColorLabel, '#f4a3a3'),
@@ -385,21 +407,14 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         yColumn = str(snapshot['yColumn'])
         zColumn = str(snapshot['zColumn'])
         isHeatMap = bool(snapshot['isHeatMap'])
-        pointsDf, valueLabel, coordinateMode, duplicateCount = self._build_points_for_columns(
-            dataFrame,
-            params,
-            xColumn,
-            yColumn,
-            zColumn,
-        )
+        modeText = str(snapshot.get('modeText', ''))
+        isDeprecatedContour = self._is_deprecated_contour_mode(modeText)
+        valueLabel = zColumn if isHeatMap and zColumn else 'N/A'
         dieValueDf = (
             self._build_die_value_data_for_columns(dataFrame, xColumn, yColumn, zColumn)
             if isHeatMap
             else pd.DataFrame()
         )
-        hasPoints = not pointsDf.empty
-        contourGrid = None
-        contourStyle = 'die rectangle heatmap' if isHeatMap else 'filled + lines'
 
         geometry = self._build_geometry(params)
         waferOutline = geometry['waferOutline']
@@ -412,30 +427,21 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         if not completeFrames:
             frameBottomGapMm = -1.0
 
-        outsideCount = count_points_outside_outline(pointsDf, effectiveOutline) if hasPoints and not isHeatMap else 0
-        showContour = hasPoints and not isHeatMap
-        if showContour:
-            contourGrid = build_interpolated_grid(pointsDf, effectiveOutline)
-
         infoPanelText = self._build_info_panel_text(
             params=params,
             valueLabel=valueLabel,
-            coordinateMode=coordinateMode,
+            renderMode=modeText or 'Heat map',
+            deprecatedContour=isDeprecatedContour,
             totalFrames=len(completeFrames),
             totalDies=len(completeDies),
             frameBottomGapMm=frameBottomGapMm,
-            showContour=(not isHeatMap) and showContour and contourGrid is not None,
-            contourStyle=contourStyle,
             skipRows=int(snapshot['skipRows']),
         )
 
         figure = render_figure(
-            pd.DataFrame() if isHeatMap else pointsDf,
             waferOutline,
             effectiveOutline,
             params['title'],
-            None if isHeatMap else contourGrid,
-            valueLabel=valueLabel,
             stepXUm=params['stepXUm'],
             stepYUm=params['stepYUm'],
             arrayX=params['arrayX'],
@@ -446,9 +452,6 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
             bottomMm=params['bottomMm'],
             topReferenceY=topReferenceY,
             bottomReferenceY=bottomReferenceY,
-            showContour=(not isHeatMap) and showContour and contourGrid is not None,
-            contourStyle=contourStyle,
-            showContourGrid=False,
             showInfoPanel=bool(snapshot['showDetail']),
             showDieLabels=bool(snapshot['showDieLabels']),
             infoPanelText=infoPanelText,
@@ -457,7 +460,6 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
             dieLineColor=str(snapshot['dieLineColor']),
             effectiveEdgeColor=str(snapshot['effectiveEdgeColor']),
             waferEdgeColor=str(snapshot['waferEdgeColor']),
-            contourGridColor='#d9d9d9',
             frameLineWidth=float(snapshot['frameLineWidth']),
             dieLineWidth=float(snapshot['dieLineWidth']),
             effectiveEdgeLineWidth=float(snapshot['effectiveEdgeLineWidth']),
@@ -485,16 +487,10 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         statusParts = [f'Wafer map updated. frames={len(completeFrames)}, dies={len(completeDies)}']
         if isHeatMap:
             statusParts.append(f'heatmap cells={len(dieValueDf)}')
-        elif hasPoints:
-            statusParts.append(f'points={len(pointsDf)}')
-        if duplicateCount:
-            statusParts.append(f'duplicates collapsed={duplicateCount}')
-        if outsideCount:
-            statusParts.append(f'outside wafer={outsideCount}')
+        if isDeprecatedContour:
+            statusParts.append('Contour map is deprecated; use Contour tab for X/Y contour mapping. Rendering frame/die only')
         if heatmapMissCount:
             statusParts.append(f'unmatched cells={heatmapMissCount}')
-        if not isHeatMap and hasPoints and contourGrid is None:
-            statusParts.append('contour skipped: insufficient points')
         return {
             'figure': figure,
             'title': params['title'],
@@ -518,65 +514,6 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
             return
         self.loadingOverlay.hide()
         self._set_status(f'Wafer map error: {errorText}', error=True)
-
-    def _build_points(
-        self,
-        dataFrame: pd.DataFrame,
-        params: dict[str, object],
-    ) -> tuple[pd.DataFrame, str, str, int]:
-        xColumn = self.xComboBox.currentText().strip()
-        yColumn = self.yComboBox.currentText().strip()
-        zColumn = self.zComboBox.currentText().strip()
-        return self._build_points_for_columns(dataFrame, params, xColumn, yColumn, zColumn)
-
-    def _build_points_for_columns(
-        self,
-        dataFrame: pd.DataFrame,
-        params: dict[str, object],
-        xColumn: str,
-        yColumn: str,
-        zColumn: str,
-    ) -> tuple[pd.DataFrame, str, str, int]:
-        if (
-            dataFrame.empty
-            or not xColumn
-            or not yColumn
-            or not zColumn
-            or xColumn not in dataFrame.columns
-            or yColumn not in dataFrame.columns
-            or zColumn not in dataFrame.columns
-        ):
-            return pd.DataFrame(), zColumn or 'thickness', 'index', 0
-
-        sourceDf = dataFrame[[xColumn, yColumn, zColumn]].copy()
-        sourceDf.columns = ['siteX', 'siteY', 'thickness']
-        sourceDf = sourceDf.apply(pd.to_numeric, errors='coerce')
-        sourceDf = sourceDf.dropna(subset=['siteX', 'siteY', 'thickness']).reset_index(drop=True)
-        if sourceDf.empty:
-            return pd.DataFrame(), zColumn, 'index', 0
-
-        hasFloatingCoord = (
-            ((sourceDf['siteX'] - sourceDf['siteX'].round()).abs() > 1e-9).any()
-            or ((sourceDf['siteY'] - sourceDf['siteY'].round()).abs() > 1e-9).any()
-        )
-        coordinateMode = 'mm' if hasFloatingCoord else 'index'
-        calculatedDf = calculate_positions(
-            sourceDf,
-            stepXUm=params['stepXUm'],
-            stepYUm=params['stepYUm'],
-            offsetXUm=params['siteOffsetXUm'],
-            offsetYUm=params['siteOffsetYUm'],
-            coordinateMode=coordinateMode,
-            indexBaseYUm=(params['topMm'] - params['edgeExcludeMm']) * 1000.0,
-        )
-        plotDf, duplicateCount = collapse_duplicate_points(calculatedDf)
-        return plotDf, zColumn, coordinateMode, duplicateCount
-
-    def _build_die_value_data(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
-        xColumn = self.xComboBox.currentText().strip()
-        yColumn = self.yComboBox.currentText().strip()
-        zColumn = self.zComboBox.currentText().strip()
-        return self._build_die_value_data_for_columns(dataFrame, xColumn, yColumn, zColumn)
 
     def _build_die_value_data_for_columns(
         self,
@@ -620,24 +557,6 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         if indexSeries.empty:
             return indexSeries
         return indexSeries - int(indexSeries.min()) + 1
-
-    def _overlay_die_rect_heatmap(
-        self,
-        figure,
-        dieValueDf: pd.DataFrame,
-        completeDies: list[tuple[float, float, float, float]],
-        params: dict[str, object],
-        valueLabel: str,
-    ) -> int:
-        return self._overlay_die_rect_heatmap_with_limits(
-            figure,
-            dieValueDf,
-            completeDies,
-            params,
-            valueLabel,
-            self._colorbar_limits(),
-            self._wafer_value_font_size(),
-        )
 
     def _overlay_die_rect_heatmap_with_limits(
         self,
@@ -875,23 +794,25 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
         self,
         params: dict[str, object],
         valueLabel: str,
-        coordinateMode: str,
+        renderMode: str,
+        deprecatedContour: bool,
         totalFrames: int,
         totalDies: int,
         frameBottomGapMm: float,
-        showContour: bool,
-        contourStyle: str,
         skipRows: int | None = None,
     ) -> str:
         if skipRows is None:
             skipRows = self.tabDataWidget.get_skip_rows() if self.tabDataWidget is not None else 0
+        renderModeText = renderMode or 'frame/die'
+        if deprecatedContour:
+            renderModeText = 'Contour map deprecated; frame/die only'
         return '\n'.join([
             f"title: {params['title']}",
             "",
             "--- data source ---",
             f"skip rows: {skipRows}",
+            f"mode: {renderModeText}",
             f"value: {valueLabel}",
-            f"coord mode: {coordinateMode}",
             "",
             "--- frame parameters ---",
             f"frame W: {params['stepXUm']:.1f} um, H: {params['stepYUm']:.1f} um",
@@ -911,9 +832,6 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
             f"diameter: {params['diameterMm']:.1f} mm",
             f"flat: {params['flatOption']}",
             f"edge exclude: {params['edgeExcludeMm']:.2f} mm",
-            "",
-            f"contour map: {'ON' if showContour else 'OFF'}",
-            f"contour style: {contourStyle}",
         ])
 
     def _float_line_edit(self, lineEdit: QLineEdit, defaultValue: float) -> float:
@@ -941,6 +859,9 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
 
     def _is_heatmap_mode(self) -> bool:
         return 'heat' in self.heatMapOrContourComboBox.currentText().strip().lower()
+
+    def _is_deprecated_contour_mode(self, modeText: str) -> bool:
+        return 'contour' in str(modeText).strip().lower()
 
     def _label_color(self, label: QLabel, fallbackColor: str) -> str:
         styleSheet = label.styleSheet()

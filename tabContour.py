@@ -12,7 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from matplotlib.path import Path as MplPath
 from plotly.subplots import make_subplots
-from PySide6.QtCore import QEvent, QObject, QSignalBlocker, Qt, QUrl
+from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QTimer, Qt, QUrl
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from async_helpers import BackgroundTaskMixin
 from loading_overlay import LoadingOverlay
 from pivot_helpers import build_pivot_table, show_pivot_dialog
 from plot_export_helpers import save_plotly_png_and_copy_to_clipboard
@@ -69,6 +70,10 @@ VIRTUAL_COORD_OPTIONS = {
 }
 
 
+class ContourBuildSuperseded(RuntimeError):
+    pass
+
+
 class ContourFileDropFilter(QObject):
     def __init__(self, onFilesDropped, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -98,7 +103,7 @@ class ContourFileDropFilter(QObject):
         ]
 
 
-class TabContourWidget:
+class TabContourWidget(BackgroundTaskMixin):
     _waferColumnPattern = re.compile(r'wafer|wafer_?id|waferid', re.IGNORECASE)
 
     def __init__(self, rootWidget: QWidget, preferWebEngine: bool = True) -> None:
@@ -152,8 +157,12 @@ class TabContourWidget:
         self._updatingWaferChecks = False
         self._lastPolarWarning = ''
         self.isActiveTab = False
+        self._pendingPrimarySync = False
         self.cancelledVirtualCoordinateKey = None
         self._contourGridCache = {}
+        self._contourBuildGeneration = 0
+        self._activeBuildTaskId = None
+        self._activeRenderTaskId = None
         self._virtualCoordinateDialogOpen = False
         self._applyingVirtualCoordinates = False
 
@@ -166,6 +175,10 @@ class TabContourWidget:
 
         self._configure_plot_area()
         self.loadingOverlay = LoadingOverlay(self.plotAreaWidget)
+        self.redrawTimer = QTimer(self.rootWidget)
+        self.redrawTimer.setSingleShot(True)
+        self.redrawTimer.setInterval(800)
+        self.redrawTimer.timeout.connect(self._draw_plot)
         self._configure_defaults()
         self._configure_signals()
         self._apply_chart_mode()
@@ -259,6 +272,8 @@ class TabContourWidget:
         wasActive = self.isActiveTab
         self.isActiveTab = isActive
         if isActive and not wasActive:
+            if self._pendingPrimarySync:
+                self._sync_primary_data()
             self.cancelledVirtualCoordinateKey = None
             self._draw_plot_when_ready()
 
@@ -267,6 +282,10 @@ class TabContourWidget:
             return
         if self._applyingVirtualCoordinates:
             return
+        if not self.isActiveTab:
+            self._pendingPrimarySync = True
+            return
+        self._pendingPrimarySync = False
         self._clear_virtual_coordinate_cancel()
         self._clear_contour_cache()
         dataFrame = self.tabDataWidget.get_plot_data()
@@ -781,7 +800,11 @@ class TabContourWidget:
         if not self.isActiveTab:
             self._set_status('Contour settings ready. Switch to Contour tab to draw.')
             return
-        self._draw_plot()
+        self._schedule_draw()
+
+    def _schedule_draw(self) -> None:
+        self._set_status('Contour settings changed. Redrawing shortly...')
+        self.redrawTimer.start()
 
     def _has_minimum_plot_inputs(self) -> bool:
         return bool(
@@ -886,9 +909,13 @@ class TabContourWidget:
         return columnName
 
     def _draw_plot(self) -> None:
+        self.redrawTimer.stop()
         if not self.isActiveTab:
             self._set_status('Contour settings ready. Switch to Contour tab to draw.')
             return
+        buildGeneration = self._next_contour_build_generation()
+        self._activeBuildTaskId = None
+        self._activeRenderTaskId = None
         self.hasDrawRequest = True
         if not self._has_minimum_plot_inputs():
             self._clear_plot_area('No usable contour data selected.')
@@ -896,16 +923,54 @@ class TabContourWidget:
         if self._needs_virtual_coordinates() and not self._apply_virtual_coordinates_from_dialog():
             return
         try:
-            figure, statusText, warningText = self._build_figure()
+            snapshot = self._contour_build_snapshot(buildGeneration)
         except Exception as exc:
             self.loadingOverlay.hide()
             self._set_status(f'Contour error: {exc}', error=True)
             return
+
+        self.loadingOverlay.show('Building...')
+        self._set_status('Building contour figure...')
+        self._activeBuildTaskId = self._start_background_task(
+            lambda: self._build_figure(snapshot),
+            self._on_build_figure_finished,
+            self._on_build_figure_failed,
+        )
+
+    def _on_build_figure_finished(
+        self,
+        taskId: int,
+        result: tuple[go.Figure | None, str, str],
+    ) -> None:
+        if taskId != self._activeBuildTaskId:
+            return
+        figure, statusText, warningText = result
         if figure is None:
             self._clear_plot_area(statusText or 'No contour plot created.')
             return
         self.currentPlotFigure = figure
         self._render_figure(figure, statusText, warningText)
+
+    def _on_build_figure_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != self._activeBuildTaskId:
+            return
+        if errorText == 'Contour build superseded':
+            self.loadingOverlay.hide()
+            self._set_status('Contour build superseded by newer settings.')
+            return
+        self.loadingOverlay.hide()
+        self._set_status(f'Contour error: {errorText}', error=True)
+
+    def _next_contour_build_generation(self) -> int:
+        self._contourBuildGeneration += 1
+        return self._contourBuildGeneration
+
+    def _is_current_contour_build(self, snapshot: dict[str, object]) -> bool:
+        return int(snapshot.get('buildGeneration', -1)) == self._contourBuildGeneration
+
+    def _raise_if_stale_contour_build(self, snapshot: dict[str, object]) -> None:
+        if not self._is_current_contour_build(snapshot):
+            raise ContourBuildSuperseded('Contour build superseded')
 
     def _needs_virtual_coordinates(self) -> bool:
         return (
@@ -926,7 +991,6 @@ class TabContourWidget:
             return False
 
         zRowCount = int(pd.to_numeric(activeSource['dataFrame'][zColumn], errors='coerce').notna().sum())
-        sourceSnapshots = self._virtual_coordinate_source_snapshots()
         self._virtualCoordinateDialogOpen = True
         try:
             selectedOption = self._ask_virtual_coordinate_option(zColumn, zRowCount)
@@ -934,13 +998,15 @@ class TabContourWidget:
             self._virtualCoordinateDialogOpen = False
         if selectedOption is None:
             self.cancelledVirtualCoordinateKey = promptKey
-            self._cancel_virtual_coordinate_generation(sourceSnapshots)
+            self._cancel_virtual_coordinate_generation()
             return False
 
         csvFilename, expectedRows = selectedOption
+        sourceSnapshots = []
         try:
             self._applyingVirtualCoordinates = True
             coordDataFrame = self._load_virtual_coordinate_file(csvFilename, expectedRows)
+            sourceSnapshots = self._virtual_coordinate_source_snapshots()
             updatedCount = self._apply_virtual_coordinates_to_selected_sources(
                 coordDataFrame,
                 zColumn,
@@ -948,6 +1014,7 @@ class TabContourWidget:
             if updatedCount > 0:
                 self._set_xy_combo_text('x', 'y')
         except Exception as exc:
+            self._restore_virtual_coordinate_sources(sourceSnapshots)
             QMessageBox.warning(self.rootWidget, 'Contour', str(exc))
             self._set_status(f'Virtual coordinate error: {exc}', error=True)
             return False
@@ -1062,7 +1129,7 @@ class TabContourWidget:
         zColumn: str,
     ) -> int:
         coordValues = coordDataFrame[['x', 'y']].to_numpy(dtype=float)
-        updatedCount = 0
+        updates = []
         for item in self._selected_file_items():
             dataFrame = item.data(DATAFRAME_ROLE)
             if not isinstance(dataFrame, pd.DataFrame) or zColumn not in dataFrame.columns:
@@ -1076,6 +1143,9 @@ class TabContourWidget:
                     f'{item.text()}: Z({zColumn}) has {usableCount} numeric data rows; '
                     f'expected a multiple of {len(coordValues)}. CSV header is not counted.'
                 )
+            updates.append((item, dataFrame, usableMask, usableCount))
+
+        for item, dataFrame, usableMask, usableCount in updates:
             sourceDataFrame = dataFrame.copy()
             coordIndexes = np.arange(usableCount) % len(coordValues)
             sourceDataFrame.loc[usableMask, 'x'] = coordValues[coordIndexes, 0]
@@ -1085,8 +1155,7 @@ class TabContourWidget:
             if bool(item.data(PRIMARY_FILE_ROLE)) and self.tabDataWidget is not None:
                 if hasattr(self.tabDataWidget, 'apply_virtual_coordinates'):
                     self.tabDataWidget.apply_virtual_coordinates(sourceDataFrame)
-            updatedCount += 1
-        return updatedCount
+        return len(updates)
 
     def _set_xy_combo_text(self, xColumn: str, yColumn: str) -> None:
         self._updatingControls = True
@@ -1101,10 +1170,66 @@ class TabContourWidget:
             blockers.clear()
             self._updatingControls = False
 
-    def _build_figure(self) -> tuple[go.Figure | None, str, str]:
-        sources = self._selected_sources()
-        selectedWaferIds = self._selected_wafer_ids()
-        if self._single_mode():
+    def _contour_build_snapshot(self, buildGeneration: int) -> dict[str, object]:
+        fillContour = self.fillCheckBox.isChecked()
+        limitLow = None
+        limitHigh = None
+        lineSpace = None
+        if fillContour:
+            limitLow, limitHigh = self._color_limits()
+        else:
+            lineSpace = self._contour_line_space()
+
+        waferDiameter = self._wafer_diameter()
+        excludeMm = float(self.excludeSpinBox.value())
+        waferOutline = build_wafer_outline(waferDiameter, self._flat_option())
+        effectiveOutline = build_effective_outline(
+            waferOutline=waferOutline,
+            edgeExcludeMm=excludeMm,
+        )
+        if len(effectiveOutline) < 3:
+            raise ValueError('edge exclude 太大，已無可用 wafer 區域。')
+
+        return {
+            'buildGeneration': buildGeneration,
+            'sources': self._selected_sources(),
+            'selectedWaferIds': self._selected_wafer_ids(),
+            'singleMode': self._single_mode(),
+            'xColumn': self.xComboBox.currentText().strip(),
+            'yColumn': self.yComboBox.currentText().strip(),
+            'zColumn': self.zComboBox.currentText().strip(),
+            'waferColumn': self.waferColComboBox.currentText().strip(),
+            'contourStyle': self._contour_style(),
+            'waferDiameter': waferDiameter,
+            'flatOption': self._flat_option(),
+            'excludeMm': excludeMm,
+            'waferOutline': waferOutline,
+            'effectiveOutline': effectiveOutline,
+            'fillContour': fillContour,
+            'limitLow': limitLow,
+            'limitHigh': limitHigh,
+            'lineSpace': lineSpace,
+            'colorScale': [
+                [0.0, self._label_color(self.limitLowColorLabel, '#2171ff')],
+                [1.0, self._label_color(self.limitHighColorLabel, '#ff540e')],
+            ],
+            'edgeColor': self._label_color(self.edgeColorLabel, '#ff7ccd'),
+            'excludeColor': self._label_color(self.excludeColorLabel, '#000000'),
+            'showValue': self.showValueCheckBox.isChecked(),
+            'showDetail': self.showDetailCheckBox.isChecked(),
+            'fontSizes': self._font_sizes(),
+            'title': self.titleLineEdit.text().strip() or 'Contour Map',
+            'plotWidth': max(500, self.plotAreaWidget.width()),
+            'plotHeight': max(500, self.plotAreaWidget.height()),
+        }
+
+    def _build_figure(self, snapshot: dict[str, object]) -> tuple[go.Figure | None, str, str]:
+        self._raise_if_stale_contour_build(snapshot)
+
+        sources = list(snapshot['sources'])
+        selectedWaferIds = list(snapshot['selectedWaferIds'])
+        singleMode = bool(snapshot['singleMode'])
+        if singleMode:
             if not selectedWaferIds:
                 return None, 'Single mode needs one wafer ID, not all.', ''
             sources = sources[:1]
@@ -1113,7 +1238,7 @@ class TabContourWidget:
             return None, 'Grid mode needs at least one wafer ID.', ''
 
         subplotJobs = []
-        if self._single_mode():
+        if singleMode:
             subplotJobs.append((sources[0], selectedWaferIds[0]))
         else:
             for source in sources:
@@ -1132,39 +1257,41 @@ class TabContourWidget:
             horizontal_spacing=0.05,
             vertical_spacing=0.08,
         )
-        waferOutline, effectiveOutline = self._wafer_outlines()
-        fillContour = self.fillCheckBox.isChecked()
-        limitLow = None
-        limitHigh = None
-        colorScale = []
-        if fillContour:
-            limitLow, limitHigh = self._color_limits()
-            colorScale = [
-                [0.0, self._label_color(self.limitLowColorLabel, '#2171ff')],
-                [1.0, self._label_color(self.limitHighColorLabel, '#ff540e')],
-            ]
-        else:
-            self._contour_line_space()
+        waferOutline = snapshot['waferOutline']
+        effectiveOutline = snapshot['effectiveOutline']
+        fillContour = bool(snapshot['fillContour'])
+        limitLow = snapshot['limitLow']
+        limitHigh = snapshot['limitHigh']
+        colorScale = list(snapshot['colorScale'])
         warnings = []
         plottedCount = 0
         emptyCount = 0
 
         for subplotIndex, (source, waferId) in enumerate(subplotJobs):
+            self._raise_if_stale_contour_build(snapshot)
+
             rowIndex = subplotIndex // columnCount + 1
             columnIndex = subplotIndex % columnCount + 1
-            cacheKey = self._contour_cache_key(source, waferId)
+            cacheKey = self._contour_cache_key(source, waferId, snapshot)
             cachedContour = self._contourGridCache.get(cacheKey)
             if cachedContour is None:
-                preparedData, dataWarning = self._prepared_source_data(source, waferId, effectiveOutline)
-                contourGrid = None if preparedData.empty else self._build_contour_grid(preparedData, effectiveOutline)
+                preparedData, dataWarning = self._prepared_source_data(source, waferId, effectiveOutline, snapshot)
+                contourGrid = None if preparedData.empty else self._build_contour_grid(
+                    preparedData,
+                    effectiveOutline,
+                    str(snapshot['contourStyle']),
+                    snapshot,
+                )
                 siteData = preparedData[['x', 'y', 'z']].copy() if not preparedData.empty else pd.DataFrame()
                 self._contourGridCache[cacheKey] = (dataWarning, contourGrid, siteData)
             else:
                 dataWarning, contourGrid, siteData = cachedContour
+            self._raise_if_stale_contour_build(snapshot)
+
             if dataWarning:
                 warnings.append(f'{source["name"]} #{waferId}: {dataWarning}')
             if contourGrid is None:
-                self._add_empty_subplot(figure, rowIndex, columnIndex, waferOutline, effectiveOutline)
+                self._add_empty_subplot(figure, rowIndex, columnIndex, waferOutline, effectiveOutline, snapshot)
                 if not dataWarning:
                     warnings.append(f'{source["name"]} #{waferId}: insufficient contour points')
                 emptyCount += 1
@@ -1181,10 +1308,11 @@ class TabContourWidget:
                     limitHigh,
                     fillContour,
                     showScale=plottedCount == 0,
+                    snapshot=snapshot,
                 )
-                self._add_site_markers(figure, rowIndex, columnIndex, siteData)
+                self._add_site_markers(figure, rowIndex, columnIndex, siteData, snapshot)
                 plottedCount += 1
-            self._apply_subplot_axes(figure, rowIndex, columnIndex, columnCount, waferOutline)
+            self._apply_subplot_axes(figure, rowIndex, columnIndex, columnCount, waferOutline, snapshot)
 
         if plottedCount <= 0:
             statusText = 'No usable contour points in selected wafer area.'
@@ -1193,21 +1321,26 @@ class TabContourWidget:
             if emptyCount:
                 statusText += f', empty={emptyCount}'
         warningText = '; '.join(dict.fromkeys([warning for warning in warnings if warning]))
-        self._apply_common_layout(figure, rowCount, columnCount)
+        self._apply_common_layout(figure, rowCount, columnCount, snapshot)
         return figure, statusText, warningText
 
-    def _contour_cache_key(self, source: dict[str, object], waferId: str) -> tuple[object, ...]:
+    def _contour_cache_key(
+        self,
+        source: dict[str, object],
+        waferId: str,
+        snapshot: dict[str, object],
+    ) -> tuple[object, ...]:
         return (
             str(source.get('path') or source.get('name') or ''),
             waferId,
-            self.xComboBox.currentText().strip(),
-            self.yComboBox.currentText().strip(),
-            self.zComboBox.currentText().strip(),
-            self.waferColComboBox.currentText().strip(),
-            self._contour_style(),
-            self._wafer_diameter(),
-            self._flat_option(),
-            float(self.excludeSpinBox.value()),
+            str(snapshot['xColumn']),
+            str(snapshot['yColumn']),
+            str(snapshot['zColumn']),
+            str(snapshot['waferColumn']),
+            str(snapshot['contourStyle']),
+            float(snapshot['waferDiameter']),
+            str(snapshot['flatOption']),
+            float(snapshot['excludeMm']),
         )
 
     def _subplot_title(self, sourceName: str, waferId: str) -> str:
@@ -1264,11 +1397,16 @@ class TabContourWidget:
             raise ValueError('Contour line space must be greater than zero.')
         return lineSpace
 
-    def _contour_line_range(self, gridZ: np.ndarray) -> tuple[float, float]:
+    def _contour_line_range(
+        self,
+        gridZ: np.ndarray,
+        lineSpace: float | None = None,
+    ) -> tuple[float, float]:
         finiteValues = gridZ[np.isfinite(gridZ)]
         if finiteValues.size <= 0:
             raise ValueError('No finite contour values for line contour.')
-        lineSpace = self._contour_line_space()
+        if lineSpace is None:
+            lineSpace = self._contour_line_space()
         valueMin = float(finiteValues.min())
         valueMax = float(finiteValues.max())
         lineStart = math.floor(valueMin / lineSpace) * lineSpace
@@ -1282,12 +1420,13 @@ class TabContourWidget:
         source: dict[str, object],
         waferId: str,
         effectiveOutline: np.ndarray,
+        snapshot: dict[str, object],
     ) -> tuple[pd.DataFrame, str]:
         dataFrame = source['dataFrame']
-        xColumn = self.xComboBox.currentText().strip()
-        yColumn = self.yComboBox.currentText().strip()
-        zColumn = self.zComboBox.currentText().strip()
-        waferColumn = self.waferColComboBox.currentText().strip()
+        xColumn = str(snapshot['xColumn'])
+        yColumn = str(snapshot['yColumn'])
+        zColumn = str(snapshot['zColumn'])
+        waferColumn = str(snapshot['waferColumn'])
         if self._is_none_column(xColumn) or self._is_none_column(yColumn):
             return pd.DataFrame(), 'missing X/Y coordinates'
         requiredColumns = [xColumn, yColumn, zColumn]
@@ -1305,7 +1444,13 @@ class TabContourWidget:
             return pd.DataFrame(), 'wafer not found'
 
         if self._is_polar_selection(xColumn, yColumn):
-            plotData, warningText = self._polar_to_xy(filteredData, xColumn, yColumn, zColumn)
+            plotData, warningText = self._polar_to_xy(
+                filteredData,
+                xColumn,
+                yColumn,
+                zColumn,
+                snapshot,
+            )
         else:
             plotData = filteredData[[xColumn, yColumn, zColumn]].copy()
             plotData.columns = ['x', 'y', 'z']
@@ -1333,6 +1478,7 @@ class TabContourWidget:
         xColumn: str,
         yColumn: str,
         zColumn: str,
+        snapshot: dict[str, object],
     ) -> tuple[pd.DataFrame, str]:
         normalizedX = self._normalize_name(xColumn)
         radiusColumn = xColumn if normalizedX == 'r' else yColumn
@@ -1340,7 +1486,7 @@ class TabContourWidget:
         radiusValues = pd.to_numeric(dataFrame[radiusColumn], errors='coerce')
         thetaValues = pd.to_numeric(dataFrame[thetaColumn], errors='coerce')
         zValues = pd.to_numeric(dataFrame[zColumn], errors='coerce')
-        effectiveRadius = self._effective_radius()
+        effectiveRadius = max(0.0, float(snapshot['waferDiameter']) / 2.0 - float(snapshot['excludeMm']))
         warningText = ''
         if radiusValues.dropna().gt(1.0).any():
             scaledRadius = radiusValues
@@ -1365,8 +1511,11 @@ class TabContourWidget:
         self,
         plotData: pd.DataFrame,
         effectiveOutline: np.ndarray,
+        styleText: str,
+        snapshot: dict[str, object],
         gridSize: int = 160,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        self._raise_if_stale_contour_build(snapshot)
         points = plotData[['x', 'y']].to_numpy(dtype=float)
         values = plotData['z'].to_numpy(dtype=float)
         if len(points) < 3:
@@ -1381,16 +1530,16 @@ class TabContourWidget:
             np.linspace(xMin, xMax, gridSize),
             np.linspace(yMin, yMax, gridSize),
         )
-        styleText = self._contour_style()
         if styleText == CONTOUR_STYLE_CUBIC:
             gridZ = self._triangulated_grid(points, values, gridX, gridY, cubic=True)
         elif styleText == CONTOUR_STYLE_IDW:
-            gridZ = self._idw_grid(points, values, gridX, gridY)
+            gridZ = self._idw_grid(points, values, gridX, gridY, snapshot)
         elif styleText == CONTOUR_STYLE_GAUSSIAN:
-            gridZ = self._gaussian_process_grid(points, values, gridX, gridY)
+            gridZ = self._gaussian_process_grid(points, values, gridX, gridY, snapshot)
         else:
             gridZ = self._triangulated_grid(points, values, gridX, gridY, cubic=False)
 
+        self._raise_if_stale_contour_build(snapshot)
         missingMask = np.isnan(gridZ)
         if np.any(missingMask):
             missingPoints = np.column_stack((gridX[missingMask], gridY[missingMask]))
@@ -1428,12 +1577,14 @@ class TabContourWidget:
         values: np.ndarray,
         gridX: np.ndarray,
         gridY: np.ndarray,
+        snapshot: dict[str, object],
         power: float = 2.0,
         chunkSize: int = 4096,
     ) -> np.ndarray:
         queryPoints = np.column_stack((gridX.ravel(), gridY.ravel()))
         gridValues = np.empty(len(queryPoints), dtype=float)
         for startIndex in range(0, len(queryPoints), chunkSize):
+            self._raise_if_stale_contour_build(snapshot)
             chunk = queryPoints[startIndex:startIndex + chunkSize]
             distances = np.linalg.norm(chunk[:, None, :] - points[None, :, :], axis=2)
             exactMask = distances <= 1e-12
@@ -1452,8 +1603,10 @@ class TabContourWidget:
         values: np.ndarray,
         gridX: np.ndarray,
         gridY: np.ndarray,
+        snapshot: dict[str, object],
         chunkSize: int = 4096,
     ) -> np.ndarray:
+        self._raise_if_stale_contour_build(snapshot)
         center = points.mean(axis=0, keepdims=True)
         scale = max(float(np.ptp(points[:, 0])), float(np.ptp(points[:, 1])), 1.0)
         scaledPoints = (points - center) / scale
@@ -1479,6 +1632,7 @@ class TabContourWidget:
         queryPoints = np.column_stack((gridX.ravel(), gridY.ravel()))
         gridValues = np.empty(len(queryPoints), dtype=float)
         for startIndex in range(0, len(queryPoints), chunkSize):
+            self._raise_if_stale_contour_build(snapshot)
             chunk = (queryPoints[startIndex:startIndex + chunkSize] - center) / scale
             distances = np.linalg.norm(chunk[:, None, :] - scaledPoints[None, :, :], axis=2)
             queryKernel = np.exp(-0.5 * (distances / lengthScale) ** 2)
@@ -1498,6 +1652,7 @@ class TabContourWidget:
         limitHigh: float | None,
         fillContour: bool,
         showScale: bool,
+        snapshot: dict[str, object],
     ) -> None:
         gridX, gridY, gridZ = contourGrid
         if fillContour:
@@ -1506,18 +1661,18 @@ class TabContourWidget:
                 'colorscale': colorScale,
                 'zmin': limitLow,
                 'zmax': limitHigh,
-                'colorbar': dict(title=self.zComboBox.currentText().strip()) if showScale else None,
+                'colorbar': dict(title=str(snapshot['zColumn'])) if showScale else None,
                 'showscale': showScale,
             }
             lineOptions = dict(width=0.4, color='rgba(0,0,0,0.45)')
         else:
-            lineStart, lineEnd = self._contour_line_range(gridZ)
+            lineStart, lineEnd = self._contour_line_range(gridZ, float(snapshot['lineSpace']))
             contours = dict(
                 coloring='none',
                 showlines=True,
                 start=lineStart,
                 end=lineEnd,
-                size=self._contour_line_space(),
+                size=float(snapshot['lineSpace']),
             )
             traceOptions = {
                 'colorscale': [[0.0, '#202020'], [1.0, '#202020']],
@@ -1536,7 +1691,7 @@ class TabContourWidget:
             row=rowIndex,
             col=columnIndex,
         )
-        self._add_wafer_outlines(figure, rowIndex, columnIndex, waferOutline, effectiveOutline)
+        self._add_wafer_outlines(figure, rowIndex, columnIndex, waferOutline, effectiveOutline, snapshot)
 
     def _add_site_markers(
         self,
@@ -1544,11 +1699,12 @@ class TabContourWidget:
         rowIndex: int,
         columnIndex: int,
         siteData: pd.DataFrame,
+        snapshot: dict[str, object],
     ) -> None:
         if siteData.empty:
             return
-        showValue = self.showValueCheckBox.isChecked()
-        markerFontSize = self._font_sizes()['value']
+        showValue = bool(snapshot['showValue'])
+        markerFontSize = dict(snapshot['fontSizes'])['value']
         figure.add_trace(
             go.Scatter(
                 x=siteData['x'],
@@ -1588,14 +1744,15 @@ class TabContourWidget:
         columnIndex: int,
         waferOutline: np.ndarray,
         effectiveOutline: np.ndarray,
+        snapshot: dict[str, object],
     ) -> None:
-        self._add_wafer_outlines(figure, rowIndex, columnIndex, waferOutline, effectiveOutline)
+        self._add_wafer_outlines(figure, rowIndex, columnIndex, waferOutline, effectiveOutline, snapshot)
         figure.add_annotation(
             text='empty',
             x=0,
             y=0,
             showarrow=False,
-            font=dict(size=max(8, int(self.fontSizeSpinBox.value()) + 4), color='#888888'),
+            font=dict(size=dict(snapshot['fontSizes'])['base'], color='#888888'),
             row=rowIndex,
             col=columnIndex,
         )
@@ -1607,13 +1764,14 @@ class TabContourWidget:
         columnIndex: int,
         waferOutline: np.ndarray,
         effectiveOutline: np.ndarray,
+        snapshot: dict[str, object],
     ) -> None:
         figure.add_trace(
             go.Scatter(
                 x=waferOutline[:, 0],
                 y=waferOutline[:, 1],
                 mode='lines',
-                line=dict(color=self._label_color(self.edgeColorLabel, '#ff7ccd'), width=2),
+                line=dict(color=str(snapshot['edgeColor']), width=2),
                 name='wafer edge',
                 showlegend=False,
                 hoverinfo='skip',
@@ -1626,7 +1784,7 @@ class TabContourWidget:
                 x=effectiveOutline[:, 0],
                 y=effectiveOutline[:, 1],
                 mode='lines',
-                line=dict(color=self._label_color(self.excludeColorLabel, '#000000'), width=1.5),
+                line=dict(color=str(snapshot['excludeColor']), width=1.5),
                 name='effective edge',
                 showlegend=False,
                 hoverinfo='skip',
@@ -1642,9 +1800,10 @@ class TabContourWidget:
         columnIndex: int,
         columnCount: int,
         waferOutline: np.ndarray,
+        snapshot: dict[str, object],
     ) -> None:
-        margin = max(self._wafer_diameter() * 0.03, 3.0)
-        fontSizes = self._font_sizes()
+        margin = max(float(snapshot['waferDiameter']) * 0.03, 3.0)
+        fontSizes = dict(snapshot['fontSizes'])
         xAxisRef = self._subplot_x_axis_ref(rowIndex, columnIndex, columnCount)
         figure.update_xaxes(
             range=[float(waferOutline[:, 0].min()) - margin, float(waferOutline[:, 0].max()) + margin],
@@ -1673,13 +1832,19 @@ class TabContourWidget:
         subplotIndex = (rowIndex - 1) * columnCount + columnIndex
         return 'x' if subplotIndex == 1 else f'x{subplotIndex}'
 
-    def _apply_common_layout(self, figure: go.Figure, rowCount: int, columnCount: int) -> None:
-        width = max(500, self.plotAreaWidget.width())
-        height = max(500, self.plotAreaWidget.height())
-        fontSizes = self._font_sizes()
+    def _apply_common_layout(
+        self,
+        figure: go.Figure,
+        rowCount: int,
+        columnCount: int,
+        snapshot: dict[str, object],
+    ) -> None:
+        width = int(snapshot['plotWidth'])
+        height = int(snapshot['plotHeight'])
+        fontSizes = dict(snapshot['fontSizes'])
         figure.update_layout(
             title=dict(
-                text=self.titleLineEdit.text().strip() or 'Contour Map',
+                text=str(snapshot['title']),
                 x=0.5,
                 font=dict(size=fontSizes['title']),
             ),
@@ -1691,13 +1856,13 @@ class TabContourWidget:
             showlegend=False,
         )
         figure.update_annotations(font=dict(size=fontSizes['subplot']))
-        if self.showDetailCheckBox.isChecked():
+        if bool(snapshot['showDetail']):
             figure.add_annotation(
                 text='<br>'.join([
-                    f'diameter: {self._wafer_diameter():.1f} mm',
-                    f'flat: {self._flat_option()}',
-                    f'exclude: {float(self.excludeSpinBox.value()):.1f} mm',
-                    f'mode: {"single" if self._single_mode() else "grid"}',
+                    f'diameter: {float(snapshot["waferDiameter"]):.1f} mm',
+                    f'flat: {snapshot["flatOption"]}',
+                    f'exclude: {float(snapshot["excludeMm"]):.1f} mm',
+                    f'mode: {"single" if bool(snapshot["singleMode"]) else "grid"}',
                     f'subplots: {rowCount}x{columnCount}',
                 ]),
                 xref='paper',
@@ -1738,6 +1903,8 @@ class TabContourWidget:
 
     def _clear_plot_area(self, statusText: str) -> None:
         self.loadingOverlay.hide()
+        self._activeBuildTaskId = None
+        self._activeRenderTaskId = None
         self.hasDrawRequest = False
         self.currentPlotHtml = ''
         self.currentPlotFigure = None
@@ -1751,19 +1918,45 @@ class TabContourWidget:
         self._set_status(statusText)
 
     def _render_figure(self, figure: go.Figure, statusText: str, warningText: str) -> None:
-        self.loadingOverlay.show('Loading...')
+        self.currentPlotHtml = ''
+        self.loadingOverlay.show('Rendering...')
+        self._set_status('Rendering contour HTML...')
+
+        useExternalBrowser = self.useExternalBrowser
+
+        def work() -> dict[str, str]:
+            result = {'fullHtml': local_plotly_html(figure, fullHtml=True)}
+            if not useExternalBrowser:
+                result['embeddedHtml'] = local_plotly_html(figure, fullHtml=False)
+            return result
+
+        self._activeRenderTaskId = self._start_background_task(
+            work,
+            lambda taskId, result: self._on_render_figure_finished(
+                taskId,
+                result,
+                statusText,
+                warningText,
+            ),
+            self._on_render_figure_failed,
+        )
+
+    def _on_render_figure_finished(
+        self,
+        taskId: int,
+        result: dict[str, str],
+        statusText: str,
+        warningText: str,
+    ) -> None:
+        if taskId != self._activeRenderTaskId:
+            return
+        self.currentPlotHtml = result['fullHtml']
         try:
-            self.currentPlotHtml = local_plotly_html(figure, fullHtml=True)
-            embeddedHtml = (
-                local_plotly_html(figure, fullHtml=False)
-                if not self.useExternalBrowser
-                else self.currentPlotHtml
-            )
             if not self.useExternalBrowser:
                 assetsDir = Path(__file__).resolve().parent
                 try:
                     baseUrl = QUrl.fromLocalFile(str(assetsDir) + '/')
-                    self.chartView.setHtml(embeddedHtml, baseUrl)
+                    self.chartView.setHtml(result.get('embeddedHtml', self.currentPlotHtml), baseUrl)
                     self.loadingOverlay.hide()
                     self._set_status(self._status_with_warning(statusText, warningText), error=bool(warningText))
                     return
@@ -1814,6 +2007,12 @@ class TabContourWidget:
         except Exception as exc:
             self.loadingOverlay.hide()
             self._set_status(f'Failed to render contour HTML: {exc}', error=True)
+
+    def _on_render_figure_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != self._activeRenderTaskId:
+            return
+        self.loadingOverlay.hide()
+        self._set_status(f'Failed to render contour HTML: {errorText}', error=True)
 
     def _status_with_warning(self, statusText: str, warningText: str) -> str:
         return f'{statusText} Warning: {warningText}' if warningText else statusText

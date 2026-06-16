@@ -62,7 +62,7 @@ QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
 APP_VERSION = 'v2.8.0'
 APP_AUTHOR = 'cnwang'
-APP_DATE = 'build 0612'
+APP_DATE = 'build 0615'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} {APP_DATE} by {APP_AUTHOR}'
 APP_ICON_FILENAME = os.path.join(
     'AppIcon.appiconset',
@@ -380,6 +380,14 @@ class AppMain:
         self.tabWafermapWidget = TabWafermapWidget(self.ui)
         self.tabContourWidget = TabContourWidget(self.ui, preferWebEngine=preferWebEngine)
         self.tabLogWidget = TabLogWidget(self.ui, preferWebEngine=preferWebEngine)
+        self.tabControllersByObjectName = {
+            'tabData': self.tabDataWidget,
+            'tabScatter': self.tabScatterWidget,
+            'tabBoxplot': self.tabBoxplotWidget,
+            'tabWafermap': self.tabWafermapWidget,
+            'tabContour': self.tabContourWidget,
+            'logTab': self.tabLogWidget,
+        }
         self.tabScatterWidget.set_tab_data(self.tabDataWidget)
         self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)
         self.tabWafermapWidget.set_tab_data(self.tabDataWidget)
@@ -388,6 +396,7 @@ class AppMain:
         self.tabWidget.currentChanged.connect(self._on_tab_changed)
         self.aboutButton.clicked.connect(self._show_about_dialog)
         self.tabWidget.setCurrentIndex(0)
+        self._on_tab_changed(self.tabWidget.currentIndex())
         self._center_window()
         self.ui.show()
         self.app.processEvents()
@@ -406,8 +415,10 @@ class AppMain:
     def _on_tab_changed(self, tabIndex: int) -> None:
         self._warn_if_plotting_loaded_data(tabIndex)
         currentWidget = self.tabWidget.widget(tabIndex)
-        isContourTab = currentWidget is not None and currentWidget.objectName() == 'tabContour'
-        self.tabContourWidget.set_active_tab(isContourTab)
+        currentObjectName = currentWidget.objectName() if currentWidget is not None else ''
+        for objectName, controller in self.tabControllersByObjectName.items():
+            if hasattr(controller, 'set_active_tab'):
+                controller.set_active_tab(objectName == currentObjectName)
 
     def _configure_application_metadata(self) -> None:
         self.app.setApplicationName(APP_NAME)
