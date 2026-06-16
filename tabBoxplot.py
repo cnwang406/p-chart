@@ -72,6 +72,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.group1ComboBox = require_child(rootWidget, QComboBox, 'boxGroup1ComboBox')
         self.group2ComboBox = require_child(rootWidget, QComboBox, 'boxGroup2ComboBox')
         self.groupSepComboBox = require_child(rootWidget, QComboBox, 'boxGroupSepComboBox')
+        self.singleSelectComboBox = require_child(rootWidget, QComboBox, 'boxSingleSelectComboBox')
         self.pointsComboBox = require_child(rootWidget, QComboBox, 'boxPointsComboBox')
         self.annotationCheckBoxes = [
             ('N', require_child(rootWidget, QCheckBox, 'boxAnnotationNCheckBox')),
@@ -207,6 +208,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.group2ComboBox.currentTextChanged.connect(self._update_plot_title)
         self.group2ComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
         self.groupSepComboBox.currentTextChanged.connect(self._on_group_sep_changed)
+        self.singleSelectComboBox.currentTextChanged.connect(self._draw_plot_when_ready)
 
     def _configure_defaults(self) -> None:
         self.legendCheckBox.setChecked(True)
@@ -214,6 +216,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         if self.groupSepComboBox.count() == 0:
             self.groupSepComboBox.addItem('none')
         self.groupSepComboBox.setCurrentText('none')
+        self._refresh_single_select_options([])
         if self.pointsComboBox.count() == 0:
             self.pointsComboBox.addItems(['outliers', 'all', 'jitter', 'none'])
         self.pointsComboBox.setCurrentText('outliers')
@@ -315,10 +318,30 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             return None
         return sepColumn
 
+    def _selected_single_sep_value(self) -> str | None:
+        singleValue = self.singleSelectComboBox.currentText().strip()
+        if not singleValue or singleValue == 'all':
+            return None
+        return singleValue
+
     def _group_sep_values(self, dataFrame: pd.DataFrame, sepColumn: str) -> list[str]:
         if sepColumn not in dataFrame.columns:
             return []
         return self._ordered_categories(dataFrame[sepColumn])
+
+    def _refresh_single_select_options(self, sepValues: list[str], reset: bool = True) -> None:
+        currentText = self.singleSelectComboBox.currentText().strip()
+        blocker = QSignalBlocker(self.singleSelectComboBox)
+        try:
+            self.singleSelectComboBox.clear()
+            self.singleSelectComboBox.addItem('all')
+            self.singleSelectComboBox.addItems(sepValues)
+            if not reset and currentText in sepValues:
+                self.singleSelectComboBox.setCurrentText(currentText)
+            else:
+                self.singleSelectComboBox.setCurrentText('all')
+        finally:
+            del blocker
 
     def _confirm_group_sep_count(self, sepColumn: str) -> list[str] | None:
         if self.tabDataWidget is None:
@@ -348,15 +371,18 @@ class TabBoxplotWidget(BackgroundTaskMixin):
 
     def _on_group_sep_changed(self, *_args) -> None:
         sepColumn = self._selected_group_sep_column()
-        if sepColumn != self.activeGroupSepColumn:
+        columnChanged = sepColumn != self.activeGroupSepColumn
+        if columnChanged:
             self.groupSepLineSettings.clear()
             self.currentSepPlotValues = []
             self.largeGroupSepAcceptedColumn = None
             self.gridsLinesPushButton.setEnabled(False)
+            self._refresh_single_select_options([])
         self.activeGroupSepColumn = sepColumn
 
         if not sepColumn:
             self.lastGroupSepStatus = ''
+            self._refresh_single_select_options([])
             self._draw_plot_when_ready()
             return
 
@@ -373,11 +399,13 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             self.largeGroupSepAcceptedColumn = None
             self.gridsLinesPushButton.setEnabled(False)
             self.lastGroupSepStatus = ''
+            self._refresh_single_select_options([])
             self._set_status('Separate by canceled.')
             self._draw_plot_when_ready()
             return
 
         self.currentSepPlotValues = sepValues
+        self._refresh_single_select_options(sepValues, reset=columnChanged)
         self._draw_plot_when_ready()
 
     def _build_auto_plot_title(self) -> str:
@@ -505,12 +533,20 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         finally:
             del blockers
         sepColumn = self._selected_group_sep_column()
-        if sepColumn != self.activeGroupSepColumn:
+        columnChanged = sepColumn != self.activeGroupSepColumn
+        if columnChanged:
             self.groupSepLineSettings.clear()
             self.currentSepPlotValues = []
             self.largeGroupSepAcceptedColumn = None
             self.gridsLinesPushButton.setEnabled(False)
             self.activeGroupSepColumn = sepColumn
+        if sepColumn:
+            sepValues = self._group_sep_values(dataFrame, sepColumn)
+            self.currentSepPlotValues = sepValues
+            self._refresh_single_select_options(sepValues, reset=columnChanged)
+        else:
+            self.currentSepPlotValues = []
+            self._refresh_single_select_options([])
         currentY = self.yComboBox.currentText().strip()
         if currentY:
             self._sync_y_title_from_column(currentY)
@@ -885,6 +921,9 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         categoryOrder: list[str],
         yColumn: str,
         selectedStats: list[str],
+        xref: str = 'x',
+        yref: str = 'paper',
+        labelXref: str = 'paper',
     ) -> None:
         if not selectedStats:
             return
@@ -908,8 +947,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             fig.add_annotation(
                 x=categoryValue,
                 y=0,
-                xref='x',
-                yref='paper',
+                xref=xref,
+                yref=yref,
                 text='<br>'.join(lines),
                 showarrow=False,
                 yanchor='bottom',
@@ -920,8 +959,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         fig.add_annotation(
             x=1,
             y=0,
-            xref='paper',
-            yref='paper',
+            xref=labelXref,
+            yref=yref,
             text='<br>'.join(self._annotation_label(statName) for statName in selectedStats),
             showarrow=False,
             yanchor='bottom',
@@ -931,6 +970,12 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             align='left',
             font=annotationFont,
         )
+
+    def _subplot_axis_ref(self, axisName: str, subplotIndex: int) -> str:
+        return axisName if subplotIndex == 1 else f'{axisName}{subplotIndex}'
+
+    def _subplot_domain_ref(self, axisName: str, subplotIndex: int) -> str:
+        return f'{self._subplot_axis_ref(axisName, subplotIndex)} domain'
 
     def _add_reference_lines(
         self,
@@ -981,8 +1026,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         rightMargin: int,
         bottomMargin: int,
     ) -> None:
-        sepValues = self._group_sep_values(plotData, sepColumn)
-        sepCount = len(sepValues)
+        allSepValues = self._group_sep_values(plotData, sepColumn)
+        sepCount = len(allSepValues)
         self.lastGroupSepStatus = f'{sepColumn} unique values: {sepCount}'
         if sepCount == 0:
             self._set_status(f'{sepColumn} has no values for separate plots.', error=True)
@@ -1011,8 +1056,16 @@ class TabBoxplotWidget(BackgroundTaskMixin):
                 return
             self.largeGroupSepAcceptedColumn = sepColumn
 
-        self.currentSepPlotValues = sepValues
-        rowCount, columnCount = self._best_subplot_grid(sepCount)
+        self.currentSepPlotValues = allSepValues
+        selectedSingleValue = self._selected_single_sep_value()
+        if selectedSingleValue and selectedSingleValue in allSepValues:
+            sepValues = [selectedSingleValue]
+            self.lastGroupSepStatus = (
+                f'{sepColumn} unique values: {sepCount}, showing: {selectedSingleValue}'
+            )
+        else:
+            sepValues = allSepValues
+        rowCount, columnCount = self._best_subplot_grid(len(sepValues))
         subplotTitles = [
             self._group_line_setting(sepValue).get('title', sepValue) or sepValue
             for sepValue in sepValues
@@ -1074,6 +1127,18 @@ class TabBoxplotWidget(BackgroundTaskMixin):
                 range=subplotYRange,
                 row=row,
                 col=col,
+            )
+            subplotAxisIndex = sepIndex + 1
+            self._add_box_annotations(
+                fig,
+                subPlotData,
+                categoryColumn,
+                categoryOrder,
+                yColumn,
+                selectedAnnotationStats,
+                xref=self._subplot_axis_ref('x', subplotAxisIndex),
+                yref=self._subplot_domain_ref('y', subplotAxisIndex),
+                labelXref=self._subplot_domain_ref('x', subplotAxisIndex),
             )
             self._add_reference_lines(
                 fig,

@@ -2115,11 +2115,34 @@ here.</string>
        <bool>false</bool>
       </property>
      </widget>
+     <widget class="QLabel" name="boxSingleSelectLabel">
+      <property name="geometry">
+       <rect>
+        <x>740</x>
+        <y>66</y>
+        <width>41</width>
+        <height>21</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>show</string>
+      </property>
+     </widget>
+     <widget class="QComboBox" name="boxSingleSelectComboBox">
+      <property name="geometry">
+       <rect>
+        <x>780</x>
+        <y>64</y>
+        <width>121</width>
+        <height>24</height>
+       </rect>
+      </property>
+     </widget>
      <widget class="QCheckBox" name="boxLegendCheckBox">
       <property name="geometry">
        <rect>
-        <x>750</x>
-        <y>64</y>
+        <x>880</x>
+        <y>30</y>
         <width>111</width>
         <height>24</height>
        </rect>
