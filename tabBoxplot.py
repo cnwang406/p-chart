@@ -60,6 +60,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.yComboBox = require_child(rootWidget, QComboBox, 'boxYComboBox')
         self.group1ComboBox = require_child(rootWidget, QComboBox, 'boxGroup1ComboBox')
         self.group2ComboBox = require_child(rootWidget, QComboBox, 'boxGroup2ComboBox')
+        self.groupSepComboBox = require_child(rootWidget, QComboBox, 'boxGroupSepComboBox')
         self.pointsComboBox = require_child(rootWidget, QComboBox, 'boxPointsComboBox')
         self.annotationCheckBoxes = [
             ('N', require_child(rootWidget, QCheckBox, 'boxAnnotationNCheckBox')),
@@ -92,6 +93,13 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.yRangeLineEdit = require_child(rootWidget, QLineEdit, 'boxYRangeLineEdit')
         self.hlineLineEdit = require_child(rootWidget, QLineEdit, 'boxYLinesLineEdit')
         self.legendCheckBox = require_child(rootWidget, QCheckBox, 'boxLegendCheckBox')
+        self.singleSpinBox = require_child(rootWidget, QSpinBox, 'boxSingleSpinBox')
+        self.gridSpinBox = require_child(rootWidget, QSpinBox, 'boxGridSpinBox')
+        self.gridsLinesPushButton = require_child(
+            rootWidget,
+            QPushButton,
+            'boxGridsLinesPushButton',
+        )
         self.filterAnnotationCheckBox = require_child(
             rootWidget,
             QCheckBox,
@@ -191,6 +199,10 @@ class TabBoxplotWidget(BackgroundTaskMixin):
 
     def _configure_defaults(self) -> None:
         self.legendCheckBox.setChecked(True)
+        self.singleSpinBox.setRange(0, 999)
+        self.singleSpinBox.setValue(1)
+        self.gridSpinBox.setRange(0, 999)
+        self.gridSpinBox.setValue(0)
         if self.pointsComboBox.count() == 0:
             self.pointsComboBox.addItems(['outliers', 'all', 'jitter', 'none'])
         self.pointsComboBox.setCurrentText('outliers')
@@ -390,7 +402,12 @@ class TabBoxplotWidget(BackgroundTaskMixin):
 
         dataFrame = self.tabDataWidget.get_plot_data()
         columnNames = list(dataFrame.columns.astype(str))
-        combos = [self.yComboBox, self.group1ComboBox, self.group2ComboBox]
+        combos = [
+            self.yComboBox,
+            self.group1ComboBox,
+            self.group2ComboBox,
+            self.groupSepComboBox,
+        ]
         blockers = [QSignalBlocker(combo) for combo in combos]
         try:
             for combo in combos:
