@@ -119,6 +119,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.lineColorButton = require_child(rootWidget, QPushButton, 'boxLineColorButton')
         self.lineWidthSpinBox = require_child(rootWidget, QDoubleSpinBox, 'boxLineWidthSpinBox')
         self.plotlyThemeComboBox = require_child(rootWidget, QComboBox, 'boxPlotlyThemeComboBox')
+        self.horizontalSpaceSpinBox = require_child(rootWidget, QSpinBox, 'boxChartHSpaceSpinBox')
+        self.verticalSpaceSpinBox = require_child(rootWidget, QSpinBox, 'boxChartVSpaceSpinbox')
         self.plotWidthSpinBox = require_child(rootWidget, QSpinBox, 'boxPlotWidthSpinBox')
         self.plotHeightSpinBox = require_child(rootWidget, QSpinBox, 'boxPlotHeightSpinBox')
         self.legendFontSizeSpinBox = require_child(
@@ -192,6 +194,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.annotationAlphaSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.annotationFormatLineEdit.editingFinished.connect(self._redraw_existing_plot)
         self.plotlyThemeComboBox.currentTextChanged.connect(self._redraw_existing_plot)
+        self.horizontalSpaceSpinBox.valueChanged.connect(self._redraw_existing_plot)
+        self.verticalSpaceSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.lineWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotWidthSpinBox.valueChanged.connect(self._redraw_existing_plot)
         self.plotHeightSpinBox.valueChanged.connect(self._redraw_existing_plot)
@@ -213,6 +217,11 @@ class TabBoxplotWidget(BackgroundTaskMixin):
     def _configure_defaults(self) -> None:
         self.legendCheckBox.setChecked(True)
         self.gridsLinesPushButton.setEnabled(False)
+        self.horizontalSpaceSpinBox.setRange(4, 30)
+        self.horizontalSpaceSpinBox.setValue(self.horizontalSpaceSpinBox.value() or 4)
+        self.verticalSpaceSpinBox.setRange(4, 30)
+        self.verticalSpaceSpinBox.setValue(self.verticalSpaceSpinBox.value() or 12)
+        self._update_grid_controls_enabled(False)
         if self.groupSepComboBox.count() == 0:
             self.groupSepComboBox.addItem('none')
         self.groupSepComboBox.setCurrentText('none')
@@ -343,6 +352,17 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         finally:
             del blocker
 
+    def _update_grid_controls_enabled(self, isGrid: bool) -> None:
+        self.horizontalSpaceSpinBox.setEnabled(isGrid)
+        self.verticalSpaceSpinBox.setEnabled(isGrid)
+
+    def _subplot_spacing(self, spinBox: QSpinBox, axisCount: int) -> float:
+        if axisCount <= 1:
+            return 0.0
+        requestedSpacing = spinBox.value() / 100.0
+        maximumSpacing = 0.99 / (axisCount - 1)
+        return min(requestedSpacing, maximumSpacing)
+
     def _confirm_group_sep_count(self, sepColumn: str) -> list[str] | None:
         if self.tabDataWidget is None:
             return []
@@ -377,6 +397,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             self.currentSepPlotValues = []
             self.largeGroupSepAcceptedColumn = None
             self.gridsLinesPushButton.setEnabled(False)
+            self._update_grid_controls_enabled(False)
             self._refresh_single_select_options([])
         self.activeGroupSepColumn = sepColumn
 
@@ -398,6 +419,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             self.currentSepPlotValues = []
             self.largeGroupSepAcceptedColumn = None
             self.gridsLinesPushButton.setEnabled(False)
+            self._update_grid_controls_enabled(False)
             self.lastGroupSepStatus = ''
             self._refresh_single_select_options([])
             self._set_status('Separate by canceled.')
@@ -539,6 +561,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             self.currentSepPlotValues = []
             self.largeGroupSepAcceptedColumn = None
             self.gridsLinesPushButton.setEnabled(False)
+            self._update_grid_controls_enabled(False)
             self.activeGroupSepColumn = sepColumn
         if sepColumn:
             sepValues = self._group_sep_values(dataFrame, sepColumn)
@@ -1051,6 +1074,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
                 self.currentSepPlotValues = []
                 self.largeGroupSepAcceptedColumn = None
                 self.gridsLinesPushButton.setEnabled(False)
+                self._update_grid_controls_enabled(False)
                 self.lastGroupSepStatus = ''
                 self._draw_plot_when_ready()
                 return
@@ -1066,6 +1090,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         else:
             sepValues = allSepValues
         rowCount, columnCount = self._best_subplot_grid(len(sepValues))
+        isGridPlot = len(sepValues) > 1
         subplotTitles = [
             self._group_line_setting(sepValue).get('title', sepValue) or sepValue
             for sepValue in sepValues
@@ -1074,8 +1099,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             rows=rowCount,
             cols=columnCount,
             subplot_titles=subplotTitles,
-            horizontal_spacing=0.04,
-            vertical_spacing=0.12,
+            horizontal_spacing=self._subplot_spacing(self.horizontalSpaceSpinBox, columnCount),
+            vertical_spacing=self._subplot_spacing(self.verticalSpaceSpinBox, rowCount),
         )
         xTitle = self._build_x_title(group1Column, group2Column)
         shownLegendNames = set()
@@ -1184,11 +1209,13 @@ class TabBoxplotWidget(BackgroundTaskMixin):
                 fig,
                 self.tabDataWidget.preview_filter_annotation_text(),
             )
+        self._update_grid_controls_enabled(isGridPlot)
         self._render_figure(fig)
 
     def _draw_plot(self) -> None:
         self.redrawTimer.stop()
         self.gridsLinesPushButton.setEnabled(False)
+        self._update_grid_controls_enabled(False)
         if self.tabDataWidget is None:
             self._set_status('No data source attached to boxplot tab.', error=True)
             return
@@ -1380,6 +1407,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.currentPlotHtml = result['fullHtml']
         isGroupSepPlot = bool(self._selected_group_sep_column() and self.currentSepPlotValues)
         self.gridsLinesPushButton.setEnabled(isGroupSepPlot)
+        isGridPlot = bool(isGroupSepPlot and not self._selected_single_sep_value() and len(self.currentSepPlotValues) > 1)
+        self._update_grid_controls_enabled(isGridPlot)
         statusText = 'Boxplot created successfully.'
         if isGroupSepPlot and self.lastGroupSepStatus:
             statusText = f'{statusText} {self.lastGroupSepStatus}.'
@@ -1444,6 +1473,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             return
         self.loadingOverlay.hide()
         self.gridsLinesPushButton.setEnabled(False)
+        self._update_grid_controls_enabled(False)
         self._set_status(f'Failed to render boxplot HTML: {errorText}', error=True)
 
     def _download_html(self) -> None:

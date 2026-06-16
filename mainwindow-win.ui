@@ -2203,6 +2203,76 @@ here.</string>
         </rect>
        </property>
       </widget>
+      <widget class="QLabel" name="boxChartHSpaceLabel">
+       <property name="geometry">
+        <rect>
+         <x>350</x>
+         <y>252</y>
+         <width>31</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>H S</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="boxChartHSpaceSpinBox">
+       <property name="geometry">
+        <rect>
+         <x>380</x>
+         <y>248</y>
+         <width>45</width>
+         <height>24</height>
+        </rect>
+       </property>
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="minimum">
+        <number>4</number>
+       </property>
+       <property name="maximum">
+        <number>30</number>
+       </property>
+       <property name="value">
+        <number>4</number>
+       </property>
+      </widget>
+      <widget class="QLabel" name="boxChartVSpaceLabel">
+       <property name="geometry">
+        <rect>
+         <x>435</x>
+         <y>252</y>
+         <width>31</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>V S</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="boxChartVSpaceSpinbox">
+       <property name="geometry">
+        <rect>
+         <x>465</x>
+         <y>248</y>
+         <width>45</width>
+         <height>24</height>
+        </rect>
+       </property>
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="minimum">
+        <number>4</number>
+       </property>
+       <property name="maximum">
+        <number>30</number>
+       </property>
+       <property name="value">
+        <number>12</number>
+       </property>
+      </widget>
       <widget class="QGroupBox" name="groupBox">
        <property name="geometry">
         <rect>

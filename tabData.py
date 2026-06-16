@@ -809,6 +809,11 @@ class TabDataWidget(BackgroundTaskMixin):
         self._show_preview(self.loadedDataFrame)
         self._notify_data_changed()
         self._set_status(f'Converted {convertedCount} column names for wide_to_long.')
+        QMessageBox.information(
+            self.rootWidget,
+            'p-chart',
+            f'欄位名稱轉換完成，共轉換 {convertedCount} 個欄位。',
+        )
 
     def _convert_prefixed_column_name(self, columnName: str) -> str:
         matchedColumn = re.match(r'^([TLBCR])_(.+)$', columnName.strip())
@@ -991,6 +996,11 @@ class TabDataWidget(BackgroundTaskMixin):
             self._notify_data_changed()
             self._set_status(
                 f'Data reshaped with wide_to_long. Matched columns: {len(matchedColumns)}.'
+            )
+            QMessageBox.information(
+                self.rootWidget,
+                'p-chart',
+                f'wide_to_long 轉換完成，共匹配 {len(matchedColumns)} 個欄位。',
             )
         except Exception as exc:
             self._set_status(f'Error reshaping data: {exc}', error=True)
