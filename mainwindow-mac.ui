@@ -2086,11 +2086,63 @@ here.</string>
        </rect>
       </property>
      </widget>
+     <widget class="QComboBox" name="boxGroupSepComboBox">
+      <property name="geometry">
+       <rect>
+        <x>490</x>
+        <y>64</y>
+        <width>151</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="toolTip">
+       <string>Separate by</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="boxGridsLinesPushButton">
+      <property name="geometry">
+       <rect>
+        <x>650</x>
+        <y>64</y>
+        <width>81</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>lines</string>
+      </property>
+      <property name="enabled">
+       <bool>false</bool>
+      </property>
+     </widget>
+     <widget class="QLabel" name="boxSingleSelectLabel">
+      <property name="geometry">
+       <rect>
+        <x>740</x>
+        <y>66</y>
+        <width>41</width>
+        <height>21</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>show</string>
+      </property>
+     </widget>
+     <widget class="QComboBox" name="boxSingleSelectComboBox">
+      <property name="geometry">
+       <rect>
+        <x>780</x>
+        <y>64</y>
+        <width>121</width>
+        <height>24</height>
+       </rect>
+      </property>
+     </widget>
      <widget class="QCheckBox" name="boxLegendCheckBox">
       <property name="geometry">
        <rect>
-        <x>750</x>
-        <y>64</y>
+        <x>880</x>
+        <y>30</y>
         <width>111</width>
         <height>24</height>
        </rect>
@@ -2149,6 +2201,76 @@ here.</string>
         <width>140</width>
         <height>32</height>
        </rect>
+      </property>
+     </widget>
+     <widget class="QLabel" name="boxChartHSpaceLabel">
+      <property name="geometry">
+       <rect>
+        <x>350</x>
+        <y>252</y>
+        <width>31</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>H S</string>
+      </property>
+     </widget>
+     <widget class="QSpinBox" name="boxChartHSpaceSpinBox">
+      <property name="geometry">
+       <rect>
+        <x>380</x>
+        <y>248</y>
+        <width>45</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="enabled">
+       <bool>false</bool>
+      </property>
+      <property name="minimum">
+       <number>4</number>
+      </property>
+      <property name="maximum">
+       <number>30</number>
+      </property>
+      <property name="value">
+       <number>4</number>
+      </property>
+     </widget>
+     <widget class="QLabel" name="boxChartVSpaceLabel">
+      <property name="geometry">
+       <rect>
+        <x>435</x>
+        <y>252</y>
+        <width>31</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>V S</string>
+      </property>
+     </widget>
+     <widget class="QSpinBox" name="boxChartVSpaceSpinbox">
+      <property name="geometry">
+       <rect>
+        <x>465</x>
+        <y>248</y>
+        <width>45</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="enabled">
+       <bool>false</bool>
+      </property>
+      <property name="minimum">
+       <number>4</number>
+      </property>
+      <property name="maximum">
+       <number>30</number>
+      </property>
+      <property name="value">
+       <number>12</number>
       </property>
      </widget>
      <widget class="QGroupBox" name="groupBox">
