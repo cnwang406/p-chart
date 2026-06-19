@@ -140,6 +140,7 @@ class TabContourWidget(BackgroundTaskMixin):
         self.showDetailCheckBox = require_child(rootWidget, QCheckBox, 'contourShowDetailCheckBox')
         self.showValueCheckBox = require_child(rootWidget, QCheckBox, 'contourShowValueCheckBox')
         self.fontSizeSpinBox = require_child(rootWidget, QSpinBox, 'contourFontSizeSpinBox')
+        self.plotButton = require_child(rootWidget, QPushButton, 'contourPlotButton')
         self.pivotPushButton = require_child(rootWidget, QPushButton, 'pivotPushButton')
         self.downloadPngButton = require_child(rootWidget, QPushButton, 'contourDownloadPngButton')
         self.downloadHtmlButton = require_child(rootWidget, QPushButton, 'contourDownloadHtmlButton')
@@ -234,6 +235,7 @@ class TabContourWidget(BackgroundTaskMixin):
         self.filesList.viewport().installEventFilter(self.fileDropFilter)
 
     def _configure_signals(self) -> None:
+        self.plotButton.clicked.connect(self._draw_plot)
         self.cleanFilesButton.clicked.connect(self._clean_external_files)
         self.pivotPushButton.clicked.connect(self._show_pivot_table)
         self.downloadHtmlButton.clicked.connect(self._download_html)

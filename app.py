@@ -53,6 +53,7 @@ from qt_helpers import require_child
 from tabBoxplot import TabBoxplotWidget
 from tabContour import TabContourWidget
 from tabData import TabDataWidget
+from tabIdiot import TabIdiotWidget
 from tabLog import TabLogWidget
 from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 from tabWafermap import TabWafermapWidget
@@ -224,6 +225,7 @@ class ResponsiveUiResizer(QObject):
             'plotAreaWidget',
             'boxPlotAreaWidget',
             'contourPlotAreaWidget',
+            'idiotDataTableWidget',
             'logPlotAreaWidget',
             'waferMapPlotAreaWidget',
         ):
@@ -240,6 +242,7 @@ class ResponsiveUiResizer(QObject):
             'statusLabelTab2',
             'boxStatusLabel',
             'contourStatusLabel',
+            'idiotStatusLabelTab',
             'logStatusLabel',
             'waferMapStatusLabelx',
         ):
@@ -369,6 +372,7 @@ class AppMain:
         self.noWebengineLabel = require_child(self.ui, QLabel, 'noWebengineLabel')
         self.aboutButton = require_child(self.ui, QPushButton, 'aboutButton')
         self.tabDataWidget = TabDataWidget(self.ui)
+        self.tabIdiotWidget = TabIdiotWidget(self.ui, self.tabDataWidget, self.tabWidget)
         preferWebEngine = (
             not self.runtimeOptions['no_webengine']
             and not is_remote_desktop_session()
@@ -387,6 +391,7 @@ class AppMain:
             'tabWafermap': self.tabWafermapWidget,
             'tabContour': self.tabContourWidget,
             'logTab': self.tabLogWidget,
+            'tabIdiot': self.tabIdiotWidget,
         }
         self.tabScatterWidget.set_tab_data(self.tabDataWidget)
         self.tabBoxplotWidget.set_tab_data(self.tabDataWidget)

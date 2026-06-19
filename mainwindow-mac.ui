@@ -31,7 +31,7 @@
     </font>
    </property>
    <property name="currentIndex">
-    <number>4</number>
+    <number>0</number>
    </property>
    <widget class="QWidget" name="tabData">
     <attribute name="title">
@@ -4831,41 +4831,54 @@ here.</string>
         <height>61</height>
        </rect>
       </property>
-      <property name="title">
-       <string>save</string>
+     <property name="title">
+      <string>plot / save</string>
+     </property>
+     <widget class="QPushButton" name="contourPlotButton">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>24</y>
+        <width>70</width>
+        <height>32</height>
+       </rect>
       </property>
-      <widget class="QPushButton" name="contourDownloadPngButton">
-       <property name="geometry">
-        <rect>
-         <x>130</x>
-         <y>24</y>
-         <width>71</width>
-         <height>32</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>D/L PNG</string>
-       </property>
-      </widget>
-      <widget class="QPushButton" name="contourDownloadHtmlButton">
-       <property name="geometry">
-        <rect>
-         <x>30</x>
-         <y>24</y>
-         <width>70</width>
-         <height>32</height>
-        </rect>
-       </property>
+      <property name="text">
+       <string>Refresh</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="contourDownloadPngButton">
+      <property name="geometry">
+       <rect>
+        <x>155</x>
+        <y>24</y>
+        <width>56</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>PNG</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="contourDownloadHtmlButton">
+      <property name="geometry">
+       <rect>
+        <x>85</x>
+        <y>24</y>
+        <width>65</width>
+        <height>32</height>
+       </rect>
+      </property>
        <property name="font">
         <font>
          <family>Cascadia Next TC</family>
          <pointsize>10</pointsize>
         </font>
-       </property>
-       <property name="text">
-        <string>D/L HTML</string>
-       </property>
-      </widget>
+      </property>
+      <property name="text">
+       <string>HTML</string>
+      </property>
+     </widget>
      </widget>
     </widget>
    <widget class="QWidget" name="logTab">
@@ -5800,6 +5813,197 @@ and {value:.2f} is also accepted.</string>
      </property>
      <property name="text">
       <string>log</string>
+     </property>
+    </widget>
+   </widget>
+   <widget class="QWidget" name="tabIdiot">
+    <attribute name="title">
+     <string>IDIOT</string>
+    </attribute>
+    <widget class="QGroupBox" name="idiotGroupBox">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>10</y>
+       <width>891</width>
+       <height>91</height>
+      </rect>
+     </property>
+     <property name="title">
+      <string>commands</string>
+     </property>
+     <widget class="QPushButton" name="idiotInsert49PushButton">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>20</y>
+        <width>90</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>49 pts</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="idiotInsert81PushButton">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>50</y>
+        <width>90</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>81 pts</string>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QPushButton" name="idiotTransferPushButton">
+     <property name="geometry">
+      <rect>
+       <x>920</x>
+       <y>20</y>
+       <width>90</width>
+       <height>32</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Transfer</string>
+     </property>
+    </widget>
+    <widget class="QTableWidget" name="idiotDataTableWidget">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>150</y>
+       <width>991</width>
+       <height>661</height>
+      </rect>
+     </property>
+     <property name="dragEnabled">
+      <bool>true</bool>
+     </property>
+     <property name="alternatingRowColors">
+      <bool>true</bool>
+     </property>
+     <property name="sortingEnabled">
+      <bool>true</bool>
+     </property>
+     <property name="rowCount">
+      <number>1</number>
+     </property>
+     <property name="columnCount">
+      <number>1</number>
+     </property>
+     <attribute name="horizontalHeaderCascadingSectionResizes">
+      <bool>true</bool>
+     </attribute>
+     <attribute name="horizontalHeaderStretchLastSection">
+      <bool>false</bool>
+     </attribute>
+     <attribute name="verticalHeaderCascadingSectionResizes">
+      <bool>true</bool>
+     </attribute>
+     <attribute name="verticalHeaderShowSortIndicator" stdset="0">
+      <bool>true</bool>
+     </attribute>
+     <row/>
+     <column/>
+    </widget>
+    <widget class="QLabel" name="idiotStatusLabelTab">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>843</y>
+       <width>951</width>
+       <height>32</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <family>Cascadia Next TC</family>
+       <pointsize>10</pointsize>
+      </font>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Shape::NoFrame</enum>
+     </property>
+     <property name="text">
+      <string>status messages appear
+here.</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_44">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>110</y>
+       <width>41</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Rows</string>
+     </property>
+    </widget>
+    <widget class="QSpinBox" name="idiotRowsSpinBox">
+     <property name="geometry">
+      <rect>
+       <x>70</x>
+       <y>110</y>
+       <width>61</width>
+       <height>22</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QSpinBox" name="idiotColsSpinBox">
+     <property name="geometry">
+      <rect>
+       <x>260</x>
+       <y>110</y>
+       <width>61</width>
+       <height>22</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_48">
+     <property name="geometry">
+      <rect>
+       <x>220</x>
+       <y>110</y>
+       <width>31</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Cols</string>
+     </property>
+    </widget>
+    <widget class="QPushButton" name="idiotAddRowsPushButton">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>105</y>
+       <width>71</width>
+       <height>32</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>+ Row</string>
+     </property>
+    </widget>
+    <widget class="QPushButton" name="idiotAddColsPushButton">
+     <property name="geometry">
+      <rect>
+       <x>330</x>
+       <y>105</y>
+       <width>71</width>
+       <height>32</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>+ Col</string>
      </property>
     </widget>
    </widget>
