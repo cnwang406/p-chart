@@ -4,12 +4,15 @@
 `pandas.wide_to_long` and creating interactive Plotly scatter and box plots.
 
 Version: `v3.0`
-Author: `cnwang`  
+Author: `cnwang`
 License: MIT
 
 ## Features
 
-- Load CSV or Excel worksheets. accept "log-type", "KGD", "mapping", "log with heading info"
+- Load CSV or Excel worksheets. Accept "log-type", "KGD", "mapping", and
+  "log with heading info" data.
+- Paste and edit table data in the IDIOT tab, then transfer the cleaned table
+  back to TabData for plotting.
 - Reshape wide data to long data with custom `stubnames`, suffix regex, and
   suffix column name.
 - Preview and export reshaped data as CSV or Excel.
@@ -27,7 +30,10 @@ License: MIT
   summary tables.
 - Use embedded Qt WebEngine for Plotly charts, with system-browser fallback for
   Remote Desktop sessions or `--no-webengine` / `-W`.
+- Sanitize inherited Qt plugin paths at startup so macOS/VSCode sessions do not
+  fail with `cocoa` platform plugin path errors.
 - Export Plotly charts as offline HTML that uses the bundled `plotly.min.js`.
+- Run release and GUI smoke checks from `scripts/`.
 - Package as a Windows 10 desktop app with PyInstaller.
 
 ## Install
@@ -50,15 +56,33 @@ To force the system-browser Plotly fallback:
 .venv/bin/python app.py -W
 ```
 
-If the local PySide6 environment fails to launch on macOS after a VSCode or
-terminal session, avoid copying `.venv2` over `.venv`. Recreate or repair the
-environment directly instead:
+If a macOS or VSCode session has stale Qt environment variables, the app now
+repairs the PySide6 platform-plugin path during startup. If the environment is
+still broken, rebuild the venv directly:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python app.py --no-webengine
 ```
+
+## Validate
+
+Run the release gate:
+
+```bash
+.venv/bin/python scripts/release_check.py
+```
+
+Run GUI activation and render smoke checks:
+
+```bash
+.venv/bin/python scripts/gui_smoke.py
+.venv/bin/python scripts/gui_smoke.py --render
+.venv/bin/python scripts/gui_smoke.py --no-webengine --render
+```
+
+See `docs/release-smoke.md` for the full smoke checklist.
 
 ## Package
 
@@ -82,6 +106,13 @@ image, app icons, and Windows `.ico`.
 3. Confirm auto generated matching columns in `Columns (a/b)`.
 4. Click `wide_to_long`.
 5. Use the enabled Scatter, Boxplot, Wafermap, Contour, or Log tab.
+
+The IDIOT tab is a manual table-editing workspace for quick cleanup before
+plotting. Paste an Excel block directly into the table, resize rows/columns,
+rename column headers, and right-click cells or headers to mark and delete
+rows/columns. The 49/81 coordinate buttons insert bundled coordinate templates.
+Transfer writes the edited table to a temporary workbook sheet named
+`idiotData`, loads it into TabData, and switches back to the Data tab.
 
 Scatter charts draw automatically after X and Y are selected. Reference lines
 support color, opacity/width, auto ranges, and Y-based statistics including Ca,
@@ -144,6 +175,11 @@ Refresh Plot clears the plot area and export state.
 - `tabContour.py`, `coord-49.csv`, `coord-81.csv`: contour controller and
   bundled virtual coordinate templates.
 - `tabLog.py`: multi-file log chart controller.
+- `tabIdiot.py`, `table_clipboard_helpers.py`: editable table workspace and
+  table copy/paste helpers.
+- `scripts/release_check.py`, `scripts/gui_smoke.py`: release and GUI smoke
+  validation scripts.
+- `docs/release-smoke.md`: manual and automated release-smoke checklist.
 - `demo/demo_contour_1.csv`, `demo/demo_contour_3.csv`: small contour demo
   datasets for one-wafer and three-wafer virtual-coordinate checks.
 - `p-chart.spec`: PyInstaller build config.
