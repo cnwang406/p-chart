@@ -13,6 +13,8 @@ qtDir = os.path.join(baseDir, "Qt")
 
 pluginPath = os.path.join(qtDir, "plugins")
 frameworkPath = os.path.join(qtDir, "lib")
+QT_PLUGIN_PATH = pluginPath
+QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 print (f'QT_PLUGIN_PATH: {pluginPath}')
 print (f'QT_FRAMEWORK_PATH: {frameworkPath}')   
 # for key in [
@@ -23,16 +25,50 @@ print (f'QT_FRAMEWORK_PATH: {frameworkPath}')
 # ]:
 #     os.environ.pop(key, None)
 
-# macOS/PySide6 can fail to load the cocoa platform plugin when Qt paths are
-# forced before importing PySide6. Let PySide6 resolve its own plugin/runtime paths.
-# os.environ["QT_PLUGIN_PATH"] = pluginPath
-# os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = os.path.join(pluginPath, "platforms")
-# os.environ["DYLD_FRAMEWORK_PATH"] = frameworkPath
+# macOS/PySide6 can fail to load the cocoa platform plugin when a parent
+# process leaves blank or stale Qt paths behind. VSCode integrated terminals are
+# especially prone to inheriting those values across launches.
+
+
+def _path_matches(pathText: str, expectedPath: str) -> bool:
+    if not pathText:
+        return False
+
+    try:
+        return Path(pathText).expanduser().resolve() == Path(expectedPath).resolve()
+    except OSError:
+        return False
+
+
+def _qt_path_env_matches(key: str, expectedPath: str) -> bool:
+    value = os.environ.get(key)
+    if value is None:
+        return True
+
+    pathParts = [part for part in value.split(os.pathsep) if part]
+    return bool(pathParts) and all(_path_matches(part, expectedPath) for part in pathParts)
+
+
+def configure_qt_runtime_environment() -> None:
+    if not os.path.isdir(QT_PLATFORM_PLUGIN_PATH):
+        return
+
+    if not _qt_path_env_matches('QT_PLUGIN_PATH', QT_PLUGIN_PATH):
+        os.environ.pop('QT_PLUGIN_PATH', None)
+
+    # Use assignment rather than setdefault: an empty inherited value makes Qt
+    # search for the cocoa plugin in "" and abort before the app starts.
+    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = QT_PLATFORM_PLUGIN_PATH
+
+    for key in ('DYLD_LIBRARY_PATH', 'DYLD_FRAMEWORK_PATH'):
+        if os.environ.get(key) == '':
+            os.environ.pop(key, None)
 
 # os.environ["PYSIDE_DESIGNER_PLUGINS"] = ""
 
 
 import PySide6
+configure_qt_runtime_environment()
 from PySide6.QtCore import QCoreApplication, QEvent, QFile, QObject, QSignalBlocker, QTimer
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QColor
 from PySide6.QtUiTools import QUiLoader
@@ -58,8 +94,6 @@ from tabLog import TabLogWidget
 from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 from tabWafermap import TabWafermapWidget
 
-QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
-QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
 APP_VERSION = 'v3.0'
 APP_AUTHOR = 'cnwang'

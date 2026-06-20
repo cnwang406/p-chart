@@ -50,11 +50,13 @@ To force the system-browser Plotly fallback:
 .venv/bin/python app.py -W
 ```
 
-If the local PySide6 environment fails to launch on macOS, `run2.sh` can restore
-the alternate checked-local virtual environment:
+If the local PySide6 environment fails to launch on macOS after a VSCode or
+terminal session, avoid copying `.venv2` over `.venv`. Recreate or repair the
+environment directly instead:
 
 ```bash
-sh run2.sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python app.py --no-webengine
 ```
 
