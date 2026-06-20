@@ -15,6 +15,7 @@ from PySide6.QtCore import (
     QModelIndex,
     QObject,
     QPoint,
+    QSignalBlocker,
     QSortFilterProxyModel,
     Qt,
 )
@@ -533,6 +534,65 @@ class TabDataWidget(BackgroundTaskMixin):
 
         self.loadedFilePath = filePath
         self._load_sheet_data(sheetName)
+
+    def load_workbook_sheet(self, filePath: str, sheetName: str = 'idiotData') -> bool:
+        if not filePath or not os.path.exists(filePath):
+            self._set_status(f'File does not exist: {filePath}', error=True)
+            return False
+
+        try:
+            self._activeLoadTaskId = None
+            self._activeSheetTaskId = None
+            self._invalidate_melted_data()
+            self.loadedFilePath = filePath
+            self.filePathLineEdit.setText(filePath)
+            skipRowsBlocker = QSignalBlocker(self.skipRowsSpinBox)
+            self.skipRowsSpinBox.setValue(0)
+            del skipRowsBlocker
+            self.autoDetectedSkipRows = 0
+
+            with pd.ExcelFile(filePath) as excelReader:
+                dataFrame = pd.read_excel(
+                    excelReader,
+                    sheet_name=sheetName,
+                    skiprows=0,
+                )
+                sheetNames = excelReader.sheet_names
+
+            normalizedColumns = self._normalize_loaded_datetime_formats(dataFrame)
+            warnings = self._loaded_data_warnings(dataFrame)
+            self.loadedDataFrame = dataFrame
+            self.meltedDataFrame = pd.DataFrame()
+            self.sheetComboBox.clear()
+            self.sheetComboBox.addItems(sheetNames)
+            sheetIndex = self.sheetComboBox.findText(sheetName)
+            if sheetIndex >= 0:
+                self.sheetComboBox.setCurrentIndex(sheetIndex)
+            self.sheetComboBox.setEnabled(True)
+            self.loadButton.setEnabled(True)
+            self.browseFileButton.setEnabled(True)
+            self.loadingOverlay.hide()
+            self._append_detected_stubnames()
+            self._populate_columns()
+            self._warn_if_no_reshape_columns()
+            self._show_preview(self.loadedDataFrame)
+            self._notify_data_changed()
+
+            statusText = f'Sheet "{sheetName}" loaded successfully. read {len(self.loadedDataFrame)} lines.'
+            if normalizedColumns:
+                statusText += f' Converted {len(normalizedColumns)} AM/PM date column(s).'
+            if warnings:
+                statusText += ' Possible date format issue found.'
+            self._set_status(statusText, error=bool(warnings))
+            if warnings:
+                self._show_loaded_data_warning_messages(warnings)
+            return True
+        except Exception as exc:
+            self.loadButton.setEnabled(True)
+            self.browseFileButton.setEnabled(True)
+            self.loadingOverlay.hide()
+            self._set_status(f'Failed to load sheet: {exc}', error=True)
+            return False
 
     def _load_sheet_data(self, sheetName: str) -> None:
         self._invalidate_melted_data()

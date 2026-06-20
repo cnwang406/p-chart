@@ -14,6 +14,7 @@ run2.sh
 
 # Virtual environments
 .venv/
+.venv2/
 venv/
 env/
 ENV/
