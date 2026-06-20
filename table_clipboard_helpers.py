@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QTableWidget, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QMessageBox, QTableWidget, QTableWidgetItem
 
 
 class TableClipboardHelper(QObject):
@@ -89,10 +89,21 @@ class TableClipboardHelper(QObject):
             return
 
         startRow, startColumn = self._paste_start_cell()
-        rowCount = len(rows)
         columnCount = max(len(row) for row in rows)
+        rows = self._rectangular_rows(rows, columnCount)
+        headerRow = rows[0] if self._looks_like_header_paste(rows) else None
+        dataRows = rows[1:] if headerRow is not None else rows
+        rowCount = len(dataRows)
         requiredRows = startRow + rowCount
         requiredColumns = startColumn + columnCount
+        nonNumericCells = self._non_numeric_data_cells(dataRows) if headerRow is not None else []
+        nonNumericAction = 'leave'
+        if nonNumericCells:
+            nonNumericAction = self._ask_non_numeric_paste_action(len(nonNumericCells))
+            if nonNumericAction == 'cancel':
+                self._clear_paste_area(startRow, startColumn, rowCount, columnCount)
+                return
+            dataRows = self._apply_non_numeric_action(dataRows, nonNumericAction)
 
         if requiredRows > self.tableWidget.rowCount():
             self.tableWidget.setRowCount(requiredRows)
@@ -101,11 +112,18 @@ class TableClipboardHelper(QObject):
         if self.onTableShapeChanged is not None:
             self.onTableShapeChanged()
 
-        for rowOffset, rowValues in enumerate(rows):
+        if headerRow is not None:
+            for columnOffset, headerText in enumerate(headerRow):
+                self.tableWidget.setHorizontalHeaderItem(
+                    startColumn + columnOffset,
+                    QTableWidgetItem(headerText.strip()),
+                )
+
+        for rowOffset, rowValues in enumerate(dataRows):
             tableRow = startRow + rowOffset
             for columnOffset in range(columnCount):
                 tableColumn = startColumn + columnOffset
-                value = rowValues[columnOffset] if columnOffset < len(rowValues) else ''
+                value = rowValues[columnOffset]
                 self.tableWidget.setItem(
                     tableRow,
                     tableColumn,
@@ -115,7 +133,7 @@ class TableClipboardHelper(QObject):
         self.tableWidget.setCurrentCell(startRow, startColumn)
         self.tableWidget.resizeColumnsToContents()
         if self.onPasteFinished is not None:
-            self.onPasteFinished(rowCount, columnCount)
+            self.onPasteFinished(max(0, rowCount), columnCount)
 
     def _paste_start_cell(self) -> tuple[int, int]:
         currentRow = self.tableWidget.currentRow()
@@ -185,3 +203,112 @@ class TableClipboardHelper(QObject):
         if not normalizedText:
             return []
         return [row.split('\t') for row in normalizedText.split('\n')]
+
+    def _rectangular_rows(self, rows: list[list[str]], columnCount: int) -> list[list[str]]:
+        return [
+            row + [''] * (columnCount - len(row))
+            for row in rows
+        ]
+
+    def _looks_like_header_paste(self, rows: list[list[str]]) -> bool:
+        if len(rows) < 2:
+            return False
+
+        headerValues = [value.strip() for value in rows[0] if value.strip()]
+        if not headerValues:
+            return False
+
+        return all(not self._is_numeric_text(value) for value in headerValues)
+
+    def _non_numeric_data_cells(self, rows: list[list[str]]) -> list[tuple[int, int]]:
+        nonNumericCells = []
+        for rowIndex, row in enumerate(rows):
+            for columnIndex, value in enumerate(row):
+                if not self._is_numeric_text(value):
+                    nonNumericCells.append((rowIndex, columnIndex))
+        return nonNumericCells
+
+    def _is_numeric_text(self, value: str) -> bool:
+        text = str(value).strip()
+        if not text:
+            return True
+        try:
+            float(text.replace(',', ''))
+            return True
+        except ValueError:
+            return False
+
+    def _ask_non_numeric_paste_action(self, nonNumericCount: int) -> str:
+        messageBox = QMessageBox(self.tableWidget)
+        messageBox.setIcon(QMessageBox.Icon.Warning)
+        messageBox.setWindowTitle('Paste data')
+        messageBox.setText(
+            '應該只能是數字(第一列除外, 會作為 column name)，對於非數字要怎麼做?'
+        )
+        messageBox.setInformativeText(f'Found {nonNumericCount} non-numeric cell(s).')
+        leaveButton = messageBox.addButton(
+            'Leave as is. (This might crash)',
+            QMessageBox.ButtonRole.AcceptRole,
+        )
+        blankButton = messageBox.addButton(
+            'Change to space (This might crash)',
+            QMessageBox.ButtonRole.ActionRole,
+        )
+        naButton = messageBox.addButton(
+            "Change to 'N/A' (This might crash)",
+            QMessageBox.ButtonRole.ActionRole,
+        )
+        cancelButton = messageBox.addButton(
+            "I'll be back",
+            QMessageBox.ButtonRole.RejectRole,
+        )
+        messageBox.setDefaultButton(cancelButton)
+        messageBox.exec()
+
+        clickedButton = messageBox.clickedButton()
+        if clickedButton == leaveButton:
+            return 'leave'
+        if clickedButton == blankButton:
+            return 'blank'
+        if clickedButton == naButton:
+            return 'na'
+        return 'cancel'
+
+    def _apply_non_numeric_action(self, rows: list[list[str]], action: str) -> list[list[str]]:
+        if action == 'leave':
+            return rows
+
+        replacement = '' if action == 'blank' else 'N/A'
+        cleanedRows = []
+        for row in rows:
+            cleanedRows.append([
+                value if self._is_numeric_text(value) else replacement
+                for value in row
+            ])
+        return cleanedRows
+
+    def _clear_paste_area(
+        self,
+        startRow: int,
+        startColumn: int,
+        rowCount: int,
+        columnCount: int,
+    ) -> None:
+        requiredRows = startRow + rowCount
+        requiredColumns = startColumn + columnCount
+        if requiredRows > self.tableWidget.rowCount():
+            self.tableWidget.setRowCount(requiredRows)
+        if requiredColumns > self.tableWidget.columnCount():
+            self.tableWidget.setColumnCount(requiredColumns)
+
+        for rowOffset in range(rowCount):
+            tableRow = startRow + rowOffset
+            for columnOffset in range(columnCount):
+                self.tableWidget.setItem(
+                    tableRow,
+                    startColumn + columnOffset,
+                    QTableWidgetItem(''),
+                )
+
+        if self.onTableShapeChanged is not None:
+            self.onTableShapeChanged()

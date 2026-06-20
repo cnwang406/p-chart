@@ -61,9 +61,9 @@ from tabWafermap import TabWafermapWidget
 QT_PLUGIN_PATH = os.path.join(os.path.dirname(PySide6.__file__), 'Qt', 'plugins')
 QT_PLATFORM_PLUGIN_PATH = os.path.join(QT_PLUGIN_PATH, 'platforms')
 APP_NAME = 'p-chart'
-APP_VERSION = 'v2.8.0'
+APP_VERSION = 'v3.0'
 APP_AUTHOR = 'cnwang'
-APP_DATE = 'build 0615'
+APP_DATE = 'build 0620'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} {APP_DATE} by {APP_AUTHOR}'
 APP_ICON_FILENAME = os.path.join(
     'AppIcon.appiconset',

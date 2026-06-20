@@ -4,11 +4,12 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import QSignalBlocker
+from PySide6.QtCore import QPoint, QSignalBlocker, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QInputDialog,
     QLabel,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -56,11 +57,10 @@ class TabIdiotWidget:
         self.rowsSpinBox.setRange(1, 100000)
         self.colsSpinBox.setRange(1, 1000)
         self.dataTableWidget.setSortingEnabled(False)
+        self.dataTableWidget.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.dataTableWidget.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.dataTableWidget.setEditTriggers(QAbstractItemView.AllEditTriggers)
-        self.dataTableWidget.horizontalHeader().sectionDoubleClicked.connect(
-            self._rename_header
-        )
+        self._configure_context_menus()
         self.clipboardHelper = TableClipboardHelper(
             self.dataTableWidget,
             on_table_shape_changed=self._sync_table_shape_controls,
@@ -79,6 +79,25 @@ class TabIdiotWidget:
         self.insert81Button.clicked.connect(lambda: self._insert_coord_file('coord-81.csv'))
         self.transferButton.clicked.connect(self._transfer_to_tab_data)
         self._set_status('Ready.')
+
+    def _configure_context_menus(self) -> None:
+        self.dataTableWidget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.dataTableWidget.customContextMenuRequested.connect(
+            self._show_table_context_menu
+        )
+
+        horizontalHeader = self.dataTableWidget.horizontalHeader()
+        horizontalHeader.sectionDoubleClicked.connect(self._rename_header)
+        horizontalHeader.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        horizontalHeader.customContextMenuRequested.connect(
+            self._show_column_header_context_menu
+        )
+
+        verticalHeader = self.dataTableWidget.verticalHeader()
+        verticalHeader.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        verticalHeader.customContextMenuRequested.connect(
+            self._show_row_header_context_menu
+        )
 
     def _sync_spins_to_table(self) -> None:
         rowsBlocker = QSignalBlocker(self.rowsSpinBox)
@@ -131,6 +150,201 @@ class TabIdiotWidget:
             columnIndex,
             QTableWidgetItem(newName.strip()),
         )
+
+    def _show_table_context_menu(self, position: QPoint) -> None:
+        modelIndex = self.dataTableWidget.indexAt(position)
+        rowIndex = modelIndex.row() if modelIndex.isValid() else self.dataTableWidget.currentRow()
+        columnIndex = modelIndex.column() if modelIndex.isValid() else self.dataTableWidget.currentColumn()
+        if modelIndex.isValid() and not self._cell_is_selected(rowIndex, columnIndex):
+            self.dataTableWidget.setCurrentCell(rowIndex, columnIndex)
+
+        menu = QMenu(self.dataTableWidget)
+        markRowAction = menu.addAction(f'Mark row {rowIndex + 1}')
+        markColumnAction = menu.addAction(f'Mark column {columnIndex + 1}')
+        renameColumnAction = menu.addAction('Rename column header')
+        menu.addSeparator()
+        deleteRowsAction = menu.addAction(self._delete_rows_action_text(rowIndex))
+        deleteColumnsAction = menu.addAction(self._delete_columns_action_text(columnIndex))
+
+        hasRow = rowIndex >= 0
+        hasColumn = columnIndex >= 0
+        markRowAction.setEnabled(hasRow)
+        deleteRowsAction.setEnabled(hasRow or bool(self._marked_row_indexes()))
+        markColumnAction.setEnabled(hasColumn)
+        renameColumnAction.setEnabled(hasColumn)
+        deleteColumnsAction.setEnabled(hasColumn or bool(self._marked_column_indexes()))
+
+        selectedAction = menu.exec(self.dataTableWidget.viewport().mapToGlobal(position))
+        if selectedAction == markRowAction and hasRow:
+            self._mark_row(rowIndex)
+        elif selectedAction == markColumnAction and hasColumn:
+            self._mark_column(columnIndex)
+        elif selectedAction == renameColumnAction and hasColumn:
+            self._rename_header(columnIndex)
+        elif selectedAction == deleteRowsAction:
+            self._delete_rows(self._marked_row_indexes(rowIndex if hasRow else None))
+        elif selectedAction == deleteColumnsAction:
+            self._delete_columns(self._marked_column_indexes(columnIndex if hasColumn else None))
+
+    def _show_column_header_context_menu(self, position: QPoint) -> None:
+        columnIndex = self.dataTableWidget.horizontalHeader().logicalIndexAt(position)
+        if columnIndex < 0:
+            return
+
+        menu = QMenu(self.dataTableWidget)
+        markColumnAction = menu.addAction(f'Mark column {columnIndex + 1}')
+        renameColumnAction = menu.addAction('Rename column header')
+        deleteColumnsAction = menu.addAction(self._delete_columns_action_text(columnIndex))
+
+        selectedAction = menu.exec(
+            self.dataTableWidget.horizontalHeader().mapToGlobal(position)
+        )
+        if selectedAction == markColumnAction:
+            self._mark_column(columnIndex)
+        elif selectedAction == renameColumnAction:
+            self._rename_header(columnIndex)
+        elif selectedAction == deleteColumnsAction:
+            self._delete_columns(self._marked_column_indexes(columnIndex))
+
+    def _show_row_header_context_menu(self, position: QPoint) -> None:
+        rowIndex = self.dataTableWidget.verticalHeader().logicalIndexAt(position)
+        if rowIndex < 0:
+            return
+
+        menu = QMenu(self.dataTableWidget)
+        markRowAction = menu.addAction(f'Mark row {rowIndex + 1}')
+        deleteRowsAction = menu.addAction(self._delete_rows_action_text(rowIndex))
+
+        selectedAction = menu.exec(
+            self.dataTableWidget.verticalHeader().mapToGlobal(position)
+        )
+        if selectedAction == markRowAction:
+            self._mark_row(rowIndex)
+        elif selectedAction == deleteRowsAction:
+            self._delete_rows(self._marked_row_indexes(rowIndex))
+
+    def _cell_is_selected(self, rowIndex: int, columnIndex: int) -> bool:
+        return any(
+            selectedIndex.row() == rowIndex and selectedIndex.column() == columnIndex
+            for selectedIndex in self.dataTableWidget.selectedIndexes()
+        )
+
+    def _mark_row(self, rowIndex: int) -> None:
+        if rowIndex < 0:
+            return
+        self.dataTableWidget.clearSelection()
+        self.dataTableWidget.selectRow(rowIndex)
+        self.dataTableWidget.setCurrentCell(rowIndex, max(0, self.dataTableWidget.currentColumn()))
+        self._set_status(f'Marked row {rowIndex + 1}.')
+
+    def _mark_column(self, columnIndex: int) -> None:
+        if columnIndex < 0:
+            return
+        self.dataTableWidget.clearSelection()
+        self.dataTableWidget.selectColumn(columnIndex)
+        self.dataTableWidget.setCurrentCell(max(0, self.dataTableWidget.currentRow()), columnIndex)
+        self._set_status(f'Marked column {columnIndex + 1}.')
+
+    def _delete_rows_action_text(self, fallbackRow: int | None = None) -> str:
+        rowIndexes = self._marked_row_indexes(fallbackRow)
+        if len(rowIndexes) <= 1:
+            rowText = f'row {rowIndexes[0] + 1}' if rowIndexes else 'row'
+            return f'Delete {rowText}'
+        return f'Delete {len(rowIndexes)} marked rows'
+
+    def _delete_columns_action_text(self, fallbackColumn: int | None = None) -> str:
+        columnIndexes = self._marked_column_indexes(fallbackColumn)
+        if len(columnIndexes) <= 1:
+            columnText = f'column {columnIndexes[0] + 1}' if columnIndexes else 'column'
+            return f'Delete {columnText}'
+        return f'Delete {len(columnIndexes)} marked columns'
+
+    def _marked_row_indexes(self, fallbackRow: int | None = None) -> list[int]:
+        rowIndexes = self._fully_selected_row_indexes()
+        if not rowIndexes and fallbackRow is not None and fallbackRow >= 0:
+            rowIndexes = [fallbackRow]
+        return sorted({
+            rowIndex
+            for rowIndex in rowIndexes
+            if 0 <= rowIndex < self.dataTableWidget.rowCount()
+        })
+
+    def _marked_column_indexes(self, fallbackColumn: int | None = None) -> list[int]:
+        columnIndexes = self._fully_selected_column_indexes()
+        if not columnIndexes and fallbackColumn is not None and fallbackColumn >= 0:
+            columnIndexes = [fallbackColumn]
+        return sorted({
+            columnIndex
+            for columnIndex in columnIndexes
+            if 0 <= columnIndex < self.dataTableWidget.columnCount()
+        })
+
+    def _fully_selected_row_indexes(self) -> list[int]:
+        if self.dataTableWidget.columnCount() <= 0:
+            return []
+        rowIndexes = set()
+        lastColumn = self.dataTableWidget.columnCount() - 1
+        for selectedRange in self.dataTableWidget.selectedRanges():
+            if selectedRange.leftColumn() != 0 or selectedRange.rightColumn() != lastColumn:
+                continue
+            rowIndexes.update(range(selectedRange.topRow(), selectedRange.bottomRow() + 1))
+        return sorted(rowIndexes)
+
+    def _fully_selected_column_indexes(self) -> list[int]:
+        if self.dataTableWidget.rowCount() <= 0:
+            return []
+        columnIndexes = set()
+        lastRow = self.dataTableWidget.rowCount() - 1
+        for selectedRange in self.dataTableWidget.selectedRanges():
+            if selectedRange.topRow() != 0 or selectedRange.bottomRow() != lastRow:
+                continue
+            columnIndexes.update(range(selectedRange.leftColumn(), selectedRange.rightColumn() + 1))
+        return sorted(columnIndexes)
+
+    def _delete_rows(self, rowIndexes: list[int]) -> None:
+        if not rowIndexes:
+            return
+
+        deletedCount = len(rowIndexes)
+        if deletedCount >= self.dataTableWidget.rowCount():
+            self.dataTableWidget.setRowCount(0)
+            self.dataTableWidget.setRowCount(1)
+        else:
+            for rowIndex in sorted(rowIndexes, reverse=True):
+                self.dataTableWidget.removeRow(rowIndex)
+
+        self._sync_table_after_shape_change()
+        self._set_status(
+            f'Deleted {deletedCount} row(s). '
+            f'Table: {self.dataTableWidget.rowCount()} rows x '
+            f'{self.dataTableWidget.columnCount()} cols.'
+        )
+
+    def _delete_columns(self, columnIndexes: list[int]) -> None:
+        if not columnIndexes:
+            return
+
+        deletedCount = len(columnIndexes)
+        if deletedCount >= self.dataTableWidget.columnCount():
+            self.dataTableWidget.setColumnCount(0)
+            self.dataTableWidget.setColumnCount(1)
+        else:
+            for columnIndex in sorted(columnIndexes, reverse=True):
+                self.dataTableWidget.removeColumn(columnIndex)
+
+        self._sync_table_after_shape_change()
+        self._set_status(
+            f'Deleted {deletedCount} column(s). '
+            f'Table: {self.dataTableWidget.rowCount()} rows x '
+            f'{self.dataTableWidget.columnCount()} cols.'
+        )
+
+    def _sync_table_after_shape_change(self) -> None:
+        self.dataTableWidget.clearSelection()
+        self._ensure_default_headers()
+        self._sync_spins_to_table()
+        if self.dataTableWidget.rowCount() > 0 and self.dataTableWidget.columnCount() > 0:
+            self.dataTableWidget.setCurrentCell(0, 0)
 
     def _insert_coord_file(self, filename: str) -> None:
         filePath = self._resource_path(filename)
