@@ -14,6 +14,112 @@
   <property name="windowTitle">
    <string>p-Chart</string>
   </property>
+  <property name="styleSheet">
+   <string notr="true">QMainWindow {
+    background-color: #f3f6fb;
+}
+QWidget {
+    background-color: #f3f6fb;
+    color: #26313d;
+}
+QTabWidget::pane {
+    background-color: #ffffff;
+    border: 1px solid #bcc8d8;
+    border-radius: 6px;
+}
+QTabBar::tab {
+    background-color: #dfe7f1;
+    color: #3b4858;
+    border: 1px solid #bcc8d8;
+    border-bottom-color: #aebccc;
+    padding: 5px 10px;
+}
+QTabBar::tab:selected {
+    background-color: #ffffff;
+    color: #1f3f63;
+    border-top: 2px solid #2f80ed;
+    border-bottom-color: #ffffff;
+}
+QTabBar::tab:hover {
+    background-color: #edf3fb;
+}
+QGroupBox {
+    background-color: #fbfcff;
+    border: 1px solid #c8d2df;
+    border-radius: 6px;
+    margin-top: 12px;
+}
+QGroupBox::title {
+    color: #31506d;
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+}
+QLineEdit,
+QComboBox,
+QSpinBox,
+QDoubleSpinBox,
+QTextEdit,
+QPlainTextEdit,
+QTableView,
+QListWidget {
+    background-color: #ffffff;
+    color: #24303c;
+    border: 1px solid #b8c6d6;
+    border-radius: 4px;
+}
+QLineEdit:focus,
+QComboBox:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QTextEdit:focus,
+QPlainTextEdit:focus {
+    border: 1px solid #2f80ed;
+}
+QPushButton {
+    background-color: #e7eef8;
+    color: #203247;
+    border: 1px solid #a7b7ca;
+    border-radius: 4px;
+}
+QPushButton:hover {
+    background-color: #d9e8fb;
+    border-color: #7fa7d8;
+}
+QPushButton:pressed {
+    background-color: #c8daf0;
+}
+QPushButton:disabled,
+QLineEdit:disabled,
+QComboBox:disabled,
+QSpinBox:disabled,
+QDoubleSpinBox:disabled {
+    background-color: #e5eaf1;
+    color: #7b8794;
+    border-color: #c8d2df;
+}
+QCheckBox,
+QRadioButton,
+QLabel {
+    background-color: transparent;
+    color: #26313d;
+}
+QHeaderView::section {
+    background-color: #e5edf7;
+    color: #2a4058;
+    border: 1px solid #c0ccda;
+}
+QTableView::item:selected,
+QListWidget::item:selected,
+QComboBox QAbstractItemView::item:selected {
+    background-color: #2f80ed;
+    color: #ffffff;
+}
+QStatusBar {
+    background-color: #edf2f8;
+    color: #3d4f63;
+}</string>
+  </property>
   <widget class="QWidget" name="centralwidget">
    <widget class="QTabWidget" name="tabWidget">
     <property name="geometry">
@@ -3853,7 +3959,7 @@ here.</string>
         </rect>
        </property>
        <property name="styleSheet">
-        <string notr="true">background-color: rgb(255, 124, 205);</string>
+        <string notr="true">background-color: rgb(75, 139, 190); border: 1px solid #6f8094;</string>
        </property>
        <property name="frameShape">
         <enum>QFrame::Shape::Box</enum>
@@ -3907,7 +4013,7 @@ here.</string>
         </rect>
        </property>
        <property name="styleSheet">
-        <string notr="true">background-color: rgb(187, 189, 189);</string>
+        <string notr="true">background-color: rgb(207, 215, 224); border: 1px solid #8795a6;</string>
        </property>
        <property name="frameShape">
         <enum>QFrame::Shape::Box</enum>
@@ -3961,7 +4067,7 @@ here.</string>
         </rect>
        </property>
        <property name="styleSheet">
-        <string notr="true">background-color: rgb(255, 181, 231);</string>
+        <string notr="true">background-color: rgb(126, 181, 160); border: 1px solid #6f8094;</string>
        </property>
        <property name="frameShape">
         <enum>QFrame::Shape::Box</enum>
@@ -4050,7 +4156,7 @@ here.</string>
         </rect>
        </property>
        <property name="styleSheet">
-        <string notr="true">background-color: rgb(0, 0, 0);</string>
+        <string notr="true">background-color: rgb(42, 49, 59); border: 1px solid #6f8094;</string>
        </property>
        <property name="frameShape">
         <enum>QFrame::Shape::Box</enum>
@@ -4388,7 +4494,7 @@ here.</string>
         </rect>
        </property>
        <property name="styleSheet">
-        <string notr="true">background-color: rgb(255, 84, 14);</string>
+        <string notr="true">background-color: rgb(219, 111, 86); border: 1px solid #6f8094;</string>
        </property>
        <property name="frameShape">
         <enum>QFrame::Shape::Box</enum>
@@ -4407,7 +4513,7 @@ here.</string>
         </rect>
        </property>
        <property name="styleSheet">
-        <string notr="true">background-color: rgb(33, 113, 255)</string>
+        <string notr="true">background-color: rgb(47, 128, 237); border: 1px solid #6f8094;</string>
        </property>
        <property name="frameShape">
         <enum>QFrame::Shape::Box</enum>
@@ -4651,7 +4757,7 @@ here.</string>
         </rect>
        </property>
        <property name="styleSheet">
-        <string notr="true">background-color: rgb(255, 124, 205);</string>
+        <string notr="true">background-color: rgb(75, 139, 190); border: 1px solid #6f8094;</string>
        </property>
        <property name="frameShape">
         <enum>QFrame::Shape::Box</enum>
@@ -4670,7 +4776,7 @@ here.</string>
         </rect>
        </property>
        <property name="styleSheet">
-        <string notr="true">background-color: rgb(0,0,0);</string>
+        <string notr="true">background-color: rgb(42, 49, 59); border: 1px solid #6f8094;</string>
        </property>
        <property name="frameShape">
         <enum>QFrame::Shape::Box</enum>
@@ -6024,8 +6130,8 @@ here.</string>
      </font>
     </property>
     <property name="styleSheet">
-     <string notr="true">color: rgb(255, 24,
-39);</string>
+     <string notr="true">color: rgb(190, 20,
+20);</string>
     </property>
     <property name="text">
      <string>No webengine.  </string>
