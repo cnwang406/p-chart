@@ -73,7 +73,6 @@ class TableClipboardHelper(QObject):
         if self.tableWidget.item(nextRow, currentColumn) is None:
             self.tableWidget.setItem(nextRow, currentColumn, QTableWidgetItem(''))
         self.tableWidget.setCurrentCell(nextRow, currentColumn)
-        self.tableWidget.editItem(self.tableWidget.item(nextRow, currentColumn))
 
     def copy_selection(self) -> None:
         copiedText, rowCount, columnCount = self._selected_text()

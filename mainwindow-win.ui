@@ -5984,7 +5984,7 @@ and {value:.2f} is also accepted.</string>
         <x>10</x>
         <y>150</y>
         <width>991</width>
-        <height>661</height>
+        <height>630</height>
        </rect>
       </property>
       <property name="dragEnabled">

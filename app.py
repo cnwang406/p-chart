@@ -329,6 +329,39 @@ class ResponsiveUiResizer(QObject):
     def _apply_parent_rules(self, parentWidget: QWidget) -> None:
         for rule in self.rulesByParentId.get(id(parentWidget), []):
             self._apply_rule(rule)
+        self._enforce_vertical_gap(
+            parentWidget,
+            'idiotDataTableWidget',
+            'idiotStatusLabelTab',
+            16,
+        )
+
+    def _enforce_vertical_gap(
+        self,
+        parentWidget: QWidget,
+        upperWidgetName: str,
+        lowerWidgetName: str,
+        minimumGap: int,
+    ) -> None:
+        upperWidget = parentWidget.findChild(QWidget, upperWidgetName)
+        lowerWidget = parentWidget.findChild(QWidget, lowerWidgetName)
+        if upperWidget is None or lowerWidget is None:
+            return
+        if (
+            upperWidget.parentWidget() is not parentWidget
+            or lowerWidget.parentWidget() is not parentWidget
+        ):
+            return
+
+        maxHeight = lowerWidget.y() - minimumGap - upperWidget.y()
+        if maxHeight <= 0 or upperWidget.height() <= maxHeight:
+            return
+        upperWidget.setGeometry(
+            upperWidget.x(),
+            upperWidget.y(),
+            upperWidget.width(),
+            maxHeight,
+        )
 
     def _apply_rule(self, rule: dict[str, object]) -> None:
         widget = rule['widget']
