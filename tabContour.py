@@ -542,10 +542,10 @@ class TabContourWidget(BackgroundTaskMixin):
         comboBox.blockSignals(False)
 
     def _default_xy_column(self, columnNames: list[str], candidates: tuple[str, ...]) -> str:
-        normalizedMap = {self._normalize_name(columnName): columnName for columnName in columnNames}
         for candidate in candidates:
-            if candidate in normalizedMap:
-                return normalizedMap[candidate]
+            columnName = self._column_by_upper_name(columnNames, candidate)
+            if columnName:
+                return columnName
         return CONTOUR_NONE_TEXT
 
     def _default_z_column(self, columnNames: list[str]) -> str:
@@ -582,6 +582,13 @@ class TabContourWidget(BackgroundTaskMixin):
 
     def _normalize_name(self, columnName: str) -> str:
         return re.sub(r'[\s_-]+', '', str(columnName).strip().lower())
+
+    def _column_by_upper_name(self, columnNames: list[str], targetName: str) -> str:
+        targetUpper = str(targetName).strip().upper()
+        for columnName in columnNames:
+            if str(columnName).strip().upper() == targetUpper:
+                return columnName
+        return ''
 
     def _is_none_column(self, columnName: str) -> bool:
         return self._normalize_name(columnName) == CONTOUR_NONE_TEXT
@@ -975,10 +982,22 @@ class TabContourWidget(BackgroundTaskMixin):
             raise ContourBuildSuperseded('Contour build superseded')
 
     def _needs_virtual_coordinates(self) -> bool:
-        return (
-            self._is_none_column(self.xComboBox.currentText())
-            or self._is_none_column(self.yComboBox.currentText())
-        )
+        xColumn = self.xComboBox.currentText().strip()
+        yColumn = self.yComboBox.currentText().strip()
+        missingX = self._is_none_column(xColumn)
+        missingY = self._is_none_column(yColumn)
+        if not missingX and not missingY:
+            return False
+
+        columnNames = self._active_columns()
+        resolvedX = self._column_by_upper_name(columnNames, 'x') if missingX else xColumn
+        resolvedY = self._column_by_upper_name(columnNames, 'y') if missingY else yColumn
+        if (missingX and resolvedX) or (missingY and resolvedY):
+            self._set_xy_combo_text(resolvedX or xColumn, resolvedY or yColumn)
+            xColumn = self.xComboBox.currentText().strip()
+            yColumn = self.yComboBox.currentText().strip()
+
+        return self._is_none_column(xColumn) or self._is_none_column(yColumn)
 
     def _apply_virtual_coordinates_from_dialog(self) -> bool:
         zColumn = self.zComboBox.currentText().strip()
