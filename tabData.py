@@ -1488,7 +1488,7 @@ class TabDataWidget(BackgroundTaskMixin):
         return rows
 
     def _strip_csv_dataframe_spaces(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
-        strippedDataFrame = dataFrame.copy()
+        strippedDataFrame = self._normalize_csv_dataframe_columns(dataFrame)
         usedColumnNames = set()
         strippedColumns = []
         for columnName in strippedDataFrame.columns:
@@ -1509,6 +1509,45 @@ class TabDataWidget(BackgroundTaskMixin):
                 lambda value: value.strip() if isinstance(value, str) else value
             )
         return strippedDataFrame
+
+    def _normalize_csv_dataframe_columns(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
+        normalizedDataFrame = dataFrame.copy()
+        if len(normalizedDataFrame.columns) == 0:
+            return normalizedDataFrame
+
+        columnNames = [str(columnName).strip() for columnName in normalizedDataFrame.columns]
+        blankHeaderFlags = [
+            self._is_blank_csv_header_name(columnName)
+            for columnName in columnNames
+        ]
+
+        if blankHeaderFlags[-1]:
+            normalizedDataFrame = normalizedDataFrame.iloc[:, :-1].copy()
+            columnNames = columnNames[:-1]
+            blankHeaderFlags = blankHeaderFlags[:-1]
+
+        if columnNames and blankHeaderFlags[0]:
+            if self._csv_column_is_empty(normalizedDataFrame.iloc[:, 0]):
+                normalizedDataFrame = normalizedDataFrame.iloc[:, 1:].copy()
+                columnNames = columnNames[1:]
+            else:
+                columnNames = columnNames[1:] + ['']
+                if self._csv_column_is_empty(normalizedDataFrame.iloc[:, -1]):
+                    normalizedDataFrame = normalizedDataFrame.iloc[:, :-1].copy()
+                    columnNames = columnNames[:-1]
+
+        normalizedDataFrame.columns = columnNames
+        return normalizedDataFrame
+
+    def _is_blank_csv_header_name(self, columnName: str) -> bool:
+        if not columnName:
+            return True
+        return bool(re.match(r'^Unnamed: \d+(?:_level_\d+)?$', columnName))
+
+    def _csv_column_is_empty(self, series: pd.Series) -> bool:
+        return series.map(
+            lambda value: pd.isna(value) or str(value).strip() == ''
+        ).all()
 
     def _detect_csv_read_options(self, filePath: str) -> dict[str, str]:
         sampleBytes = self._read_csv_sample_bytes(filePath)
@@ -1579,9 +1618,35 @@ class TabDataWidget(BackgroundTaskMixin):
             return sampleBytes.decode('utf-8-sig', errors='ignore')
 
     def _detect_csv_delimiter(self, sampleText: str) -> str:
-        if ',' not in sampleText and '\t' in sampleText:
+        sampleLines = [
+            line
+            for line in sampleText.splitlines()
+            if line.strip()
+        ][:30]
+        tabScore = self._score_csv_delimiter(sampleLines, '\t')
+        commaScore = self._score_csv_delimiter(sampleLines, ',')
+        if tabScore > commaScore:
             return '\t'
         return ','
+
+    def _score_csv_delimiter(self, sampleLines: list[str], delimiter: str) -> float:
+        fieldCounts = []
+        for line in sampleLines:
+            try:
+                fields = next(csv.reader([line], delimiter=delimiter))
+            except csv.Error:
+                continue
+            if len(fields) > 1:
+                fieldCounts.append(len(fields))
+
+        if not fieldCounts:
+            return 0.0
+
+        mostCommonCount = max(
+            fieldCounts.count(fieldCount)
+            for fieldCount in set(fieldCounts)
+        )
+        return mostCommonCount * 10.0 + max(fieldCounts)
 
     def _score_header_row(self, previewDf: pd.DataFrame, rowIndex: int) -> float:
         rowTexts = self._row_text_values(previewDf.iloc[rowIndex])
