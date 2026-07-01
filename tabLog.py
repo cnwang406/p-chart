@@ -3,7 +3,6 @@ import os
 import re
 import tempfile
 import webbrowser
-from io import StringIO
 from pathlib import Path
 
 import pandas as pd
@@ -729,8 +728,10 @@ class TabLogWidget(BackgroundTaskMixin):
 
         csvText = ''.join(decodedLines)
         delimiter = self.tabDataWidget._detect_csv_delimiter(csvText)
-        dataFrame = pd.read_csv(StringIO(csvText), sep=delimiter)
-        return dataFrame
+        return self.tabDataWidget._read_delimited_text_dataframe_from_lines(
+            decodedLines,
+            delimiter,
+        )
 
     def _read_log_file_raw_lines(
         self,
@@ -852,13 +853,12 @@ class TabLogWidget(BackgroundTaskMixin):
             fallbackSkipRows=fallbackSkipRows,
         )
         csvOptions = self.tabDataWidget._detect_csv_read_options(filePath)
-        dataFrame = pd.read_csv(
+        dataFrame = self.tabDataWidget._read_delimited_text_dataframe(
             filePath,
-            skiprows=skipRows,
-            encoding=csvOptions['encoding'],
-            sep=csvOptions['delimiter'],
+            skipRows,
+            csvOptions['encoding'],
+            csvOptions['delimiter'],
         )
-        dataFrame = self.tabDataWidget._strip_csv_dataframe_spaces(dataFrame)
         self.tabDataWidget._normalize_loaded_datetime_formats(dataFrame)
         return dataFrame
 
