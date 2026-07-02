@@ -435,13 +435,12 @@ class TabDataWidget(BackgroundTaskMixin):
                     skipRowsRequest,
                 )
                 csvOptions = self._detect_csv_read_options(filePath)
-                dataFrame = pd.read_csv(
+                dataFrame = self._read_delimited_text_dataframe(
                     filePath,
-                    skiprows=skipRows,
-                    encoding=csvOptions['encoding'],
-                    sep=csvOptions['delimiter'],
+                    skipRows,
+                    csvOptions['encoding'],
+                    csvOptions['delimiter'],
                 )
-                dataFrame = self._strip_csv_dataframe_spaces(dataFrame)
                 normalizedColumns = self._normalize_loaded_datetime_formats(dataFrame)
                 warnings = self._loaded_data_warnings(dataFrame)
                 return {
@@ -1488,7 +1487,7 @@ class TabDataWidget(BackgroundTaskMixin):
         return rows
 
     def _strip_csv_dataframe_spaces(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
-        strippedDataFrame = dataFrame.copy()
+        strippedDataFrame = self._normalize_csv_dataframe_columns(dataFrame)
         usedColumnNames = set()
         strippedColumns = []
         for columnName in strippedDataFrame.columns:
@@ -1509,6 +1508,163 @@ class TabDataWidget(BackgroundTaskMixin):
                 lambda value: value.strip() if isinstance(value, str) else value
             )
         return strippedDataFrame
+
+    def _read_delimited_text_dataframe(
+        self,
+        filePath: str,
+        skipRows: int,
+        encoding: str,
+        delimiter: str,
+    ) -> pd.DataFrame:
+        rows = []
+        with open(filePath, newline='', encoding=encoding) as csvFile:
+            reader = csv.reader(csvFile, delimiter=delimiter)
+            for rowIndex, row in enumerate(reader):
+                if rowIndex < skipRows:
+                    continue
+                rows.append(row)
+        return self._build_delimited_text_dataframe(rows)
+
+    def _read_delimited_text_dataframe_from_lines(
+        self,
+        lines: list[str],
+        delimiter: str,
+    ) -> pd.DataFrame:
+        rows = list(csv.reader(lines, delimiter=delimiter))
+        return self._build_delimited_text_dataframe(rows)
+
+    def _build_delimited_text_dataframe(self, rows: list[list[str]]) -> pd.DataFrame:
+        if not rows:
+            return pd.DataFrame()
+
+        columnNames = [self._strip_text_cell(cell) for cell in rows[0]]
+        dataRows = [
+            [self._strip_text_cell(cell) for cell in row]
+            for row in rows[1:]
+            if any(self._strip_text_cell(cell) for cell in row)
+        ]
+
+        while columnNames and self._is_blank_csv_header_name(columnNames[-1]):
+            columnNames.pop()
+
+        if columnNames and self._is_blank_csv_header_name(columnNames[0]):
+            columnNames = columnNames[1:]
+            if dataRows and all(row and self._strip_text_cell(row[0]) == '' for row in dataRows):
+                dataRows = [row[1:] for row in dataRows]
+
+        if dataRows:
+            headerColumnCount = len(columnNames)
+            targetColumnCount = max(
+                self._effective_delimited_data_column_count(row, headerColumnCount)
+                for row in dataRows
+            )
+        else:
+            targetColumnCount = len(columnNames)
+        if len(columnNames) < targetColumnCount:
+            missingColumnCount = targetColumnCount - len(columnNames)
+            columnNames.extend(
+                f'raw{rawIndex}'
+                for rawIndex in range(1, missingColumnCount + 1)
+            )
+        elif len(columnNames) > targetColumnCount:
+            columnNames = columnNames[:targetColumnCount]
+
+        normalizedRows = [
+            self._fit_delimited_row_to_columns(row, targetColumnCount)
+            for row in dataRows
+        ]
+        dataFrame = pd.DataFrame(normalizedRows, columns=columnNames)
+        dataFrame = self._strip_csv_dataframe_spaces(dataFrame)
+        return self._infer_delimited_dataframe_types(dataFrame)
+
+    def _strip_text_cell(self, value) -> str:
+        return value.strip() if isinstance(value, str) else str(value).strip()
+
+    def _fit_delimited_row_to_columns(
+        self,
+        row: list[str],
+        columnCount: int,
+    ) -> list[str]:
+        if len(row) >= columnCount:
+            return row[:columnCount]
+        return [*row, *([''] * (columnCount - len(row)))]
+
+    def _effective_delimited_data_column_count(
+        self,
+        row: list[str],
+        headerColumnCount: int,
+    ) -> int:
+        if (
+            len(row) == headerColumnCount + 1
+            and row
+            and self._strip_text_cell(row[-1]) == ''
+        ):
+            return headerColumnCount
+        return len(row)
+
+    def _infer_delimited_dataframe_types(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
+        inferredDataFrame = dataFrame.copy()
+        for columnName in inferredDataFrame.columns:
+            series = inferredDataFrame[columnName]
+            if not (
+                pd.api.types.is_object_dtype(series)
+                or pd.api.types.is_string_dtype(series)
+            ):
+                continue
+            textSeries = series.map(
+                lambda value: value.strip() if isinstance(value, str) else value
+            )
+            nonEmptyText = textSeries.dropna().astype(str)
+            nonEmptyText = nonEmptyText[nonEmptyText.str.strip() != '']
+            if nonEmptyText.empty:
+                continue
+            numericValues = pd.to_numeric(nonEmptyText, errors='coerce')
+            if int(numericValues.notna().sum()) != len(nonEmptyText):
+                continue
+            inferredDataFrame[columnName] = pd.to_numeric(
+                textSeries.replace('', pd.NA),
+                errors='coerce',
+            )
+        return inferredDataFrame
+
+    def _normalize_csv_dataframe_columns(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
+        normalizedDataFrame = dataFrame.copy()
+        if len(normalizedDataFrame.columns) == 0:
+            return normalizedDataFrame
+
+        columnNames = [str(columnName).strip() for columnName in normalizedDataFrame.columns]
+        blankHeaderFlags = [
+            self._is_blank_csv_header_name(columnName)
+            for columnName in columnNames
+        ]
+
+        if blankHeaderFlags[-1]:
+            normalizedDataFrame = normalizedDataFrame.iloc[:, :-1].copy()
+            columnNames = columnNames[:-1]
+            blankHeaderFlags = blankHeaderFlags[:-1]
+
+        if columnNames and blankHeaderFlags[0]:
+            if self._csv_column_is_empty(normalizedDataFrame.iloc[:, 0]):
+                normalizedDataFrame = normalizedDataFrame.iloc[:, 1:].copy()
+                columnNames = columnNames[1:]
+            else:
+                columnNames = columnNames[1:] + ['']
+                if self._csv_column_is_empty(normalizedDataFrame.iloc[:, -1]):
+                    normalizedDataFrame = normalizedDataFrame.iloc[:, :-1].copy()
+                    columnNames = columnNames[:-1]
+
+        normalizedDataFrame.columns = columnNames
+        return normalizedDataFrame
+
+    def _is_blank_csv_header_name(self, columnName: str) -> bool:
+        if not columnName:
+            return True
+        return bool(re.match(r'^Unnamed: \d+(?:_level_\d+)?$', columnName))
+
+    def _csv_column_is_empty(self, series: pd.Series) -> bool:
+        return series.map(
+            lambda value: pd.isna(value) or str(value).strip() == ''
+        ).all()
 
     def _detect_csv_read_options(self, filePath: str) -> dict[str, str]:
         sampleBytes = self._read_csv_sample_bytes(filePath)
@@ -1579,9 +1735,35 @@ class TabDataWidget(BackgroundTaskMixin):
             return sampleBytes.decode('utf-8-sig', errors='ignore')
 
     def _detect_csv_delimiter(self, sampleText: str) -> str:
-        if ',' not in sampleText and '\t' in sampleText:
+        sampleLines = [
+            line
+            for line in sampleText.splitlines()
+            if line.strip()
+        ][:30]
+        tabScore = self._score_csv_delimiter(sampleLines, '\t')
+        commaScore = self._score_csv_delimiter(sampleLines, ',')
+        if tabScore > commaScore:
             return '\t'
         return ','
+
+    def _score_csv_delimiter(self, sampleLines: list[str], delimiter: str) -> float:
+        fieldCounts = []
+        for line in sampleLines:
+            try:
+                fields = next(csv.reader([line], delimiter=delimiter))
+            except csv.Error:
+                continue
+            if len(fields) > 1:
+                fieldCounts.append(len(fields))
+
+        if not fieldCounts:
+            return 0.0
+
+        mostCommonCount = max(
+            fieldCounts.count(fieldCount)
+            for fieldCount in set(fieldCounts)
+        )
+        return mostCommonCount * 10.0 + max(fieldCounts)
 
     def _score_header_row(self, previewDf: pd.DataFrame, rowIndex: int) -> float:
         rowTexts = self._row_text_values(previewDf.iloc[rowIndex])
