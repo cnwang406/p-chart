@@ -97,7 +97,7 @@ from tabWafermap import TabWafermapWidget
 APP_NAME = 'p-chart'
 APP_VERSION = 'v3.0'
 APP_AUTHOR = 'cnwang'
-APP_DATE = 'build 0620'
+APP_DATE = 'build 0702'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} {APP_DATE} by {APP_AUTHOR}'
 APP_ICON_FILENAME = os.path.join(
     'AppIcon.appiconset',
