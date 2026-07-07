@@ -38,6 +38,7 @@ class TabIdiotWidget:
         self.colsSpinBox = require_child(rootWidget, QSpinBox, 'idiotColsSpinBox')
         self.addRowsButton = require_child(rootWidget, QPushButton, 'idiotAddRowsPushButton')
         self.addColsButton = require_child(rootWidget, QPushButton, 'idiotAddColsPushButton')
+        self.cleanButton = require_child(rootWidget, QPushButton, 'idiotCleanPushButton')
         self.transferButton = require_child(rootWidget, QPushButton, 'idiotTransferPushButton')
         self.insert49Button = require_child(rootWidget, QPushButton, 'idiotInsert49PushButton')
         self.insert81Button = require_child(rootWidget, QPushButton, 'idiotInsert81PushButton')
@@ -75,6 +76,7 @@ class TabIdiotWidget:
         self.colsSpinBox.valueChanged.connect(self._set_column_count)
         self.addRowsButton.clicked.connect(self._add_row)
         self.addColsButton.clicked.connect(self._add_column)
+        self.cleanButton.clicked.connect(self._clear_table)
         self.insert49Button.clicked.connect(lambda: self._insert_coord_file('coord-49.csv'))
         self.insert81Button.clicked.connect(lambda: self._insert_coord_file('coord-81.csv'))
         self.transferButton.clicked.connect(self._transfer_to_tab_data)
@@ -135,6 +137,14 @@ class TabIdiotWidget:
 
     def _add_column(self) -> None:
         self.colsSpinBox.setValue(self.colsSpinBox.value() + 1)
+
+    def _clear_table(self) -> None:
+        self.dataTableWidget.clearSelection()
+        self.dataTableWidget.clear()
+        self.dataTableWidget.setRowCount(1)
+        self.dataTableWidget.setColumnCount(1)
+        self._sync_table_after_shape_change()
+        self._set_status('IDIOT table cleared.')
 
     def _rename_header(self, columnIndex: int) -> None:
         currentName = self._header_text(columnIndex) or f'Column{columnIndex + 1}'

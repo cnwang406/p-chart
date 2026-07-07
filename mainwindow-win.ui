@@ -137,7 +137,7 @@ QStatusBar {
      </font>
     </property>
     <property name="currentIndex">
-     <number>0</number>
+     <number>6</number>
     </property>
     <widget class="QWidget" name="tabData">
      <attribute name="title">
@@ -151,7 +151,7 @@ QStatusBar {
        <rect>
         <x>20</x>
         <y>0</y>
-        <width>951</width>
+        <width>991</width>
         <height>70</height>
        </rect>
       </property>
@@ -227,7 +227,7 @@ QStatusBar {
       <widget class="QPushButton" name="loadButton">
        <property name="geometry">
         <rect>
-         <x>870</x>
+         <x>860</x>
          <y>30</y>
          <width>70</width>
          <height>32</height>
@@ -290,6 +290,28 @@ QStatusBar {
        <property name="text">
         <string>skip
 lines</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="dataCleanPushButton">
+       <property name="geometry">
+        <rect>
+         <x>940</x>
+         <y>30</y>
+         <width>40</width>
+         <height>32</height>
+        </rect>
+       </property>
+       <property name="font">
+        <font>
+         <family>Cascadia Next TC</family>
+         <pointsize>10</pointsize>
+        </font>
+       </property>
+       <property name="toolTip">
+        <string>選擇 excel的 sheet.</string>
+       </property>
+       <property name="text">
+        <string>clean</string>
        </property>
       </widget>
      </widget>
@@ -825,7 +847,7 @@ inline_,</string>
      <widget class="QTableView" name="previewTableWidget">
       <property name="geometry">
        <rect>
-        <x>30</x>
+        <x>20</x>
         <y>310</y>
         <width>951</width>
         <height>511</height>
@@ -2050,7 +2072,7 @@ here.</string>
        <rect>
         <x>20</x>
         <y>0</y>
-        <width>961</width>
+        <width>991</width>
         <height>285</height>
        </rect>
       </property>
@@ -2187,7 +2209,7 @@ here.</string>
         <rect>
          <x>80</x>
          <y>64</y>
-         <width>401</width>
+         <width>380</width>
          <height>24</height>
         </rect>
        </property>
@@ -2195,9 +2217,9 @@ here.</string>
       <widget class="QComboBox" name="boxGroupSepComboBox">
        <property name="geometry">
         <rect>
-         <x>490</x>
+         <x>570</x>
          <y>64</y>
-         <width>151</width>
+         <width>150</width>
          <height>24</height>
         </rect>
        </property>
@@ -2206,9 +2228,12 @@ here.</string>
        </property>
       </widget>
       <widget class="QPushButton" name="boxGridsLinesPushButton">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
        <property name="geometry">
         <rect>
-         <x>650</x>
+         <x>730</x>
          <y>64</y>
          <width>81</width>
          <height>24</height>
@@ -2217,14 +2242,11 @@ here.</string>
        <property name="text">
         <string>lines</string>
        </property>
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
       </widget>
       <widget class="QLabel" name="boxSingleSelectLabel">
        <property name="geometry">
         <rect>
-         <x>740</x>
+         <x>820</x>
          <y>66</y>
          <width>41</width>
          <height>21</height>
@@ -2237,7 +2259,7 @@ here.</string>
       <widget class="QComboBox" name="boxSingleSelectComboBox">
        <property name="geometry">
         <rect>
-         <x>780</x>
+         <x>860</x>
          <y>64</y>
          <width>121</width>
          <height>24</height>
@@ -2323,6 +2345,9 @@ here.</string>
        </property>
       </widget>
       <widget class="QSpinBox" name="boxChartHSpaceSpinBox">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
        <property name="geometry">
         <rect>
          <x>380</x>
@@ -2330,9 +2355,6 @@ here.</string>
          <width>45</width>
          <height>24</height>
         </rect>
-       </property>
-       <property name="enabled">
-        <bool>false</bool>
        </property>
        <property name="minimum">
         <number>4</number>
@@ -2358,6 +2380,9 @@ here.</string>
        </property>
       </widget>
       <widget class="QSpinBox" name="boxChartVSpaceSpinbox">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
        <property name="geometry">
         <rect>
          <x>465</x>
@@ -2365,9 +2390,6 @@ here.</string>
          <width>45</width>
          <height>24</height>
         </rect>
-       </property>
-       <property name="enabled">
-        <bool>false</bool>
        </property>
        <property name="minimum">
         <number>4</number>
@@ -2982,6 +3004,19 @@ table</string>
        </property>
        <property name="checked">
         <bool>true</bool>
+       </property>
+      </widget>
+      <widget class="QLabel" name="boxPointsLabel_2">
+       <property name="geometry">
+        <rect>
+         <x>480</x>
+         <y>60</y>
+         <width>80</width>
+         <height>24</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>seperate by</string>
        </property>
       </widget>
      </widget>
@@ -6110,6 +6145,28 @@ here.</string>
       </property>
       <property name="text">
        <string>+ Col</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="idiotCleanPushButton">
+      <property name="geometry">
+       <rect>
+        <x>920</x>
+        <y>60</y>
+        <width>91</width>
+        <height>32</height>
+       </rect>
+      </property>
+      <property name="font">
+       <font>
+        <family>Cascadia Next TC</family>
+        <pointsize>13</pointsize>
+       </font>
+      </property>
+      <property name="toolTip">
+       <string>選擇 excel的 sheet.</string>
+      </property>
+      <property name="text">
+       <string>clean</string>
       </property>
      </widget>
     </widget>

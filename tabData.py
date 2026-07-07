@@ -214,6 +214,7 @@ class TabDataWidget(BackgroundTaskMixin):
         self.filePathLineEdit = require_child(rootWidget, QLineEdit, 'filePathLineEdit')
         self.browseFileButton = require_child(rootWidget, QPushButton, 'browseFileButton')
         self.loadButton = require_child(rootWidget, QPushButton, 'loadButton')
+        self.cleanButton = require_child(rootWidget, QPushButton, 'dataCleanPushButton')
         self.skipRowsSpinBox = require_child(rootWidget, QSpinBox, 'skipRowsSpinBox')
         self.sheetComboBox = require_child(rootWidget, QComboBox, 'sheetComboBox')
         self.sheetGroupBox = require_child(rootWidget, QGroupBox, 'sheetGroupBox')
@@ -262,6 +263,7 @@ class TabDataWidget(BackgroundTaskMixin):
     def _configure_widgets(self) -> None:
         self.browseFileButton.clicked.connect(self._browse_file)
         self.loadButton.clicked.connect(self._load_selected_sheet)
+        self.cleanButton.clicked.connect(self._clear_data)
         self.browseSaveButton.clicked.connect(self._browse_save_path)
         self.meltButton.clicked.connect(self._melt_dataframe)
         self.saveButton.clicked.connect(self._save_melted_data)
@@ -311,6 +313,27 @@ class TabDataWidget(BackgroundTaskMixin):
         self.sheetNameLineEdit.setText('wide_to_long')
         self.suffixNameLineEdit.setText('site')
         self.suffixLineEdit.setText('[TCBLR]')
+
+    def _clear_data(self) -> None:
+        self._activeLoadTaskId = None
+        self.loadedFilePath = ''
+        self.loadedDataFrame = pd.DataFrame()
+        self.meltedDataFrame = pd.DataFrame()
+        self.previewSourceDataFrame = pd.DataFrame()
+        self.previewFilterValueOverflow.clear()
+
+        self.loadingOverlay.hide()
+        self.browseFileButton.setEnabled(True)
+        self.loadButton.setEnabled(False)
+        self.filePathLineEdit.clear()
+        self.sheetComboBox.clear()
+        self.sheetComboBox.setEnabled(False)
+        self.columnsListWidget.clear()
+        self.previewTableWidget.clearSelection()
+        self._show_preview(pd.DataFrame())
+        self._mark_matching_columns()
+        self._notify_data_changed()
+        self._set_status('TabData table cleared.')
 
     def _load_dropped_file(self, filePath: str) -> None:
         self._invalidate_melted_data()

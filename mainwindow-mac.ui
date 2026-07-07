@@ -287,12 +287,34 @@ QStatusBar {
         <height>30</height>
        </rect>
       </property>
-      <property name="text">
-       <string>skip
+     <property name="text">
+      <string>skip
 lines</string>
-      </property>
-     </widget>
+     </property>
     </widget>
+    <widget class="QPushButton" name="dataCleanPushButton">
+     <property name="geometry">
+      <rect>
+       <x>940</x>
+       <y>30</y>
+       <width>40</width>
+       <height>32</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <family>Cascadia Next TC</family>
+       <pointsize>10</pointsize>
+      </font>
+     </property>
+     <property name="toolTip">
+      <string>選擇 excel的 sheet.</string>
+     </property>
+     <property name="text">
+      <string>clean</string>
+     </property>
+    </widget>
+   </widget>
     <widget class="QGroupBox" name="sheetGroupBox">
      <property name="geometry">
       <rect>
@@ -6108,11 +6130,33 @@ here.</string>
        <height>32</height>
       </rect>
      </property>
-     <property name="text">
-      <string>+ Col</string>
-     </property>
-    </widget>
+    <property name="text">
+     <string>+ Col</string>
+    </property>
    </widget>
+   <widget class="QPushButton" name="idiotCleanPushButton">
+    <property name="geometry">
+     <rect>
+      <x>920</x>
+      <y>60</y>
+      <width>91</width>
+      <height>32</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Cascadia Next TC</family>
+      <pointsize>13</pointsize>
+     </font>
+    </property>
+    <property name="toolTip">
+     <string>選擇 excel的 sheet.</string>
+    </property>
+    <property name="text">
+     <string>clean</string>
+    </property>
+   </widget>
+  </widget>
   </widget>
   <widget class="QLabel" name="noWebengineLabel">
    <property name="geometry">
