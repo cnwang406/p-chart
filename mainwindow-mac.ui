@@ -2062,6 +2062,38 @@ here.</string>
       <string>legend</string>
      </property>
     </widget>
+    <widget class="QCheckBox" name="scatterLineCheckBox">
+     <property name="geometry">
+      <rect>
+       <x>730</x>
+       <y>295</y>
+       <width>41</width>
+       <height>19</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>line</string>
+     </property>
+     <property name="checked">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QCheckBox" name="scatterSymbolCheckBox">
+     <property name="geometry">
+      <rect>
+       <x>660</x>
+       <y>295</y>
+       <width>78</width>
+       <height>19</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>symbol</string>
+     </property>
+     <property name="checked">
+      <bool>true</bool>
+     </property>
+    </widget>
    </widget>
    <widget class="QWidget" name="tabBoxplot">
     <attribute name="title">

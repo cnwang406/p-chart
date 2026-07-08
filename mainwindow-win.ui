@@ -137,7 +137,7 @@ QStatusBar {
      </font>
     </property>
     <property name="currentIndex">
-     <number>6</number>
+     <number>1</number>
     </property>
     <widget class="QWidget" name="tabData">
      <attribute name="title">
@@ -417,7 +417,7 @@ marked green</string>
        <rect>
         <x>340</x>
         <y>70</y>
-        <width>631</width>
+        <width>671</width>
         <height>231</height>
        </rect>
       </property>
@@ -849,7 +849,7 @@ inline_,</string>
        <rect>
         <x>20</x>
         <y>310</y>
-        <width>951</width>
+        <width>991</width>
         <height>511</height>
        </rect>
       </property>
@@ -1146,7 +1146,7 @@ inline_,</string>
       <widget class="QCheckBox" name="scatterPlotRegressionCheckBox">
        <property name="geometry">
         <rect>
-         <x>750</x>
+         <x>730</x>
          <y>30</y>
          <width>86</width>
          <height>20</height>
@@ -1159,7 +1159,7 @@ inline_,</string>
       <widget class="QCheckBox" name="scatterPlotRegressionAnnCheckBox">
        <property name="geometry">
         <rect>
-         <x>840</x>
+         <x>820</x>
          <y>30</y>
          <width>86</width>
          <height>20</height>
@@ -1773,7 +1773,7 @@ table</string>
        <rect>
         <x>20</x>
         <y>290</y>
-        <width>811</width>
+        <width>640</width>
         <height>36</height>
        </rect>
       </property>
@@ -1819,7 +1819,7 @@ here.</string>
      <widget class="QPushButton" name="downloadHtmlButton">
       <property name="geometry">
        <rect>
-        <x>840</x>
+        <x>820</x>
         <y>257</y>
         <width>70</width>
         <height>32</height>
@@ -1986,7 +1986,7 @@ here.</string>
      <widget class="QPushButton" name="scatterDownloadPngButton">
       <property name="geometry">
        <rect>
-        <x>920</x>
+        <x>900</x>
         <y>257</y>
         <width>60</width>
         <height>32</height>
@@ -2018,7 +2018,7 @@ here.</string>
      <widget class="QSpinBox" name="scatterLegendFontSizeSpinButton">
       <property name="geometry">
        <rect>
-        <x>800</x>
+        <x>780</x>
         <y>256</y>
         <width>40</width>
         <height>32</height>
@@ -2046,7 +2046,7 @@ here.</string>
      <widget class="QLabel" name="plotHeightLabel_2">
       <property name="geometry">
        <rect>
-        <x>750</x>
+        <x>730</x>
         <y>266</y>
         <width>51</width>
         <height>16</height>
@@ -2060,6 +2060,48 @@ here.</string>
       </property>
       <property name="text">
        <string>legend</string>
+      </property>
+     </widget>
+     <widget class="QSpinBox" name="logLineWidthSpinBox_2">
+      <property name="geometry">
+       <rect>
+        <x>790</x>
+        <y>293</y>
+        <width>42</width>
+        <height>22</height>
+       </rect>
+      </property>
+     </widget>
+     <widget class="QCheckBox" name="scatterLineCheckBox">
+      <property name="geometry">
+       <rect>
+        <x>730</x>
+        <y>295</y>
+        <width>41</width>
+        <height>19</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>line</string>
+      </property>
+      <property name="checked">
+       <bool>true</bool>
+      </property>
+     </widget>
+     <widget class="QCheckBox" name="scatterSymbolCheckBox">
+      <property name="geometry">
+       <rect>
+        <x>660</x>
+        <y>295</y>
+        <width>78</width>
+        <height>19</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>symbol</string>
+      </property>
+      <property name="checked">
+       <bool>true</bool>
       </property>
      </widget>
     </widget>

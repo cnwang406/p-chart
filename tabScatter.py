@@ -70,6 +70,8 @@ class TabScatterWidget(BackgroundTaskMixin):
         self.xFormatLineEdit = require_child(rootWidget, QLineEdit, 'xFormatLineEdit')
         self.yFormatLineEdit = require_child(rootWidget, QLineEdit, 'yFormatLineEdit')
         self.legendCheckBox = require_child(rootWidget, QCheckBox, 'legendCheckBox')
+        self.lineCheckBox = require_child(rootWidget, QCheckBox, 'scatterLineCheckBox')
+        self.symbolCheckBox = require_child(rootWidget, QCheckBox, 'scatterSymbolCheckBox')
         self.regressionCheckBox = require_child(
             rootWidget,
             QCheckBox,
@@ -162,6 +164,8 @@ class TabScatterWidget(BackgroundTaskMixin):
         self.downloadPngButton.clicked.connect(self._download_png)
         self.autoStatsButton.clicked.connect(self._auto_fill_plot_stats)
         self.filterAnnotationCheckBox.stateChanged.connect(self._redraw_existing_plot)
+        self.lineCheckBox.stateChanged.connect(self._redraw_existing_plot)
+        self.symbolCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.regressionCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.regressionAnnotationCheckBox.stateChanged.connect(self._redraw_existing_plot)
         self.lineColorButton.clicked.connect(self._pick_line_color)
@@ -215,6 +219,8 @@ class TabScatterWidget(BackgroundTaskMixin):
             self.plotHeightSpinBox.setValue(max(200, self.plotAreaWidget.height()))
         self.legendFontSizeSpinBox.setRange(6, 32)
         self.legendFontSizeSpinBox.setValue(self.legendFontSizeSpinBox.value() or 12)
+        self.lineCheckBox.setChecked(True)
+        self.symbolCheckBox.setChecked(True)
         self.plotlyThemeComboBox.addItems([
             'plotly',
             'plotly_white',
@@ -910,6 +916,8 @@ class TabScatterWidget(BackgroundTaskMixin):
                     else:
                         trace.marker.opacity = float(opacitySeries.mean())
 
+            self._apply_scatter_trace_mode(fig)
+
             if sizeColumn:
                 self._add_reference_trace(fig, f'Size: {sizeColumn}')
             if opacityColumn:
@@ -993,6 +1001,26 @@ class TabScatterWidget(BackgroundTaskMixin):
             self._render_figure(fig)
         except Exception as exc:
             self._set_status(f'Failed to draw plot: {exc}', error=True)
+
+    def _scatter_trace_mode(self) -> str:
+        showMarkers = self.symbolCheckBox.isChecked()
+        showLines = self.lineCheckBox.isChecked()
+        if showMarkers and showLines:
+            return 'lines+markers'
+        if showLines:
+            return 'lines'
+        if showMarkers:
+            return 'markers'
+        return 'none'
+
+    def _apply_scatter_trace_mode(self, figure) -> None:
+        traceMode = self._scatter_trace_mode()
+        for trace in figure.data:
+            if getattr(trace, 'type', '') != 'scatter':
+                continue
+            if getattr(trace, 'customdata', None) is None:
+                continue
+            trace.mode = traceMode
 
     def _normalize_opacity(self, series: pd.Series) -> pd.Series:
         opacitySeries = pd.to_numeric(series, errors='coerce').fillna(1.0)
