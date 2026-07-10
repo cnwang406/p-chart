@@ -1388,11 +1388,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self._set_status('Rendering boxplot HTML...')
         self.loadingOverlay.show('Loading...')
 
-        def work() -> dict[str, str]:
-            result = {'fullHtml': local_plotly_html(figure, fullHtml=True)}
-            if not self.useExternalBrowser:
-                result['embeddedHtml'] = local_plotly_html(figure, fullHtml=False)
-            return result
+        def work() -> str:
+            return local_plotly_html(figure, fullHtml=True)
 
         self._activeRenderTaskId = self._start_background_task(
             work,
@@ -1400,11 +1397,11 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             self._on_render_figure_failed,
         )
 
-    def _on_render_figure_finished(self, taskId: int, result: dict[str, str]) -> None:
+    def _on_render_figure_finished(self, taskId: int, result: str) -> None:
         if taskId != getattr(self, '_activeRenderTaskId', None):
             return
         self.loadingOverlay.hide()
-        self.currentPlotHtml = result['fullHtml']
+        self.currentPlotHtml = result
         isGroupSepPlot = bool(self._selected_group_sep_column() and self.currentSepPlotValues)
         self.gridsLinesPushButton.setEnabled(isGroupSepPlot)
         isGridPlot = bool(isGroupSepPlot and not self._selected_single_sep_value() and len(self.currentSepPlotValues) > 1)
@@ -1416,7 +1413,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             assetsDir = Path(__file__).resolve().parent
             try:
                 baseUrl = QUrl.fromLocalFile(str(assetsDir)+'/')
-                self.chartView.setHtml(result.get('embeddedHtml', self.currentPlotHtml), baseUrl)
+                self.chartView.setHtml(self.currentPlotHtml, baseUrl)
                 self._set_status(statusText)
                 return
             except Exception:

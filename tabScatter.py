@@ -1269,11 +1269,8 @@ class TabScatterWidget(BackgroundTaskMixin):
         self._set_status('Rendering scatter HTML...')
         self.loadingOverlay.show('Loading...')
 
-        def work() -> dict[str, str]:
-            result = {'fullHtml': local_plotly_html(figure, fullHtml=True)}
-            if not self.useExternalBrowser:
-                result['embeddedHtml'] = local_plotly_html(figure, fullHtml=False)
-            return result
+        def work() -> str:
+            return local_plotly_html(figure, fullHtml=True)
 
         self._activeRenderTaskId = self._start_background_task(
             work,
@@ -1281,16 +1278,16 @@ class TabScatterWidget(BackgroundTaskMixin):
             self._on_render_figure_failed,
         )
 
-    def _on_render_figure_finished(self, taskId: int, result: dict[str, str]) -> None:
+    def _on_render_figure_finished(self, taskId: int, result: str) -> None:
         if taskId != getattr(self, '_activeRenderTaskId', None):
             return
         self.loadingOverlay.hide()
-        self.currentPlotHtml = result['fullHtml']
+        self.currentPlotHtml = result
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
             try:
                 baseUrl = QUrl.fromLocalFile(str(assetsDir)+'/')
-                self.chartView.setHtml(result.get('embeddedHtml', self.currentPlotHtml), baseUrl)
+                self.chartView.setHtml(self.currentPlotHtml, baseUrl)
                 self._set_status('Plot created successfully.')
                 return
             except Exception:

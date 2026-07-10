@@ -24,7 +24,7 @@ def local_plotly_html(figure, fullHtml: bool) -> str:
         raise FileNotFoundError(f'Plotly JS file not found: {plotlyJSPath}')
 
 
-    html = pio.to_html(figure, full_html=fullHtml, include_plotlyjs=plotlyJsName)
+    html = pio.to_html(figure, full_html=fullHtml, include_plotlyjs=False)
     htmlHeader = '\n'.join(
         [
             _font_style_html(),

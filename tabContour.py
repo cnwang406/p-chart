@@ -1943,13 +1943,8 @@ class TabContourWidget(BackgroundTaskMixin):
         self.loadingOverlay.show('Rendering...')
         self._set_status('Rendering contour HTML...')
 
-        useExternalBrowser = self.useExternalBrowser
-
-        def work() -> dict[str, str]:
-            result = {'fullHtml': local_plotly_html(figure, fullHtml=True)}
-            if not useExternalBrowser:
-                result['embeddedHtml'] = local_plotly_html(figure, fullHtml=False)
-            return result
+        def work() -> str:
+            return local_plotly_html(figure, fullHtml=True)
 
         self._activeRenderTaskId = self._start_background_task(
             work,
@@ -1965,19 +1960,19 @@ class TabContourWidget(BackgroundTaskMixin):
     def _on_render_figure_finished(
         self,
         taskId: int,
-        result: dict[str, str],
+        result: str,
         statusText: str,
         warningText: str,
     ) -> None:
         if taskId != self._activeRenderTaskId:
             return
-        self.currentPlotHtml = result['fullHtml']
+        self.currentPlotHtml = result
         try:
             if not self.useExternalBrowser:
                 assetsDir = Path(__file__).resolve().parent
                 try:
                     baseUrl = QUrl.fromLocalFile(str(assetsDir) + '/')
-                    self.chartView.setHtml(result.get('embeddedHtml', self.currentPlotHtml), baseUrl)
+                    self.chartView.setHtml(self.currentPlotHtml, baseUrl)
                     self.loadingOverlay.hide()
                     self._set_status(self._status_with_warning(statusText, warningText), error=bool(warningText))
                     return

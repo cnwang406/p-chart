@@ -252,6 +252,8 @@ class TabDataWidget(BackgroundTaskMixin):
         self.totalColumnCount = 0
         self.autoDetectedSkipRows = None
         self.settingSkipRowsFromAutoDetect = False
+        self._csvReadOptionsCache: dict[tuple[str, int, int], dict[str, str]] = {}
+        self._skipRowsCache: dict[tuple[tuple[str, int, int], str], int] = {}
         self._matchedColumnColor = QBrush(QColor(208, 245, 216))
         self.dropFileFilter = DropFileFilter(self._load_dropped_file)
 
@@ -1466,7 +1468,17 @@ class TabDataWidget(BackgroundTaskMixin):
         sheetName: str | None = None,
         fallbackSkipRows: int | None = None,
     ) -> int:
+        cacheKey = None
         try:
+            fileSignature = self._file_signature(filePath)
+            cacheKey = (fileSignature, sheetName or '')
+            cache = getattr(self, '_skipRowsCache', None)
+            if cache is None:
+                cache = {}
+                self._skipRowsCache = cache
+            if cacheKey in cache:
+                return cache[cacheKey]
+
             if filePath.lower().endswith(DELIMITED_TEXT_EXTENSIONS):
                 previewRows = self._read_csv_preview_rows(filePath)
                 previewDf = pd.DataFrame(previewRows)
@@ -1496,7 +1508,10 @@ class TabDataWidget(BackgroundTaskMixin):
                 bestScore = score
                 bestRowIndex = rowIndex
 
-        return int(bestRowIndex) if bestScore >= 4.0 else 0
+        detectedSkipRows = int(bestRowIndex) if bestScore >= 4.0 else 0
+        if cacheKey is not None:
+            self._store_detection_cache(self._skipRowsCache, cacheKey, detectedSkipRows)
+        return detectedSkipRows
 
     def _read_csv_preview_rows(self, filePath: str, maxRows: int = 30) -> list[list[str]]:
         rows = []
@@ -1539,41 +1554,45 @@ class TabDataWidget(BackgroundTaskMixin):
         encoding: str,
         delimiter: str,
     ) -> pd.DataFrame:
-        rows = []
         with open(filePath, newline='', encoding=encoding) as csvFile:
             reader = csv.reader(csvFile, delimiter=delimiter)
-            for rowIndex, row in enumerate(reader):
-                if rowIndex < skipRows:
-                    continue
-                rows.append(row)
-        return self._build_delimited_text_dataframe(rows)
+            return self._build_delimited_text_dataframe(reader, skipRows=skipRows)
 
     def _read_delimited_text_dataframe_from_lines(
         self,
         lines: list[str],
         delimiter: str,
     ) -> pd.DataFrame:
-        rows = list(csv.reader(lines, delimiter=delimiter))
-        return self._build_delimited_text_dataframe(rows)
+        return self._build_delimited_text_dataframe(
+            csv.reader(lines, delimiter=delimiter),
+        )
 
-    def _build_delimited_text_dataframe(self, rows: list[list[str]]) -> pd.DataFrame:
-        if not rows:
+    def _build_delimited_text_dataframe(self, rows, skipRows: int = 0) -> pd.DataFrame:
+        rowIterator = iter(rows)
+        for _ in range(skipRows):
+            next(rowIterator, None)
+
+        headerRow = next(rowIterator, None)
+        if headerRow is None:
             return pd.DataFrame()
 
-        columnNames = [self._strip_text_cell(cell) for cell in rows[0]]
-        dataRows = [
-            [self._strip_text_cell(cell) for cell in row]
-            for row in rows[1:]
-            if any(self._strip_text_cell(cell) for cell in row)
-        ]
+        columnNames = [self._strip_text_cell(cell) for cell in headerRow]
+        if columnNames:
+            columnNames[0] = columnNames[0].lstrip('\ufeff')
+        dataRows = []
+        for row in rowIterator:
+            strippedRow = [self._strip_text_cell(cell) for cell in row]
+            if any(strippedRow):
+                dataRows.append(strippedRow)
 
         while columnNames and self._is_blank_csv_header_name(columnNames[-1]):
             columnNames.pop()
 
         if columnNames and self._is_blank_csv_header_name(columnNames[0]):
             columnNames = columnNames[1:]
-            if dataRows and all(row and self._strip_text_cell(row[0]) == '' for row in dataRows):
-                dataRows = [row[1:] for row in dataRows]
+            if dataRows and all(row and row[0] == '' for row in dataRows):
+                for row in dataRows:
+                    del row[0]
 
         if dataRows:
             headerColumnCount = len(columnNames)
@@ -1592,25 +1611,22 @@ class TabDataWidget(BackgroundTaskMixin):
         elif len(columnNames) > targetColumnCount:
             columnNames = columnNames[:targetColumnCount]
 
-        normalizedRows = [
-            self._fit_delimited_row_to_columns(row, targetColumnCount)
-            for row in dataRows
-        ]
-        dataFrame = pd.DataFrame(normalizedRows, columns=columnNames)
-        dataFrame = self._strip_csv_dataframe_spaces(dataFrame)
-        return self._infer_delimited_dataframe_types(dataFrame)
+        for row in dataRows:
+            if len(row) > targetColumnCount:
+                del row[targetColumnCount:]
+            elif len(row) < targetColumnCount:
+                row.extend([''] * (targetColumnCount - len(row)))
+
+        dataFrame = pd.DataFrame(dataRows, columns=columnNames)
+        self._make_unique_dataframe_columns(dataFrame)
+        return self._infer_delimited_dataframe_types(
+            dataFrame,
+            copyData=False,
+            valuesAlreadyStripped=True,
+        )
 
     def _strip_text_cell(self, value) -> str:
         return value.strip() if isinstance(value, str) else str(value).strip()
-
-    def _fit_delimited_row_to_columns(
-        self,
-        row: list[str],
-        columnCount: int,
-    ) -> list[str]:
-        if len(row) >= columnCount:
-            return row[:columnCount]
-        return [*row, *([''] * (columnCount - len(row)))]
 
     def _effective_delimited_data_column_count(
         self,
@@ -1625,8 +1641,13 @@ class TabDataWidget(BackgroundTaskMixin):
             return headerColumnCount
         return len(row)
 
-    def _infer_delimited_dataframe_types(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
-        inferredDataFrame = dataFrame.copy()
+    def _infer_delimited_dataframe_types(
+        self,
+        dataFrame: pd.DataFrame,
+        copyData: bool = True,
+        valuesAlreadyStripped: bool = False,
+    ) -> pd.DataFrame:
+        inferredDataFrame = dataFrame.copy() if copyData else dataFrame
         for columnName in inferredDataFrame.columns:
             series = inferredDataFrame[columnName]
             if not (
@@ -1634,7 +1655,7 @@ class TabDataWidget(BackgroundTaskMixin):
                 or pd.api.types.is_string_dtype(series)
             ):
                 continue
-            textSeries = series.map(
+            textSeries = series if valuesAlreadyStripped else series.map(
                 lambda value: value.strip() if isinstance(value, str) else value
             )
             nonEmptyText = textSeries.dropna().astype(str)
@@ -1649,6 +1670,16 @@ class TabDataWidget(BackgroundTaskMixin):
                 errors='coerce',
             )
         return inferredDataFrame
+
+    def _make_unique_dataframe_columns(self, dataFrame: pd.DataFrame) -> None:
+        usedColumnNames = set()
+        uniqueColumns = []
+        for columnName in dataFrame.columns:
+            strippedColumnName = str(columnName).strip()
+            uniqueColumnName = self._unique_column_name(strippedColumnName, usedColumnNames)
+            usedColumnNames.add(uniqueColumnName)
+            uniqueColumns.append(uniqueColumnName)
+        dataFrame.columns = uniqueColumns
 
     def _normalize_csv_dataframe_columns(self, dataFrame: pd.DataFrame) -> pd.DataFrame:
         normalizedDataFrame = dataFrame.copy()
@@ -1690,13 +1721,34 @@ class TabDataWidget(BackgroundTaskMixin):
         ).all()
 
     def _detect_csv_read_options(self, filePath: str) -> dict[str, str]:
+        fileSignature = self._file_signature(filePath)
+        cache = getattr(self, '_csvReadOptionsCache', None)
+        if cache is None:
+            cache = {}
+            self._csvReadOptionsCache = cache
+        cachedOptions = cache.get(fileSignature)
+        if cachedOptions is not None:
+            return dict(cachedOptions)
+
         sampleBytes = self._read_csv_sample_bytes(filePath)
         encoding = self._detect_csv_encoding(sampleBytes)
         sampleText = self._decode_csv_sample(sampleBytes, encoding)
-        return {
+        options = {
             'encoding': encoding,
             'delimiter': self._detect_csv_delimiter(sampleText),
         }
+        self._store_detection_cache(cache, fileSignature, options)
+        return dict(options)
+
+    def _file_signature(self, filePath: str) -> tuple[str, int, int]:
+        normalizedPath = os.path.normcase(os.path.abspath(filePath))
+        statResult = os.stat(normalizedPath)
+        return normalizedPath, int(statResult.st_size), int(statResult.st_mtime_ns)
+
+    def _store_detection_cache(self, cache: dict, key, value) -> None:
+        if len(cache) >= 64 and key not in cache:
+            cache.clear()
+        cache[key] = value
 
     def _read_csv_sample_bytes(self, filePath: str) -> bytes:
         with open(filePath, 'rb') as sampleFile:
