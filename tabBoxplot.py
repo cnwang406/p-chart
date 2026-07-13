@@ -34,7 +34,11 @@ from async_helpers import BackgroundTaskMixin
 from loading_overlay import LoadingOverlay
 from pivot_helpers import build_pivot_table, show_pivot_dialog
 from plot_annotation_helpers import add_preview_filter_annotation
-from plot_export_helpers import save_plotly_png_and_copy_to_clipboard
+from plot_export_helpers import (
+    copy_png_bytes_to_clipboard,
+    render_plotly_png,
+    shift_click_requests_png_file,
+)
 from plot_templates import CUSTOM_TEMPLATE_NAME, FOR_PPT_TEMPLATE_NAME
 from plotly_local import local_plotly_html
 
@@ -928,10 +932,10 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             'max': 'MAX',
             'q1': '1/4Q',
             'min': 'MIN',
-            'median': 'MEDIAN',
-            'average': 'AVERAGE',
+            'median': 'MED',
+            'average': 'AVG',
             'q3': '3/4Q',
-            'standard deviation': 'STANDARD DEVIATION',
+            'standard deviation': 'STDEV',
             'range': 'RANGE',
         }
         return labels.get(statName, statName.upper())
@@ -1501,23 +1505,50 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             self._set_status('No boxplot available. Draw a boxplot first.', error=True)
             return
 
-        selectedFile, _ = QFileDialog.getSaveFileName(
-            self.rootWidget,
-            'Download Plotly PNG',
-            'boxplot.png',
-            'PNG Files (*.png);;All Files (*)',
-        )
-        if selectedFile and not selectedFile.lower().endswith('.png'):
-            selectedFile = f'{selectedFile}.png'
+        selectedFile = ''
+        if shift_click_requests_png_file():
+            selectedFile, _ = QFileDialog.getSaveFileName(
+                self.rootWidget,
+                'Save Plotly PNG',
+                'boxplot.png',
+                'PNG Files (*.png);;All Files (*)',
+            )
+            if not selectedFile:
+                return
+            if not selectedFile.lower().endswith('.png'):
+                selectedFile = f'{selectedFile}.png'
 
+        self.downloadPngButton.setEnabled(False)
+        self._set_status('Creating Boxplot PNG...')
+        figure = self.currentPlotFigure
+        self._activePngTaskId = self._start_background_task(
+            lambda: render_plotly_png(figure, selectedFile),
+            lambda taskId, pngBytes: self._on_png_export_finished(
+                taskId, pngBytes, selectedFile
+            ),
+            self._on_png_export_failed,
+        )
+
+    def _on_png_export_finished(
+        self, taskId: int, pngBytes: bytes, selectedFile: str
+    ) -> None:
+        if taskId != getattr(self, '_activePngTaskId', None):
+            return
+        self.downloadPngButton.setEnabled(True)
+        if selectedFile:
+            self._set_status(f'Boxplot PNG saved to {selectedFile}.')
+            return
         try:
-            save_plotly_png_and_copy_to_clipboard(self.currentPlotFigure, selectedFile)
-            if selectedFile:
-                self._set_status(f'Boxplot PNG saved to {selectedFile}, and copied to clipboard.')
-            else:
-                self._set_status('Boxplot PNG copied to clipboard.')
+            copy_png_bytes_to_clipboard(pngBytes)
+            self._set_status('Boxplot PNG copied to clipboard.')
         except Exception as exc:
-            self._set_status(f'Failed to save Plotly PNG: {exc}', error=True)
+            self._set_status(f'Failed to copy Boxplot PNG: {exc}', error=True)
+
+    def _on_png_export_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != getattr(self, '_activePngTaskId', None):
+            return
+        self.downloadPngButton.setEnabled(True)
+        self._set_status(f'Failed to create Boxplot PNG: {errorText}', error=True)
 
     def _set_status(self, message: str, error: bool = False) -> None:
         self.statusLabel.setText(message)

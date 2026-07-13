@@ -35,7 +35,11 @@ from PySide6.QtWidgets import (
 from async_helpers import BackgroundTaskMixin
 from loading_overlay import LoadingOverlay
 from pivot_helpers import build_pivot_table, show_pivot_dialog
-from plot_export_helpers import save_plotly_png_and_copy_to_clipboard
+from plot_export_helpers import (
+    copy_png_bytes_to_clipboard,
+    render_plotly_png,
+    shift_click_requests_png_file,
+)
 from plotly_local import local_plotly_html
 from qt_helpers import require_child
 from wafermap_core import build_effective_outline, build_wafer_outline, nearest_value_lookup
@@ -2058,22 +2062,50 @@ class TabContourWidget(BackgroundTaskMixin):
         if self.currentPlotFigure is None:
             self._set_status('No contour plot available. Draw a plot first.', error=True)
             return
-        selectedFile, _ = QFileDialog.getSaveFileName(
-            self.rootWidget,
-            'Download Contour Plot PNG',
-            self._default_export_filename('.png'),
-            'PNG Files (*.png);;All Files (*)',
+        selectedFile = ''
+        if shift_click_requests_png_file():
+            selectedFile, _ = QFileDialog.getSaveFileName(
+                self.rootWidget,
+                'Save Contour Plot PNG',
+                self._default_export_filename('.png'),
+                'PNG Files (*.png);;All Files (*)',
+            )
+            if not selectedFile:
+                return
+            if not selectedFile.lower().endswith('.png'):
+                selectedFile = f'{selectedFile}.png'
+
+        self.downloadPngButton.setEnabled(False)
+        self._set_status('Creating Contour PNG...')
+        figure = self.currentPlotFigure
+        self._activePngTaskId = self._start_background_task(
+            lambda: render_plotly_png(figure, selectedFile),
+            lambda taskId, pngBytes: self._on_png_export_finished(
+                taskId, pngBytes, selectedFile
+            ),
+            self._on_png_export_failed,
         )
-        if selectedFile and not selectedFile.lower().endswith('.png'):
-            selectedFile = f'{selectedFile}.png'
+
+    def _on_png_export_finished(
+        self, taskId: int, pngBytes: bytes, selectedFile: str
+    ) -> None:
+        if taskId != getattr(self, '_activePngTaskId', None):
+            return
+        self.downloadPngButton.setEnabled(True)
+        if selectedFile:
+            self._set_status(f'Contour PNG saved to {selectedFile}.')
+            return
         try:
-            save_plotly_png_and_copy_to_clipboard(self.currentPlotFigure, selectedFile)
-            if selectedFile:
-                self._set_status(f'Contour PNG saved to {selectedFile} and copied to clipboard.')
-            else:
-                self._set_status('Contour PNG copied to clipboard.')
+            copy_png_bytes_to_clipboard(pngBytes)
+            self._set_status('Contour PNG copied to clipboard.')
         except Exception as exc:
-            self._set_status(f'Failed to save contour PNG: {exc}', error=True)
+            self._set_status(f'Failed to copy contour PNG: {exc}', error=True)
+
+    def _on_png_export_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != getattr(self, '_activePngTaskId', None):
+            return
+        self.downloadPngButton.setEnabled(True)
+        self._set_status(f'Failed to create contour PNG: {errorText}', error=True)
 
     def _default_export_filename(self, suffix: str) -> str:
         title = self.titleLineEdit.text().strip() or 'contour_plot'

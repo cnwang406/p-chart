@@ -7,7 +7,9 @@ from unittest.mock import patch
 
 import pandas as pd
 import plotly.graph_objects as go
+from PySide6.QtCore import Qt
 
+from plot_export_helpers import render_plotly_png, shift_click_requests_png_file
 from plotly_local import local_plotly_html
 from tabData import TabDataWidget
 from tabLog import TabLogWidget
@@ -134,6 +136,36 @@ class PlotlyHtmlTests(unittest.TestCase):
         )
         self.assertEqual(html.count('<script src='), 1)
         self.assertEqual(html.count('plotly.min.js'), 1)
+
+
+class PlotlyPngExportTests(unittest.TestCase):
+    def test_shift_modifier_requests_file_dialog(self) -> None:
+        with patch(
+            'plot_export_helpers.QApplication.keyboardModifiers',
+            return_value=Qt.KeyboardModifier.ShiftModifier,
+        ):
+            self.assertTrue(shift_click_requests_png_file())
+
+        with patch(
+            'plot_export_helpers.QApplication.keyboardModifiers',
+            return_value=Qt.KeyboardModifier.NoModifier,
+        ):
+            self.assertFalse(shift_click_requests_png_file())
+
+    def test_render_returns_bytes_and_writes_selected_file(self) -> None:
+        class FakeFigure:
+            def to_image(self, format: str) -> bytes:
+                self.format = format
+                return b'png-bytes'
+
+        figure = FakeFigure()
+        with tempfile.TemporaryDirectory(prefix='pchart-png-test-') as tempDir:
+            outputPath = Path(tempDir) / 'plot.png'
+            pngBytes = render_plotly_png(figure, str(outputPath))
+
+            self.assertEqual(figure.format, 'png')
+            self.assertEqual(pngBytes, b'png-bytes')
+            self.assertEqual(outputPath.read_bytes(), b'png-bytes')
 
 
 if __name__ == '__main__':
