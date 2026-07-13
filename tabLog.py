@@ -30,7 +30,11 @@ from PySide6.QtWidgets import (
 
 from async_helpers import BackgroundTaskMixin
 from loading_overlay import LoadingOverlay
-from plot_export_helpers import save_plotly_png_and_copy_to_clipboard
+from plot_export_helpers import (
+    copy_png_bytes_to_clipboard,
+    render_plotly_png,
+    shift_click_requests_png_file,
+)
 from plot_templates import CUSTOM_TEMPLATE_NAME, FOR_PPT_TEMPLATE_NAME
 from plotly_local import local_plotly_html
 from qt_helpers import require_child
@@ -207,6 +211,8 @@ class TabLogWidget(BackgroundTaskMixin):
         self._pendingDataRefresh = False
         self._pendingPrimarySync = False
         self._pendingRedraw = False
+        self._externalPreparedDataCache: dict[tuple, dict[str, object]] = {}
+        self._externalPreparedDataCacheMaxBytes = 256 * 1024 * 1024
 
         self.y1ColumnCombo = CheckableColumnCombo(
             self.y1ComboBox,
@@ -534,6 +540,7 @@ class TabLogWidget(BackgroundTaskMixin):
             if not bool(item.data(PRIMARY_FILE_ROLE)):
                 self.filesList.takeItem(rowIndex)
         self._updatingFilesList = False
+        self._externalPreparedDataCache.clear()
         self._apply_chart_mode()
         self._update_auto_subtitle()
         self._mark_plot_pending()
@@ -544,6 +551,7 @@ class TabLogWidget(BackgroundTaskMixin):
     def _on_file_selection_changed(self) -> None:
         if self._updatingFilesList:
             return
+        self._externalPreparedDataCache.clear()
         self._ensure_valid_file_selection()
         self._update_auto_subtitle()
         self._set_mode_status()
@@ -806,28 +814,43 @@ class TabLogWidget(BackgroundTaskMixin):
             return
 
         skipRows = self.tabDataWidget.get_skip_rows()
+        requiredColumns = list(dict.fromkeys([xColumn, *y1Columns, *y2Columns]))
         self._set_status(f'Loading selected files. {self._mode_text()}')
         self.loadingOverlay.show('Loading files...')
 
         def work() -> dict[str, object]:
-            sources = []
+            preparedSources = []
             warnings = []
             for entry in selectedEntries:
                 if entry['primary']:
-                    dataFrame = primaryDataFrame
+                    preparedSource, warning = self._prepare_log_source(
+                        str(entry['name']),
+                        primaryDataFrame,
+                        requiredColumns,
+                        xColumn,
+                        y1Columns,
+                        y2Columns,
+                    )
                 else:
                     try:
-                        dataFrame = self._read_external_data(str(entry['path']), skipRows)
+                        preparedSource, warning = self._cached_external_log_source(
+                            str(entry['name']),
+                            str(entry['path']),
+                            skipRows,
+                            requiredColumns,
+                            xColumn,
+                            y1Columns,
+                            y2Columns,
+                        )
                     except Exception as exc:
                         warnings.append(f'{entry["name"]}: {exc}')
                         continue
-                sources.append({
-                    'name': entry['name'],
-                    'path': entry['path'],
-                    'dataFrame': dataFrame,
-                })
+                if warning:
+                    warnings.append(warning)
+                elif preparedSource is not None:
+                    preparedSources.append(preparedSource)
             return {
-                'sources': sources,
+                'preparedSources': preparedSources,
                 'warnings': warnings,
                 'xColumn': xColumn,
                 'y1Columns': y1Columns,
@@ -839,6 +862,106 @@ class TabLogWidget(BackgroundTaskMixin):
             self._on_log_data_finished,
             self._on_log_data_failed,
         )
+
+    def _cached_external_log_source(
+        self,
+        displayName: str,
+        filePath: str,
+        skipRows: int,
+        requiredColumns: list[str],
+        xColumn: str,
+        y1Columns: list[str],
+        y2Columns: list[str],
+    ) -> tuple[dict[str, object] | None, str]:
+        fileSignature = self.tabDataWidget._file_signature(filePath)
+        cacheKey = (fileSignature, int(skipRows), tuple(requiredColumns))
+        cachedSource = self._externalPreparedDataCache.get(cacheKey)
+        if cachedSource is not None:
+            return {
+                'name': displayName,
+                'dataFrame': cachedSource['dataFrame'],
+                'xIsDate': cachedSource['xIsDate'],
+            }, ''
+
+        dataFrame = self._read_external_data(filePath, skipRows)
+        preparedSource, warning = self._prepare_log_source(
+            displayName,
+            dataFrame,
+            requiredColumns,
+            xColumn,
+            y1Columns,
+            y2Columns,
+        )
+        if preparedSource is not None and not warning:
+            self._store_external_prepared_source(cacheKey, preparedSource)
+        return preparedSource, warning
+
+    def _store_external_prepared_source(
+        self,
+        cacheKey: tuple,
+        preparedSource: dict[str, object],
+    ) -> None:
+        dataFrame = preparedSource['dataFrame']
+        memoryBytes = int(dataFrame.memory_usage(index=True, deep=True).sum())
+        normalizedPath = cacheKey[0][0]
+        for existingKey in list(self._externalPreparedDataCache):
+            if existingKey[0][0] == normalizedPath:
+                self._externalPreparedDataCache.pop(existingKey, None)
+        if memoryBytes > self._externalPreparedDataCacheMaxBytes:
+            return
+
+        cachedBytes = sum(
+            int(cachedSource['memoryBytes'])
+            for cachedSource in self._externalPreparedDataCache.values()
+        )
+        while (
+            self._externalPreparedDataCache
+            and cachedBytes + memoryBytes > self._externalPreparedDataCacheMaxBytes
+        ):
+            oldestKey = next(iter(self._externalPreparedDataCache))
+            removedSource = self._externalPreparedDataCache.pop(oldestKey)
+            cachedBytes -= int(removedSource['memoryBytes'])
+
+        self._externalPreparedDataCache[cacheKey] = {
+            'dataFrame': dataFrame,
+            'xIsDate': preparedSource['xIsDate'],
+            'memoryBytes': memoryBytes,
+        }
+
+    def _prepare_log_source(
+        self,
+        displayName: str,
+        dataFrame: pd.DataFrame,
+        requiredColumns: list[str],
+        xColumn: str,
+        y1Columns: list[str],
+        y2Columns: list[str],
+    ) -> tuple[dict[str, object] | None, str]:
+        missingColumns = [
+            columnName for columnName in requiredColumns
+            if columnName not in dataFrame.columns
+        ]
+        if missingColumns:
+            return None, f'{displayName}: missing {", ".join(missingColumns)}'
+
+        plotData = dataFrame[requiredColumns].copy()
+        xIsDate = self._is_date_series(plotData[xColumn])
+        if xIsDate:
+            plotData[xColumn] = pd.to_datetime(plotData[xColumn], errors='coerce')
+        for columnName in [*y1Columns, *y2Columns]:
+            plotData[columnName] = pd.to_numeric(plotData[columnName], errors='coerce')
+        plotData = plotData.dropna(subset=[xColumn])
+        if plotData.empty or all(
+            plotData[columnName].dropna().empty
+            for columnName in [*y1Columns, *y2Columns]
+        ):
+            return None, f'{displayName}: no usable plot data'
+
+        return {
+            'name': displayName,
+            'dataFrame': plotData,
+            'xIsDate': xIsDate,
+        }, ''
 
     def _read_external_data(self, filePath: str, fallbackSkipRows: int) -> pd.DataFrame:
         profile = self._detect_log_file_profile(filePath)
@@ -867,7 +990,7 @@ class TabLogWidget(BackgroundTaskMixin):
             return
         try:
             figure, warnings = self._build_figure(
-                list(result['sources']),
+                list(result['preparedSources']),
                 str(result['xColumn']),
                 list(result['y1Columns']),
                 list(result['y2Columns']),
@@ -898,44 +1021,12 @@ class TabLogWidget(BackgroundTaskMixin):
 
     def _build_figure(
         self,
-        sources: list[dict[str, object]],
+        preparedSources: list[dict[str, object]],
         xColumn: str,
         y1Columns: list[str],
         y2Columns: list[str],
         warnings: list[str],
     ) -> tuple[go.Figure | None, list[str]]:
-        preparedSources = []
-        requiredColumns = list(dict.fromkeys([xColumn, *y1Columns, *y2Columns]))
-        for source in sources:
-            dataFrame = source['dataFrame']
-            missingColumns = [
-                columnName for columnName in requiredColumns
-                if columnName not in dataFrame.columns
-            ]
-            if missingColumns:
-                warnings.append(
-                    f'{source["name"]}: missing {", ".join(missingColumns)}'
-                )
-                continue
-            plotData = dataFrame[requiredColumns].copy()
-            xIsDate = self._is_date_series(plotData[xColumn])
-            if xIsDate:
-                plotData[xColumn] = pd.to_datetime(plotData[xColumn], errors='coerce')
-            for columnName in [*y1Columns, *y2Columns]:
-                plotData[columnName] = pd.to_numeric(plotData[columnName], errors='coerce')
-            plotData = plotData.dropna(subset=[xColumn])
-            if plotData.empty or all(
-                plotData[columnName].dropna().empty
-                for columnName in [*y1Columns, *y2Columns]
-            ):
-                warnings.append(f'{source["name"]}: no usable plot data')
-                continue
-            preparedSources.append({
-                'name': source['name'],
-                'dataFrame': plotData,
-                'xIsDate': xIsDate,
-            })
-
         if not preparedSources:
             return None, warnings
         if len(preparedSources) == 1:
@@ -1392,11 +1483,8 @@ class TabLogWidget(BackgroundTaskMixin):
         self._set_status(f'Rendering log HTML. {self._mode_text()}')
         self.loadingOverlay.show('Loading...')
 
-        def work() -> dict[str, str]:
-            result = {'fullHtml': local_plotly_html(figure, fullHtml=True)}
-            if not self.useExternalBrowser:
-                result['embeddedHtml'] = local_plotly_html(figure, fullHtml=False)
-            return result
+        def work() -> str:
+            return local_plotly_html(figure, fullHtml=True)
 
         self._activeRenderTaskId = self._start_background_task(
             work,
@@ -1404,16 +1492,16 @@ class TabLogWidget(BackgroundTaskMixin):
             self._on_render_figure_failed,
         )
 
-    def _on_render_figure_finished(self, taskId: int, result: dict[str, str]) -> None:
+    def _on_render_figure_finished(self, taskId: int, result: str) -> None:
         if taskId != getattr(self, '_activeRenderTaskId', None):
             return
         self.loadingOverlay.hide()
-        self.currentPlotHtml = result['fullHtml']
+        self.currentPlotHtml = result
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
             try:
                 baseUrl = QUrl.fromLocalFile(str(assetsDir) + '/')
-                self.chartView.setHtml(result.get('embeddedHtml', self.currentPlotHtml), baseUrl)
+                self.chartView.setHtml(self.currentPlotHtml, baseUrl)
                 self._set_status(
                     self.pendingRenderStatus or f'Log plot created successfully. {self._mode_text()}',
                     error=self.pendingRenderStatusError,
@@ -1499,22 +1587,50 @@ class TabLogWidget(BackgroundTaskMixin):
         if self.currentPlotFigure is None:
             self._set_status('No plot available. Draw a plot first.', error=True)
             return
-        selectedFile, _ = QFileDialog.getSaveFileName(
-            self.rootWidget,
-            'Download Log Plot PNG',
-            self._default_export_filename('.png'),
-            'PNG Files (*.png);;All Files (*)',
+        selectedFile = ''
+        if shift_click_requests_png_file():
+            selectedFile, _ = QFileDialog.getSaveFileName(
+                self.rootWidget,
+                'Save Log Plot PNG',
+                self._default_export_filename('.png'),
+                'PNG Files (*.png);;All Files (*)',
+            )
+            if not selectedFile:
+                return
+            if not selectedFile.lower().endswith('.png'):
+                selectedFile = f'{selectedFile}.png'
+
+        self.downloadPngButton.setEnabled(False)
+        self._set_status('Creating PNG...')
+        figure = self.currentPlotFigure
+        self._activePngTaskId = self._start_background_task(
+            lambda: render_plotly_png(figure, selectedFile),
+            lambda taskId, pngBytes: self._on_png_export_finished(
+                taskId, pngBytes, selectedFile
+            ),
+            self._on_png_export_failed,
         )
-        if selectedFile and not selectedFile.lower().endswith('.png'):
-            selectedFile = f'{selectedFile}.png'
+
+    def _on_png_export_finished(
+        self, taskId: int, pngBytes: bytes, selectedFile: str
+    ) -> None:
+        if taskId != getattr(self, '_activePngTaskId', None):
+            return
+        self.downloadPngButton.setEnabled(True)
+        if selectedFile:
+            self._set_status(f'PNG saved to {selectedFile}.')
+            return
         try:
-            save_plotly_png_and_copy_to_clipboard(self.currentPlotFigure, selectedFile)
-            if selectedFile:
-                self._set_status(f'PNG saved to {selectedFile} and copied to clipboard.')
-            else:
-                self._set_status('PNG copied to clipboard.')
+            copy_png_bytes_to_clipboard(pngBytes)
+            self._set_status('PNG copied to clipboard.')
         except Exception as exc:
-            self._set_status(f'Failed to save PNG: {exc}', error=True)
+            self._set_status(f'Failed to copy PNG: {exc}', error=True)
+
+    def _on_png_export_failed(self, taskId: int, errorText: str) -> None:
+        if taskId != getattr(self, '_activePngTaskId', None):
+            return
+        self.downloadPngButton.setEnabled(True)
+        self._set_status(f'Failed to create PNG: {errorText}', error=True)
 
     def _default_export_filename(self, suffix: str) -> str:
         title = self.plotTitleLineEdit.text().strip() or 'log_plot'

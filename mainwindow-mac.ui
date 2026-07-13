@@ -1992,8 +1992,12 @@ here.</string>
        <height>32</height>
       </rect>
      </property>
+     <property name="toolTip">
+      <string>Click: Copy PNG to clipboard
+Shift-click: Save PNG to file</string>
+     </property>
      <property name="text">
-      <string>D/L PNG</string>
+      <string>COPY</string>
      </property>
     </widget>
     <widget class="QCheckBox" name="scatterFilterAnnotationCheckBox">
@@ -2968,8 +2972,12 @@ table</string>
         <height>32</height>
        </rect>
       </property>
+      <property name="toolTip">
+       <string>Click: Copy PNG to clipboard
+Shift-click: Save PNG to file</string>
+      </property>
       <property name="text">
-       <string>D/L PNG</string>
+       <string>COPY</string>
       </property>
      </widget>
      <widget class="QSpinBox" name="boxplotLegendFontSizeButton">
@@ -3883,8 +3891,12 @@ here.</string>
        <height>32</height>
       </rect>
      </property>
+     <property name="toolTip">
+      <string>Click: Copy PNG to clipboard
+Shift-click: Save PNG to file</string>
+     </property>
      <property name="text">
-      <string>D/L PNG</string>
+      <string>COPY</string>
      </property>
     </widget>
     <widget class="QPushButton" name="loadJsonButton">
@@ -5016,8 +5028,12 @@ here.</string>
         <height>32</height>
        </rect>
       </property>
+      <property name="toolTip">
+       <string>Click: Copy PNG to clipboard
+Shift-click: Save PNG to file</string>
+      </property>
       <property name="text">
-       <string>PNG</string>
+       <string>COPY</string>
       </property>
      </widget>
      <widget class="QPushButton" name="contourDownloadHtmlButton">
@@ -5373,8 +5389,12 @@ here.</string>
        <height>22</height>
       </rect>
      </property>
+     <property name="toolTip">
+      <string>Click: Copy PNG to clipboard
+Shift-click: Save PNG to file</string>
+     </property>
      <property name="text">
-      <string>D/L PNG</string>
+      <string>COPY</string>
      </property>
     </widget>
     <widget class="QLabel" name="plotHeightLabel_4">

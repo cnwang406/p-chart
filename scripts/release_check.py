@@ -57,14 +57,23 @@ class ReleaseCheck:
         print(f'[FAIL] {message}')
 
     def run(self) -> int:
-        self.check_python_arch()
-        self.check_qt_versions()
-        self.check_qt_import_smoke()
-        self.check_py_compile()
-        self.check_ui_xml()
-        self.check_ui_object_contract()
-        self.check_version_text()
-        self.check_demo_data()
+        checks = [
+            self.check_python_arch,
+            self.check_dependency_health,
+            self.check_qt_versions,
+            self.check_qt_import_smoke,
+            self.check_py_compile,
+            self.check_ui_xml,
+            self.check_ui_object_contract,
+            self.check_version_text,
+            self.check_demo_data,
+        ]
+        for check in checks:
+            try:
+                check()
+            except Exception as exc:
+                checkName = check.__name__.removeprefix('check_').replace('_', ' ')
+                self.fail(f'{checkName} check crashed: {exc}')
 
         print()
         if self.warnings:
@@ -74,6 +83,15 @@ class ReleaseCheck:
             return 1
         print('Release check passed.')
         return 0
+
+    def check_dependency_health(self) -> None:
+        result = self.run_command([sys.executable, '-m', 'pip', 'check'])
+        if result.returncode == 0:
+            self.ok('pip check: no broken requirements')
+            return
+
+        output = (result.stdout or result.stderr or '').strip()
+        self.fail(f'pip check failed: {output or "unknown dependency error"}')
 
     def check_python_arch(self) -> None:
         executable = Path(sys.executable)

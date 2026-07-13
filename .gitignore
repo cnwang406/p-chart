@@ -54,3 +54,7 @@ DX0116,_NiCr_mapping.jpg
 demo/*
 run
 videos/
+
+# Tracked regression tests
+!tests/
+!tests/test_efficiency.py

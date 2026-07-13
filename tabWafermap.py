@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from qt_helpers import require_child
 from async_helpers import BackgroundTaskMixin
 from loading_overlay import LoadingOverlay
+from plot_export_helpers import shift_click_requests_png_file
 from wafermap_core import (
     build_complete_die_rectangles,
     build_complete_frame_rectangles,
@@ -1047,29 +1048,30 @@ class TabWafermapWidget(QObject, BackgroundTaskMixin):
             self._set_status('No wafer map to save yet.', error=True)
             return
 
-        selectedFile, _ = QFileDialog.getSaveFileName(
-            self.rootWidget,
-            'Save wafermap PNG',
-            'wafermap.png',
-            'PNG Files (*.png);;All Files (*)',
-        )
-        if selectedFile and not selectedFile.lower().endswith('.png'):
-            selectedFile = f'{selectedFile}.png'
+        selectedFile = ''
+        if shift_click_requests_png_file():
+            selectedFile, _ = QFileDialog.getSaveFileName(
+                self.rootWidget,
+                'Save wafermap PNG',
+                'wafermap.png',
+                'PNG Files (*.png);;All Files (*)',
+            )
+            if not selectedFile:
+                return
+            if not selectedFile.lower().endswith('.png'):
+                selectedFile = f'{selectedFile}.png'
 
         try:
-            # Keep behavior aligned with other tabs: always copy current widget image
-            # to clipboard, regardless of whether the user saves a file.
             widgetPixmap = self.canvas.grab()
             if widgetPixmap.isNull():
                 raise ValueError('Failed to capture wafermap widget image.')
 
-            QApplication.clipboard().setPixmap(widgetPixmap)
-
             if selectedFile:
                 if not widgetPixmap.save(selectedFile, 'PNG'):
                     raise ValueError(f'Failed to save wafermap PNG to {selectedFile}')
-                self._set_status(f'Wafermap PNG saved to {selectedFile}, and copied to clipboard.')
+                self._set_status(f'Wafermap PNG saved to {selectedFile}.')
             else:
+                QApplication.clipboard().setPixmap(widgetPixmap)
                 self._set_status('Wafermap PNG copied to clipboard.')
         except Exception as exc:
             self._set_status(f'Failed to save wafermap PNG: {exc}', error=True)

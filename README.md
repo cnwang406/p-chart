@@ -43,6 +43,18 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
+For a reproducible macOS Python 3.13 development environment, apply the
+validated constraints and confirm that no transitive dependencies are missing:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt -c constraints-macos-py313.txt
+.venv/bin/python -m pip check
+```
+
+The constraints file is macOS-specific. Windows packaging continues to use
+the portable top-level dependencies in `requirements.txt`.
+
 ## Run
 
 ```bash
@@ -80,6 +92,13 @@ Run GUI activation and render smoke checks:
 .venv/bin/python scripts/gui_smoke.py
 .venv/bin/python scripts/gui_smoke.py --render
 .venv/bin/python scripts/gui_smoke.py --no-webengine --render
+```
+
+Run parser regression tests and the repeatable 100,000-row performance check:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python scripts/performance_check.py
 ```
 
 See `docs/release-smoke.md` for the full smoke checklist.
@@ -179,6 +198,9 @@ Refresh Plot clears the plot area and export state.
   table copy/paste helpers.
 - `scripts/release_check.py`, `scripts/gui_smoke.py`: release and GUI smoke
   validation scripts.
+- `scripts/performance_check.py`, `tests/test_efficiency.py`: repeatable parser
+  benchmark and efficiency regression coverage.
+- `constraints-macos-py313.txt`: validated macOS/Python 3.13 dependency set.
 - `docs/release-smoke.md`: manual and automated release-smoke checklist.
 - `demo/demo_contour_1.csv`, `demo/demo_contour_3.csv`: small contour demo
   datasets for one-wafer and three-wafer virtual-coordinate checks.
