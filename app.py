@@ -99,6 +99,29 @@ APP_VERSION = 'v3.0'
 APP_AUTHOR = 'cnwang'
 APP_DATE = 'build 0713'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} {APP_DATE} by {APP_AUTHOR}'
+UI_FONT_STYLESHEET = '''
+QPushButton,
+QLabel,
+QCheckBox,
+QRadioButton,
+QGroupBox,
+QTabBar {
+    font-family: "Cascadia Code";
+}
+QTableView,
+QTableWidget,
+QHeaderView,
+QListView,
+QListWidget,
+QLineEdit,
+QComboBox,
+QSpinBox,
+QDoubleSpinBox,
+QTextEdit,
+QPlainTextEdit {
+    font-family: "Cascadia Next TC";
+}
+'''
 APP_ICON_FILENAME = os.path.join(
     'AppIcon.appiconset',
     'icon-ios-marketing-1024x1024-1x.png',
@@ -429,7 +452,7 @@ class AppMain:
         self.app = QApplication(sys.argv)
         self._configure_application_metadata()
         self._configure_application_icon()
-        self._load_application_font()
+        self._load_application_fonts()
         self.launchInfo = read_launch_info()
         self.ui = self._load_ui(self._platform_ui_filename())
         self.ui.setWindowTitle(WINDOW_TITLE)
@@ -502,20 +525,25 @@ class AppMain:
         if os.path.exists(iconPath):
             self.app.setWindowIcon(QIcon(iconPath))
 
-    def _load_application_font(self) -> None:
-        fontPath = resource_path('CascadiaNextTC.wght.ttf')
-        if not os.path.exists(fontPath):
-            return
+    def _load_application_fonts(self) -> None:
+        loadedFamilies = {}
+        for fontFilename in ('CascadiaNextTC.wght.ttf', 'CascadiaCode.ttf'):
+            fontPath = resource_path(fontFilename)
+            if not os.path.exists(fontPath):
+                continue
 
-        fontId = QFontDatabase.addApplicationFont(fontPath)
-        if fontId < 0:
-            return
+            fontId = QFontDatabase.addApplicationFont(fontPath)
+            if fontId < 0:
+                continue
 
-        fontFamilies = QFontDatabase.applicationFontFamilies(fontId)
-        if not fontFamilies:
-            return
+            fontFamilies = QFontDatabase.applicationFontFamilies(fontId)
+            if fontFamilies:
+                loadedFamilies[fontFilename] = fontFamilies
 
-        self.app.setFont(QFont(fontFamilies[0], 10))
+        nextTcFamilies = loadedFamilies.get('CascadiaNextTC.wght.ttf', [])
+        if nextTcFamilies:
+            self.app.setFont(QFont(nextTcFamilies[0], 10))
+        self.app.setStyleSheet(UI_FONT_STYLESHEET)
 
     def _platform_ui_filename(self) -> str:
         if sys.platform.startswith('win'):

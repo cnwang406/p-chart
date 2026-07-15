@@ -27,6 +27,7 @@ TOP_LEVEL_PY = [
     'plot_templates.py',
 ]
 UI_FILES = ['mainwindow-win.ui', 'mainwindow-mac.ui']
+EMBEDDED_FONT_FILES = ['CascadiaNextTC.wght.ttf', 'CascadiaCode.ttf']
 DEMO_FILES = [
     'demo/06191623.xlsx',
     'demo/demo_contour_1.csv',
@@ -63,6 +64,7 @@ class ReleaseCheck:
             self.check_qt_versions,
             self.check_qt_import_smoke,
             self.check_py_compile,
+            self.check_embedded_fonts,
             self.check_ui_xml,
             self.check_ui_object_contract,
             self.check_version_text,
@@ -151,6 +153,23 @@ class ReleaseCheck:
             self.ok(f'py_compile: {len(files)} files')
         else:
             self.fail(result.stderr.strip() or result.stdout.strip() or 'py_compile failed')
+
+    def check_embedded_fonts(self) -> None:
+        appText = (ROOT / 'app.py').read_text(encoding='utf-8')
+        specText = (ROOT / 'p-chart.spec').read_text(encoding='utf-8')
+        failures = []
+        for fontFilename in EMBEDDED_FONT_FILES:
+            if not (ROOT / fontFilename).is_file():
+                failures.append(f'missing file {fontFilename}')
+            if fontFilename not in appText:
+                failures.append(f'app.py does not load {fontFilename}')
+            if fontFilename not in specText:
+                failures.append(f'p-chart.spec does not bundle {fontFilename}')
+
+        if failures:
+            self.fail(f'Embedded font contract: {"; ".join(failures)}')
+        else:
+            self.ok(f'Embedded fonts: {", ".join(EMBEDDED_FONT_FILES)}')
 
     def check_ui_xml(self) -> None:
         for uiFile in UI_FILES:
