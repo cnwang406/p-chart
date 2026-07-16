@@ -97,7 +97,7 @@ from tabWafermap import TabWafermapWidget
 APP_NAME = 'p-chart'
 APP_VERSION = 'v3.0'
 APP_AUTHOR = 'cnwang'
-APP_DATE = 'build 0713'
+APP_DATE = 'build 0716'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} {APP_DATE} by {APP_AUTHOR}'
 UI_FONT_STYLESHEET = '''
 QPushButton,
