@@ -9,7 +9,11 @@ import pandas as pd
 import plotly.graph_objects as go
 from PySide6.QtCore import Qt
 
-from plot_export_helpers import render_plotly_png, shift_click_requests_png_file
+from plot_export_helpers import (
+    render_plotly_png,
+    shift_click_clears_pinned_annotations,
+    shift_click_requests_png_file,
+)
 from plotly_local import (
     PINNED_HOVER_ANNOTATION_NAME,
     _annotation_state_key,
@@ -132,14 +136,28 @@ class PlotlyHtmlTests(unittest.TestCase):
     def test_serializes_once_and_injects_one_local_loader(self) -> None:
         figure = go.Figure(go.Scatter(x=[1, 2], y=[3, 4]))
         annotationStateKey = _annotation_state_key(figure, 'plot')
-        with patch('plotly_local.pio.to_html', return_value='<html><head></head><body></body></html>') as toHtml:
+        with (
+            patch(
+                'plotly_local._pinned_hover_annotation_script',
+                return_value='annotation-script',
+            ) as annotationScript,
+            patch(
+                'plotly_local.pio.to_html',
+                return_value='<html><head></head><body></body></html>',
+            ) as toHtml,
+        ):
             html = local_plotly_html(figure, fullHtml=True)
 
+        annotationScript.assert_called_once_with(
+            annotationStateKey,
+            'hover',
+            '',
+        )
         toHtml.assert_called_once_with(
             figure,
             full_html=True,
             include_plotlyjs=False,
-            post_script=_pinned_hover_annotation_script(annotationStateKey),
+            post_script='annotation-script',
         )
         self.assertEqual(html.count('<script src='), 1)
         self.assertEqual(html.count('plotly.min.js'), 1)
@@ -156,6 +174,25 @@ class PlotlyHtmlTests(unittest.TestCase):
         self.assertIn("window.sessionStorage.setItem", script)
         self.assertIn("window.name = windowStatePrefix", script)
         self.assertIn("Plotly.relayout(plot, { annotations: annotations })", script)
+
+    def test_boxplot_mode_uses_last_hover_number(self) -> None:
+        script = _pinned_hover_annotation_script(
+            'boxplot-key',
+            annotationTextMode='last-number',
+        )
+
+        self.assertIn("annotationTextMode = 'last-number'", script)
+        self.assertIn("lastNumberText(annotationText)", script)
+
+    def test_shift_refresh_clears_the_current_tab_namespace(self) -> None:
+        script = _pinned_hover_annotation_script(
+            'pchart-pinned-hover:boxplot:data-key',
+            clearAnnotationsToken='clear-token',
+        )
+
+        self.assertIn("clearAnnotationsToken = 'clear-token'", script)
+        self.assertIn("savedKey.startsWith(annotationStatePrefix)", script)
+        self.assertIn("window.sessionStorage.removeItem(storedKey)", script)
 
     def test_annotation_state_key_ignores_layout_font_changes(self) -> None:
         firstFigure = go.Figure(go.Scatter(x=[1, 2], y=[3, 4]))
@@ -225,6 +262,19 @@ class PreviewFilterTests(unittest.TestCase):
 
 
 class PlotlyPngExportTests(unittest.TestCase):
+    def test_shift_modifier_requests_annotation_clear(self) -> None:
+        with patch(
+            'plot_export_helpers.QApplication.keyboardModifiers',
+            return_value=Qt.KeyboardModifier.ShiftModifier,
+        ):
+            self.assertTrue(shift_click_clears_pinned_annotations())
+
+        with patch(
+            'plot_export_helpers.QApplication.keyboardModifiers',
+            return_value=Qt.KeyboardModifier.NoModifier,
+        ):
+            self.assertFalse(shift_click_clears_pinned_annotations())
+
     def test_shift_modifier_requests_file_dialog(self) -> None:
         with patch(
             'plot_export_helpers.QApplication.keyboardModifiers',

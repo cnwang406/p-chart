@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import plotly.io as pio
@@ -24,6 +25,8 @@ def local_plotly_html(
     figure,
     fullHtml: bool,
     annotationNamespace: str = 'plot',
+    annotationTextMode: str = 'hover',
+    clearPinnedAnnotations: bool = False,
 ) -> str:
     assetsDir = Path(__file__).resolve().parent
     plotlyJsName = PLOTLY_JS_FILENAME
@@ -32,11 +35,16 @@ def local_plotly_html(
         raise FileNotFoundError(f'Plotly JS file not found: {plotlyJSPath}')
 
     annotationStateKey = _annotation_state_key(figure, annotationNamespace)
+    clearAnnotationsToken = uuid.uuid4().hex if clearPinnedAnnotations else ''
     html = pio.to_html(
         figure,
         full_html=fullHtml,
         include_plotlyjs=False,
-        post_script=_pinned_hover_annotation_script(annotationStateKey),
+        post_script=_pinned_hover_annotation_script(
+            annotationStateKey,
+            annotationTextMode,
+            clearAnnotationsToken,
+        ),
     )
     htmlHeader = '\n'.join(
         [
@@ -71,7 +79,11 @@ def _annotation_state_key(figure, annotationNamespace: str) -> str:
     )
 
 
-def _pinned_hover_annotation_script(annotationStateKey: str) -> str:
+def _pinned_hover_annotation_script(
+    annotationStateKey: str,
+    annotationTextMode: str = 'hover',
+    clearAnnotationsToken: str = '',
+) -> str:
     return f'''
 (function() {{
   const plot = document.getElementById('{{plot_id}}');
@@ -82,6 +94,12 @@ def _pinned_hover_annotation_script(annotationStateKey: str) -> str:
 
   const annotationName = {PINNED_HOVER_ANNOTATION_NAME!r};
   const annotationStateKey = {annotationStateKey!r};
+  const annotationStatePrefix = annotationStateKey.slice(
+    0,
+    annotationStateKey.lastIndexOf(':') + 1
+  );
+  const annotationTextMode = {annotationTextMode!r};
+  const clearAnnotationsToken = {clearAnnotationsToken!r};
   const windowStatePrefix = 'pchart-pinned-hover-state:';
   let lastHoverText = '';
 
@@ -174,6 +192,27 @@ def _pinned_hover_annotation_script(annotationStateKey: str) -> str:
     return lines.join('<br>');
   }}
 
+  function lastNumberText(text) {{
+    const plainText = String(text)
+      .replace(/<br\\s*\\/?>/gi, '\\n')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&(?:#\\d+|#x[\\da-f]+|[a-z]+);/gi, ' ');
+    const numberMatches = plainText.match(
+      /[-+]?(?:(?:\\d{{1,3}}(?:,\\d{{3}})+|\\d+)(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?%?/g
+    );
+    return numberMatches && numberMatches.length
+      ? numberMatches[numberMatches.length - 1]
+      : text;
+  }}
+
+  function pinnedAnnotationText(point) {{
+    const hoverText = currentPlotlyHoverText() || lastHoverText;
+    const annotationText = hoverText || fallbackPointText(point);
+    return annotationTextMode === 'last-number'
+      ? lastNumberText(annotationText)
+      : annotationText;
+  }}
+
   function annotationFont() {{
     const fullLayout = plot._fullLayout || {{}};
     const layoutFont = fullLayout.font || {{}};
@@ -221,6 +260,48 @@ def _pinned_hover_annotation_script(annotationStateKey: str) -> str:
     window.name = windowStatePrefix + JSON.stringify(savedState);
   }}
 
+  function clearPinnedAnnotationsOnce() {{
+    if (!clearAnnotationsToken) {{
+      return;
+    }}
+    const savedState = windowAnnotationState();
+    if (savedState.__clearAnnotationsToken === clearAnnotationsToken) {{
+      return;
+    }}
+    for (const savedKey of Object.keys(savedState)) {{
+      if (savedKey.startsWith(annotationStatePrefix)) {{
+        delete savedState[savedKey];
+      }}
+    }}
+    savedState.__clearAnnotationsToken = clearAnnotationsToken;
+    window.name = windowStatePrefix + JSON.stringify(savedState);
+    try {{
+      const storedKeys = [];
+      if (
+        typeof window.sessionStorage.length === 'number' &&
+        typeof window.sessionStorage.key === 'function'
+      ) {{
+        for (
+          let keyIndex = 0;
+          keyIndex < window.sessionStorage.length;
+          keyIndex += 1
+        ) {{
+          const storedKey = window.sessionStorage.key(keyIndex);
+          if (storedKey && storedKey.startsWith(annotationStatePrefix)) {{
+            storedKeys.push(storedKey);
+          }}
+        }}
+      }} else {{
+        storedKeys.push(annotationStateKey);
+      }}
+      for (const storedKey of storedKeys) {{
+        window.sessionStorage.removeItem(storedKey);
+      }}
+    }} catch (_error) {{
+      // Some file:// browser policies disable sessionStorage.
+    }}
+  }}
+
   function loadPinnedAnnotations() {{
     let savedAnnotations = null;
     try {{
@@ -261,6 +342,7 @@ def _pinned_hover_annotation_script(annotationStateKey: str) -> str:
     saveWindowAnnotationState(pinnedAnnotations);
   }}
 
+  clearPinnedAnnotationsOnce();
   const restoredAnnotations = loadPinnedAnnotations();
   if (restoredAnnotations.length) {{
     const existingAnnotations = (plot.layout.annotations || [])
@@ -286,13 +368,12 @@ def _pinned_hover_annotation_script(annotationStateKey: str) -> str:
     }}
 
     const annotations = (plot.layout.annotations || []).slice();
-    const hoverText = currentPlotlyHoverText() || lastHoverText;
     annotations.push(annotationStyle({{
       x: point.x,
       y: point.y,
       xref: point.xaxis && point.xaxis._id ? point.xaxis._id : 'x',
       yref: point.yaxis && point.yaxis._id ? point.yaxis._id : 'y',
-      text: hoverText || fallbackPointText(point)
+      text: pinnedAnnotationText(point)
     }}));
     savePinnedAnnotations(annotations);
     Plotly.relayout(plot, {{ annotations: annotations }});

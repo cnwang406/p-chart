@@ -33,6 +33,7 @@ from loading_overlay import LoadingOverlay
 from plot_export_helpers import (
     copy_png_bytes_to_clipboard,
     render_plotly_png,
+    shift_click_clears_pinned_annotations,
     shift_click_requests_png_file,
 )
 from plot_templates import CUSTOM_TEMPLATE_NAME, FOR_PPT_TEMPLATE_NAME
@@ -198,6 +199,7 @@ class TabLogWidget(BackgroundTaskMixin):
 
         self.currentPlotHtml = ''
         self.currentPlotFigure = None
+        self._clearPinnedAnnotationsOnNextRender = False
         self.currentPlotFilePath = ''
         self.currentViewerFilePath = ''
         self.pendingRenderStatus = ''
@@ -311,7 +313,7 @@ class TabLogWidget(BackgroundTaskMixin):
         self.filesList.viewport().installEventFilter(self.fileDropFilter)
 
     def _configure_signals(self) -> None:
-        self.plotButton.clicked.connect(self._draw_plot)
+        self.plotButton.clicked.connect(self._on_plot_button_clicked)
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.downloadPngButton.clicked.connect(self._download_png)
         self.cleanFilesButton.clicked.connect(self._clean_external_files)
@@ -634,6 +636,12 @@ class TabLogWidget(BackgroundTaskMixin):
             return
         if self.hasDrawRequest:
             self._draw_plot()
+
+    def _on_plot_button_clicked(self, _checked: bool = False) -> None:
+        self._clearPinnedAnnotationsOnNextRender = (
+            shift_click_clears_pinned_annotations()
+        )
+        self._draw_plot()
 
     def _mark_plot_pending(self, *_args) -> None:
         if not self.isActiveTab:
@@ -1480,6 +1488,9 @@ class TabLogWidget(BackgroundTaskMixin):
     def _render_figure(self, figure) -> None:
         self.currentPlotFigure = figure
         self.currentPlotHtml = ''
+        clearPinnedAnnotations = self._clearPinnedAnnotationsOnNextRender
+        self._clearPinnedAnnotationsOnNextRender = False
+        self._activeRenderClearedAnnotations = clearPinnedAnnotations
         self._set_status(f'Rendering log HTML. {self._mode_text()}')
         self.loadingOverlay.show('Loading...')
 
@@ -1488,6 +1499,7 @@ class TabLogWidget(BackgroundTaskMixin):
                 figure,
                 fullHtml=True,
                 annotationNamespace='log',
+                clearPinnedAnnotations=clearPinnedAnnotations,
             )
 
         self._activeRenderTaskId = self._start_background_task(
@@ -1501,13 +1513,19 @@ class TabLogWidget(BackgroundTaskMixin):
             return
         self.loadingOverlay.hide()
         self.currentPlotHtml = result
+        successStatus = (
+            self.pendingRenderStatus
+            or f'Log plot created successfully. {self._mode_text()}'
+        )
+        if getattr(self, '_activeRenderClearedAnnotations', False):
+            successStatus = f'{successStatus} Pinned annotations cleared.'
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
             try:
                 baseUrl = QUrl.fromLocalFile(str(assetsDir) + '/')
                 self.chartView.setHtml(self.currentPlotHtml, baseUrl)
                 self._set_status(
-                    self.pendingRenderStatus or f'Log plot created successfully. {self._mode_text()}',
+                    successStatus,
                     error=self.pendingRenderStatusError,
                 )
                 return
@@ -1556,7 +1574,7 @@ class TabLogWidget(BackgroundTaskMixin):
             '</div>'
         )
         self._set_status(
-            self.pendingRenderStatus or f'Log plot created successfully. {self._mode_text()}',
+            successStatus,
             error=self.pendingRenderStatusError,
         )
 

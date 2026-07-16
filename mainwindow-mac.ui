@@ -2053,7 +2053,16 @@ here.</string>
       </font>
      </property>
      <property name="text">
-      <string>Refresh Plot</string>
+      <string>Refresh Plot *</string>
+     </property>
+     <property name="toolTip">
+      <string>* Shift+Click clears all pinned annotations.</string>
+     </property>
+     <property name="statusTip">
+      <string>Refresh plot. Hold Shift while clicking to clear all pinned annotations.</string>
+     </property>
+     <property name="whatsThis">
+      <string>Refresh Plot normally preserves pinned annotations. Shift+Click clears all pinned annotations for this plot.</string>
      </property>
     </widget>
     <widget class="QComboBox" name="plotlyThemeComboBox">
@@ -2511,7 +2520,16 @@ Shift-click: Save PNG to file</string>
        </rect>
       </property>
       <property name="text">
-       <string>Refresh Plot</string>
+       <string>Refresh Plot *</string>
+      </property>
+      <property name="toolTip">
+       <string>* Shift+Click clears all pinned annotations.</string>
+      </property>
+      <property name="statusTip">
+       <string>Refresh plot. Hold Shift while clicking to clear all pinned annotations.</string>
+      </property>
+      <property name="whatsThis">
+       <string>Refresh Plot normally preserves pinned annotations. Shift+Click clears all pinned annotations for this plot.</string>
       </property>
      </widget>
      <widget class="QPushButton" name="boxDownloadHtmlButton">
@@ -5199,7 +5217,16 @@ here.</string>
        </rect>
       </property>
       <property name="text">
-       <string>Refresh</string>
+       <string>Refresh *</string>
+      </property>
+      <property name="toolTip">
+       <string>* Shift+Click clears all pinned annotations.</string>
+      </property>
+      <property name="statusTip">
+       <string>Refresh plot. Hold Shift while clicking to clear all pinned annotations.</string>
+      </property>
+      <property name="whatsThis">
+       <string>Refresh normally preserves pinned annotations. Shift+Click clears all pinned annotations for this plot.</string>
       </property>
      </widget>
      <widget class="QPushButton" name="contourDownloadPngButton">
@@ -5516,7 +5543,16 @@ Shift-click: Save PNG to file</string>
       </font>
      </property>
      <property name="text">
-      <string>Refresh Plot</string>
+      <string>Refresh Plot *</string>
+     </property>
+     <property name="toolTip">
+      <string>* Shift+Click clears all pinned annotations.</string>
+     </property>
+     <property name="statusTip">
+      <string>Refresh plot. Hold Shift while clicking to clear all pinned annotations.</string>
+     </property>
+     <property name="whatsThis">
+      <string>Refresh Plot normally preserves pinned annotations. Shift+Click clears all pinned annotations for this plot.</string>
      </property>
     </widget>
     <widget class="QComboBox" name="logPlotlyThemeComboBox">

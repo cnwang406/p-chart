@@ -38,6 +38,7 @@ from pivot_helpers import build_pivot_table, show_pivot_dialog
 from plot_export_helpers import (
     copy_png_bytes_to_clipboard,
     render_plotly_png,
+    shift_click_clears_pinned_annotations,
     shift_click_requests_png_file,
 )
 from plotly_local import local_plotly_html
@@ -151,6 +152,7 @@ class TabContourWidget(BackgroundTaskMixin):
 
         self.currentPlotHtml = ''
         self.currentPlotFigure = None
+        self._clearPinnedAnnotationsOnNextRender = False
         self.currentPlotFilePath = ''
         self.currentViewerFilePath = ''
         self.hasDrawRequest = False
@@ -239,7 +241,7 @@ class TabContourWidget(BackgroundTaskMixin):
         self.filesList.viewport().installEventFilter(self.fileDropFilter)
 
     def _configure_signals(self) -> None:
-        self.plotButton.clicked.connect(self._draw_plot)
+        self.plotButton.clicked.connect(self._on_plot_button_clicked)
         self.cleanFilesButton.clicked.connect(self._clean_external_files)
         self.pivotPushButton.clicked.connect(self._show_pivot_table)
         self.downloadHtmlButton.clicked.connect(self._download_html)
@@ -818,6 +820,12 @@ class TabContourWidget(BackgroundTaskMixin):
     def _schedule_draw(self) -> None:
         self._set_status('Contour settings changed. Redrawing shortly...')
         self.redrawTimer.start()
+
+    def _on_plot_button_clicked(self, _checked: bool = False) -> None:
+        self._clearPinnedAnnotationsOnNextRender = (
+            shift_click_clears_pinned_annotations()
+        )
+        self._draw_plot()
 
     def _has_minimum_plot_inputs(self) -> bool:
         return bool(
@@ -1944,6 +1952,10 @@ class TabContourWidget(BackgroundTaskMixin):
 
     def _render_figure(self, figure: go.Figure, statusText: str, warningText: str) -> None:
         self.currentPlotHtml = ''
+        clearPinnedAnnotations = self._clearPinnedAnnotationsOnNextRender
+        self._clearPinnedAnnotationsOnNextRender = False
+        if clearPinnedAnnotations:
+            statusText = f'{statusText} Pinned annotations cleared.'
         self.loadingOverlay.show('Rendering...')
         self._set_status('Rendering contour HTML...')
 
@@ -1952,6 +1964,7 @@ class TabContourWidget(BackgroundTaskMixin):
                 figure,
                 fullHtml=True,
                 annotationNamespace='contour',
+                clearPinnedAnnotations=clearPinnedAnnotations,
             )
 
         self._activeRenderTaskId = self._start_background_task(

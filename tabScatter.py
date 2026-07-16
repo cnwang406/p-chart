@@ -33,6 +33,7 @@ from plot_annotation_helpers import add_preview_filter_annotation
 from plot_export_helpers import (
     copy_png_bytes_to_clipboard,
     render_plotly_png,
+    shift_click_clears_pinned_annotations,
     shift_click_requests_png_file,
 )
 from plot_templates import CUSTOM_TEMPLATE_NAME, FOR_PPT_TEMPLATE_NAME
@@ -120,6 +121,7 @@ class TabScatterWidget(BackgroundTaskMixin):
         self.isActiveTab = False
         self._pendingDataRefresh = False
         self._pendingRedraw = False
+        self._clearPinnedAnnotationsOnNextRender = False
         self.lineColor = '#ff0000'
         self._configure_plot_area()
         self.loadingOverlay = LoadingOverlay(self.plotAreaWidget)
@@ -162,7 +164,7 @@ class TabScatterWidget(BackgroundTaskMixin):
         plotLayout.addWidget(self.chartView)
 
     def _configure_signals(self) -> None:
-        self.plotButton.clicked.connect(self._draw_plot)
+        self.plotButton.clicked.connect(self._on_plot_button_clicked)
         self.scatterPivotButton.clicked.connect(self._show_pivot_table)
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.downloadPngButton.clicked.connect(self._download_png)
@@ -323,6 +325,12 @@ class TabScatterWidget(BackgroundTaskMixin):
             return
         self._set_status('Plot settings changed. Redrawing shortly...')
         self.redrawTimer.start()
+
+    def _on_plot_button_clicked(self, _checked: bool = False) -> None:
+        self._clearPinnedAnnotationsOnNextRender = (
+            shift_click_clears_pinned_annotations()
+        )
+        self._draw_plot()
 
     def _draw_plot_when_xy_ready(self, *_args) -> None:
         if not self.isActiveTab:
@@ -1270,6 +1278,9 @@ class TabScatterWidget(BackgroundTaskMixin):
     def _render_figure(self, figure) -> None:
         self.currentPlotFigure = figure
         self.currentPlotHtml = ''
+        clearPinnedAnnotations = self._clearPinnedAnnotationsOnNextRender
+        self._clearPinnedAnnotationsOnNextRender = False
+        self._activeRenderClearedAnnotations = clearPinnedAnnotations
         self._set_status('Rendering scatter HTML...')
         self.loadingOverlay.show('Loading...')
 
@@ -1278,6 +1289,7 @@ class TabScatterWidget(BackgroundTaskMixin):
                 figure,
                 fullHtml=True,
                 annotationNamespace='scatter',
+                clearPinnedAnnotations=clearPinnedAnnotations,
             )
 
         self._activeRenderTaskId = self._start_background_task(
@@ -1291,12 +1303,15 @@ class TabScatterWidget(BackgroundTaskMixin):
             return
         self.loadingOverlay.hide()
         self.currentPlotHtml = result
+        successStatus = 'Plot created successfully.'
+        if getattr(self, '_activeRenderClearedAnnotations', False):
+            successStatus = f'{successStatus} Pinned annotations cleared.'
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
             try:
                 baseUrl = QUrl.fromLocalFile(str(assetsDir)+'/')
                 self.chartView.setHtml(self.currentPlotHtml, baseUrl)
-                self._set_status('Plot created successfully.')
+                self._set_status(successStatus)
                 return
             except Exception:
                 self._switch_to_external_browser_view()
@@ -1345,7 +1360,7 @@ class TabScatterWidget(BackgroundTaskMixin):
             '<p><h1>不是我的錯！</h1></p>'
             '</div>'
         )
-        self._set_status('Plot created successfully.')
+        self._set_status(successStatus)
 
     def _on_render_figure_failed(self, taskId: int, errorText: str) -> None:
         if taskId != getattr(self, '_activeRenderTaskId', None):

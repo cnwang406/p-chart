@@ -37,6 +37,7 @@ from plot_annotation_helpers import add_preview_filter_annotation
 from plot_export_helpers import (
     copy_png_bytes_to_clipboard,
     render_plotly_png,
+    shift_click_clears_pinned_annotations,
     shift_click_requests_png_file,
 )
 from plot_templates import CUSTOM_TEMPLATE_NAME, FOR_PPT_TEMPLATE_NAME
@@ -63,6 +64,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.isActiveTab = False
         self._pendingDataRefresh = False
         self._pendingRedraw = False
+        self._clearPinnedAnnotationsOnNextRender = False
         self.lineColor = '#ff0000'
         self.annotationColor = '#000000'
         self.groupSepLineSettings = {}
@@ -181,7 +183,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         plotLayout.addWidget(self.chartView)
 
     def _configure_signals(self) -> None:
-        self.plotButton.clicked.connect(self._draw_plot)
+        self.plotButton.clicked.connect(self._on_plot_button_clicked)
         self.boxplotPivotButton.clicked.connect(self._show_pivot_table)
         self.downloadHtmlButton.clicked.connect(self._download_html)
         self.downloadPngButton.clicked.connect(self._download_png)
@@ -478,6 +480,12 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             return
         self._set_status('Boxplot settings changed. Redrawing shortly...')
         self.redrawTimer.start()
+
+    def _on_plot_button_clicked(self, _checked: bool = False) -> None:
+        self._clearPinnedAnnotationsOnNextRender = (
+            shift_click_clears_pinned_annotations()
+        )
+        self._draw_plot()
 
     def _draw_plot_when_ready(self, *_args) -> None:
         if not self.isActiveTab:
@@ -1389,6 +1397,9 @@ class TabBoxplotWidget(BackgroundTaskMixin):
     def _render_figure(self, figure) -> None:
         self.currentPlotFigure = figure
         self.currentPlotHtml = ''
+        clearPinnedAnnotations = self._clearPinnedAnnotationsOnNextRender
+        self._clearPinnedAnnotationsOnNextRender = False
+        self._activeRenderClearedAnnotations = clearPinnedAnnotations
         self._set_status('Rendering boxplot HTML...')
         self.loadingOverlay.show('Loading...')
 
@@ -1397,6 +1408,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
                 figure,
                 fullHtml=True,
                 annotationNamespace='boxplot',
+                annotationTextMode='last-number',
+                clearPinnedAnnotations=clearPinnedAnnotations,
             )
 
         self._activeRenderTaskId = self._start_background_task(
@@ -1417,6 +1430,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         statusText = 'Boxplot created successfully.'
         if isGroupSepPlot and self.lastGroupSepStatus:
             statusText = f'{statusText} {self.lastGroupSepStatus}.'
+        if getattr(self, '_activeRenderClearedAnnotations', False):
+            statusText = f'{statusText} Pinned annotations cleared.'
         if not self.useExternalBrowser:
             assetsDir = Path(__file__).resolve().parent
             try:
