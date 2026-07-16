@@ -10,7 +10,11 @@ import plotly.graph_objects as go
 from PySide6.QtCore import Qt
 
 from plot_export_helpers import render_plotly_png, shift_click_requests_png_file
-from plotly_local import local_plotly_html
+from plotly_local import (
+    PINNED_HOVER_ANNOTATION_NAME,
+    _pinned_hover_annotation_script,
+    local_plotly_html,
+)
 from tabData import TabDataWidget
 from tabLog import TabLogWidget
 
@@ -133,9 +137,64 @@ class PlotlyHtmlTests(unittest.TestCase):
             figure,
             full_html=True,
             include_plotlyjs=False,
+            post_script=_pinned_hover_annotation_script(),
         )
         self.assertEqual(html.count('<script src='), 1)
         self.assertEqual(html.count('plotly.min.js'), 1)
+
+    def test_enables_click_to_pin_and_click_annotation_to_remove(self) -> None:
+        script = _pinned_hover_annotation_script()
+
+        self.assertIn("plot.on('plotly_click'", script)
+        self.assertIn("plot.on('plotly_clickannotation'", script)
+        self.assertIn(PINNED_HOVER_ANNOTATION_NAME, script)
+        self.assertIn("Plotly.relayout(plot, { annotations: annotations })", script)
+
+
+class PreviewFilterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tabData = TabDataWidget.__new__(TabDataWidget)
+        self.tabData.previewSourceDataFrame = pd.DataFrame(
+            {
+                'group': ['before-preview-limit'] * 1000 + ['after-preview-limit'] * 25,
+                'value': list(range(1025)),
+            }
+        )
+        self.tabData.previewMaxRows = 1000
+        self.tabData.previewTableModel = type(
+            'PreviewFormatter',
+            (),
+            {'_format_preview_value': lambda _self, value: '' if pd.isna(value) else str(value)},
+        )()
+        self.tabData.previewProxyModel = type(
+            'PreviewFilters',
+            (),
+            {'columnFilters': {0: {'after-preview-limit'}}},
+        )()
+
+    def test_preview_filters_full_source_before_applying_row_limit(self) -> None:
+        previewDataFrame = self.tabData._preview_dataframe_for_current_filters()
+
+        self.assertEqual(len(previewDataFrame), 25)
+        self.assertEqual(
+            previewDataFrame['group'].unique().tolist(),
+            ['after-preview-limit'],
+        )
+        self.assertEqual(previewDataFrame['value'].tolist(), list(range(1000, 1025)))
+
+    def test_filtered_preview_still_caps_rows_after_filtering(self) -> None:
+        self.tabData.previewSourceDataFrame = pd.DataFrame(
+            {
+                'group': ['before-preview-limit'] * 1000 + ['after-preview-limit'] * 1200,
+                'value': list(range(2200)),
+            }
+        )
+
+        previewDataFrame = self.tabData._preview_dataframe_for_current_filters()
+
+        self.assertEqual(len(previewDataFrame), 1000)
+        self.assertEqual(previewDataFrame['value'].iloc[0], 1000)
+        self.assertEqual(previewDataFrame['value'].iloc[-1], 1999)
 
 
 class PlotlyPngExportTests(unittest.TestCase):

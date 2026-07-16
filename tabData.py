@@ -237,6 +237,7 @@ class TabDataWidget(BackgroundTaskMixin):
         self.loadedDataFrame = pd.DataFrame()
         self.meltedDataFrame = pd.DataFrame()
         self.previewSourceDataFrame = pd.DataFrame()
+        self.previewFilteredSourceRowCount = 0
         self.previewTableModel = PreviewTableModel()
         self.previewProxyModel = PreviewSortFilterProxyModel()
         self.loadingOverlay = LoadingOverlay(self.previewTableWidget)
@@ -322,6 +323,7 @@ class TabDataWidget(BackgroundTaskMixin):
         self.loadedDataFrame = pd.DataFrame()
         self.meltedDataFrame = pd.DataFrame()
         self.previewSourceDataFrame = pd.DataFrame()
+        self.previewFilteredSourceRowCount = 0
         self.previewFilterValueOverflow.clear()
 
         self.loadingOverlay.hide()
@@ -1100,15 +1102,30 @@ class TabDataWidget(BackgroundTaskMixin):
         if clearFilters:
             self.previewProxyModel.clear_filters()
         if dataFrame.empty:
+            self.previewFilteredSourceRowCount = 0
             self.previewTableModel.set_data_frame(pd.DataFrame())
             return
 
-        previewDataFrame = dataFrame.head(maxRows).copy()
+        previewDataFrame = self._preview_dataframe_for_current_filters()
         self.previewTableModel.set_data_frame(previewDataFrame)
         self._resize_preview_columns(previewDataFrame)
         shownRows = len(previewDataFrame)
-        if len(dataFrame) > shownRows:
+        if self.previewProxyModel.columnFilters:
+            self._update_preview_filter_status()
+        elif len(dataFrame) > shownRows:
             self._set_status(f'Preview showing first {shownRows}/{len(dataFrame)} rows.')
+
+    def _preview_dataframe_for_current_filters(self) -> pd.DataFrame:
+        filteredDataFrame = self._filter_dataframe_by_preview_filters(
+            self.previewSourceDataFrame
+        )
+        self.previewFilteredSourceRowCount = len(filteredDataFrame)
+        return filteredDataFrame.head(self.previewMaxRows).copy()
+
+    def _refresh_preview_for_current_filters(self) -> None:
+        previewDataFrame = self._preview_dataframe_for_current_filters()
+        self.previewTableModel.set_data_frame(previewDataFrame)
+        self._resize_preview_columns(previewDataFrame)
 
     def _resize_preview_columns(self, previewDataFrame: pd.DataFrame) -> None:
         rowCount, columnCount = previewDataFrame.shape
@@ -1208,10 +1225,12 @@ class TabDataWidget(BackgroundTaskMixin):
             self.previewProxyModel.sort(columnIndex, Qt.DescendingOrder)
         elif selectedAction == clearColumnAction:
             self.previewProxyModel.clear_column_filter(columnIndex)
+            self._refresh_preview_for_current_filters()
             self._update_preview_filter_status()
             self._notify_data_changed()
         elif selectedAction == clearAllAction:
             self.previewProxyModel.clear_filters()
+            self._refresh_preview_for_current_filters()
             self._update_preview_filter_status()
             self._notify_data_changed()
 
@@ -1236,24 +1255,35 @@ class TabDataWidget(BackgroundTaskMixin):
             self.previewProxyModel.clear_column_filter(columnIndex)
         else:
             self.previewProxyModel.set_column_filter(columnIndex, selectedValues)
+        self._refresh_preview_for_current_filters()
         self._update_preview_filter_status()
         self._notify_data_changed()
         menu.close()
 
     def _update_preview_filter_status(self) -> None:
-        totalRows = self.previewTableModel.rowCount()
-        visibleRows = self.previewProxyModel.rowCount()
+        previewRows = self.previewProxyModel.rowCount()
         filterCount = len(self.previewProxyModel.columnFilters)
         if filterCount:
             sourceTotalRows = len(self.previewSourceDataFrame)
-            sourceVisibleRows = len(self.get_plot_data())
+            sourceVisibleRows = self.previewFilteredSourceRowCount
+            previewDescription = (
+                f'first {previewRows}/{sourceVisibleRows} filtered rows shown'
+                if sourceVisibleRows > previewRows
+                else f'{previewRows} filtered rows shown'
+            )
             self._set_status(
                 f'Preview filter active: {sourceVisibleRows}/{sourceTotalRows} source rows '
-                f'used for plots, {visibleRows}/{totalRows} preview rows shown, '
+                f'used for plots, {previewDescription}, '
                 f'{filterCount} column filter(s).'
             )
         else:
-            self._set_status(f'Preview filter cleared: {totalRows} rows shown.')
+            sourceTotalRows = len(self.previewSourceDataFrame)
+            previewDescription = (
+                f'first {previewRows}/{sourceTotalRows} rows shown'
+                if sourceTotalRows > previewRows
+                else f'{previewRows} rows shown'
+            )
+            self._set_status(f'Preview filter cleared: {previewDescription}.')
 
     def _rename_preview_column(self, columnIndex: int) -> None:
         if self.previewSourceDataFrame.empty or columnIndex >= len(self.previewSourceDataFrame.columns):
@@ -1910,7 +1940,7 @@ class TabDataWidget(BackgroundTaskMixin):
             return ''
 
         sourceTotalRows = len(self.previewSourceDataFrame)
-        sourceVisibleRows = len(self.get_plot_data())
+        sourceVisibleRows = self.previewFilteredSourceRowCount
         filterLines = [
             f'Preview filter: {sourceVisibleRows}/{sourceTotalRows} rows used'
         ]
