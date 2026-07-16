@@ -1,212 +1,113 @@
 # p-chart
 
-`p-chart` is a PySide6 desktop tool for reshaping CSV/Excel data with
-`pandas.wide_to_long` and creating interactive Plotly scatter and box plots.
+`p-chart` is a PySide6 desktop app for semiconductor data cleanup, reshape,
+analysis, and Plotly visualization.
 
-Version: `v3.0`
-Author: `cnwang`
-License: MIT
+- Version: `v3.0` · `build 0713`
+- Primary target: Windows 10, Python 3.13
+- License: MIT
+
+![p-chart Scatter tab preview](previews/mainwindow-professional-palette-preview.jpg)
+
+_Scatter-tab preview using the Windows layout and current professional palette._
 
 ## Features
 
-- Load CSV or Excel worksheets. Accept "log-type", "KGD", "mapping", and
-  "log with heading info" data.
-- Paste and edit table data in the IDIOT tab, then transfer the cleaned table
-  back to TabData for plotting.
-- Reshape wide data to long data with custom `stubnames`, suffix regex, and
-  suffix column name.
-- Preview and export reshaped data as CSV or Excel.
-- Create Plotly scatter charts with X/Y, series, color, symbol, size, opacity,
-  reference lines, auto ranges, and Y statistics.
-- Create Plotly box plots with Y, Group 1, Group 2, sorted X categories, point
-  display options, Y lines, and selectable per-box annotations.
-- Create wafer maps with frame/die layout and KGD-like die heatmaps.
-- Create contour maps from real X/Y coordinates or generated 49/81-point
-  virtual coordinates, with wafer-ID subplot grids and selectable interpolation
-  styles.
-- Compare CSV/TXT log files with selectable X, Y1, and Y2 columns in overlay
-  or subplot layouts.
-- Support drag-and-drop loading, date-aware scatter X axes, and copyable pivot
-  summary tables.
-- Use embedded Qt WebEngine for Plotly charts, with system-browser fallback for
-  Remote Desktop sessions or `--no-webengine` / `-W`.
-- Sanitize inherited Qt plugin paths at startup so macOS/VSCode sessions do not
-  fail with `cocoa` platform plugin path errors.
-- Export Plotly charts as offline HTML that uses the bundled `plotly.min.js`.
-- Run release and GUI smoke checks from `scripts/`.
-- Package as a Windows 10 desktop app with PyInstaller.
+| Tab | Main purpose |
+| --- | --- |
+| **Data process** | Load CSV/XLS/XLSX, clean data, run `pandas.wide_to_long`, and export CSV/Excel. |
+| **Scatter** | Interactive scatter/line charts, grouping, reference lines, regression, statistics, and pivot summaries. |
+| **Boxplot** | Grouped or separated box plots, subplot layouts, statistics annotations, reference lines, and pivots. |
+| **Wafermap** | Wafer edge, frame/die layout, wafer-ID filtering, and KGD-style heatmaps. |
+| **Contour** | Real or generated X/Y coordinates, 49/81-point templates, wafer grids, filled/line contours, and multiple interpolation methods. |
+| **LogChart** | Compare CSV/TXT logs using overlay or subplot layouts with selectable X, Y1, and Y2 columns. |
+| **IDIOT** | Paste and edit table data, add rows/columns or 49/81 coordinates, then transfer the result back to Data process. |
 
-## Install
+Charts redraw from live controls and can be exported as offline HTML. Plotly
+figures also support PNG clipboard copy, with optional file saving. Qt WebEngine
+is used when available; Remote Desktop and restricted environments can use the
+system-browser fallback.
+
+## Install and run
+
+### macOS / development
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+source .venv/bin/activate
+python -m pip install -r requirements.txt -c constraints-macos-py313.txt
+python app.py
 ```
 
-For a reproducible macOS Python 3.13 development environment, apply the
-validated constraints and confirm that no transitive dependencies are missing:
+### Windows PowerShell
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python app.py
+```
+
+Force the system-browser Plotly viewer when Qt WebEngine is unavailable:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt -c constraints-macos-py313.txt
-.venv/bin/python -m pip check
+python app.py --no-webengine
+# short form
+python app.py -W
 ```
 
-The constraints file is macOS-specific. Windows packaging continues to use
-the portable top-level dependencies in `requirements.txt`.
+## Typical workflow
 
-## Run
+1. Load or drop a CSV/Excel file in **Data process**.
+2. Use the original table directly, or confirm the detected stubnames/suffix
+   settings and run `wide_to_long`.
+3. Select the required columns in a chart tab.
+4. Refresh the chart, inspect statistics/pivots, then export HTML or copy PNG.
 
-```bash
-.venv/bin/python app.py
-```
-
-To force the system-browser Plotly fallback:
-
-```bash
-.venv/bin/python app.py --no-webengine
-.venv/bin/python app.py -W
-```
-
-If a macOS or VSCode session has stale Qt environment variables, the app now
-repairs the PySide6 platform-plugin path during startup. If the environment is
-still broken, rebuild the venv directly:
-
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python app.py --no-webengine
-```
+Use **Contour** for real X/Y contour mapping. The older Wafermap contour mode is
+deprecated and now renders frame/die geometry only.
 
 ## Validate
 
-Run the release gate:
-
 ```bash
-.venv/bin/python scripts/release_check.py
+source .venv/bin/activate
+python scripts/release_check.py
+python -m unittest discover -s tests -v
+python scripts/gui_smoke.py --no-webengine
 ```
 
-Run GUI activation and render smoke checks:
+Optional 100,000-row performance check:
 
 ```bash
-.venv/bin/python scripts/gui_smoke.py
-.venv/bin/python scripts/gui_smoke.py --render
-.venv/bin/python scripts/gui_smoke.py --no-webengine --render
+python scripts/performance_check.py
 ```
 
-Run parser regression tests and the repeatable 100,000-row performance check:
+The complete release checklist is in
+[`docs/release-smoke.md`](docs/release-smoke.md).
 
-```bash
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python scripts/performance_check.py
-```
+## Windows package
 
-See `docs/release-smoke.md` for the full smoke checklist.
-
-## Package
-
-```bash
-.venv/bin/python -m PyInstaller p-chart.spec
-```
-
-For Windows 10 release builds, run the equivalent command on Windows:
+Build the Windows-oriented PyInstaller onedir package on Windows:
 
 ```powershell
 .\.venv\Scripts\python.exe -m PyInstaller p-chart.spec
 ```
 
-The spec bundles the Windows/macOS UI files, local Plotly JavaScript, font, help
-image, app icons, and Windows `.ico`.
+`p-chart.spec` bundles both Qt UI files, Plotly assets, the application fonts,
+icons, coordinate templates, and required hidden imports. It is not configured
+as a macOS `.app` bundle.
 
-## Workflow
+## Key files
 
-1. Load a CSV or Excel worksheet.
-2. app will auto find out  `Stubnames`, `Suffix regex`, and suffix output column.
-3. Confirm auto generated matching columns in `Columns (a/b)`.
-4. Click `wide_to_long`.
-5. Use the enabled Scatter, Boxplot, Wafermap, Contour, or Log tab.
-
-The IDIOT tab is a manual table-editing workspace for quick cleanup before
-plotting. Paste an Excel block directly into the table, resize rows/columns,
-rename column headers, and right-click cells or headers to mark and delete
-rows/columns. The 49/81 coordinate buttons insert bundled coordinate templates.
-Transfer writes the edited table to a temporary workbook sheet named
-`idiotData`, loads it into TabData, and switches back to the Data tab.
-
-Scatter charts draw automatically after X and Y are selected. Reference lines
-support color, opacity/width, auto ranges, and Y-based statistics including Ca,
-Cp, and Cpk when H lines define spec limits. A regression line with formula also available.
-
-Boxplot charts draw automatically after Y and grouping choices are selected.
-Group categories are naturally sorted. Annotation rows are selected with
-checkboxes and are displayed in a fixed order: `N`, `max`, `1/4Q`, `median`,
-`average`, `3/4Q`, `min`, `standard deviation`, and `range`. Numeric formatting
-accepts Python specifiers such as `.2f`, `.3g`, `,.1f`, or `{value:.2f}`.
-
-Wafermap draws the wafer edge, effective edge, frames, die grid, optional die
-row/column labels, and optional laser mark. Heat map mode treats the selected
-X/Y/Z columns as KGD-style `column / row / value` data. The map origin is the
-lower-left die. Data coordinates are normalized before plotting:
-
-```python
-col_on_map = col_on_data - min(col_on_data) + 1
-row_on_map = row_on_data - min(row_on_data) + 1
-```
-
-So the smallest column and row in the loaded data are always drawn at map
-position `(1, 1)`.
-Without X/Y/Z selected, a wafer map with frame and die map will be generated.
-Wafermap `Contour map` mode is deprecated; use the Contour tab for real X/Y
-contour mapping.
-
-Contour charts use the Data-tab dataset as the primary file. Select X, Y, and
-Z/value columns, then choose a wafer column when the data has multiple wafers.
-The wafer column picker includes `none` first, but auto-selects `waferID`,
-`wafer`, or `id` when those columns exist. If X/Y are missing, the Contour tab
-can generate virtual coordinates from bundled `coord-49.csv` or `coord-81.csv`;
-those generated X/Y columns are also written back to the Data tab preview so the
-mapping can be inspected before exporting or redrawing.
-
-Contour maps support filled heatmap mode or line-only mode. Line-only mode uses
-the line-space value, which defaults to `z range / 10`. Site markers are drawn
-on top of the contour map, and value labels can be toggled. Available
-interpolation styles are `Linear triangulation`, `Cubic triangulation`,
-`IDW, inverse distance weighting`, and `Kriging / Gaussian process`. In grid
-mode, wafer subplots keep their own fixed X/Y aspect ratio so each wafer remains
-round.
-
-Log charts use the Data-tab dataset as the primary file and can compare
-additional dropped CSV/TXT log files. Select X plus one or more Y1/Y2 columns,
-then choose overlap or subplot mode and click Refresh Plot. With one selected
-file, overlap draws all Y1/Y2 items in one chart; subplot splits by Y1 item.
-With multiple selected files, overlap splits by Y1 item and draws every file in
-the same subplot, while subplot mode splits by file. If no file is selected,
-Refresh Plot clears the plot area and export state.
-
-## Files
-
-- `app.py`: application entry point.
-- `mainwindow-win.ui`, `mainwindow-mac.ui`: Qt Designer UI files selected
-  automatically at startup. Non-Windows/non-macOS platforms use the mac UI.
-- `plotly_local.py`: local Plotly HTML helper for offline chart rendering.
-- `tabData.py`, `tabScatter.py`, `tabBoxplot.py`: tab controllers.
-- `tabWafermap.py`, `wafermap_core.py`: wafer map controller and geometry logic.
-- `tabContour.py`, `coord-49.csv`, `coord-81.csv`: contour controller and
-  bundled virtual coordinate templates.
-- `tabLog.py`: multi-file log chart controller.
-- `tabIdiot.py`, `table_clipboard_helpers.py`: editable table workspace and
-  table copy/paste helpers.
-- `scripts/release_check.py`, `scripts/gui_smoke.py`: release and GUI smoke
-  validation scripts.
-- `scripts/performance_check.py`, `tests/test_efficiency.py`: repeatable parser
-  benchmark and efficiency regression coverage.
-- `constraints-macos-py313.txt`: validated macOS/Python 3.13 dependency set.
-- `docs/release-smoke.md`: manual and automated release-smoke checklist.
-- `demo/demo_contour_1.csv`, `demo/demo_contour_3.csv`: small contour demo
-  datasets for one-wafer and three-wafer virtual-coordinate checks.
-- `p-chart.spec`: PyInstaller build config.
-- `LICENSE`: MIT License.
+- `app.py` — entry point, runtime options, platform UI selection, and app metadata.
+- `mainwindow-win.ui`, `mainwindow-mac.ui` — Windows/macOS Qt Designer layouts.
+- `tab*.py` — tab controllers for data, charts, wafer maps, logs, and table editing.
+- `plot_export_helpers.py`, `plotly_local.py` — PNG and offline HTML export helpers.
+- `wafermap_core.py`, `coord-49.csv`, `coord-81.csv` — wafer geometry and coordinates.
+- `CascadiaCode.ttf`, `CascadiaNextTC.wght.ttf` — embedded UI and data fonts.
+- `scripts/` and `tests/` — release, GUI, performance, and regression checks.
+- `p-chart.spec` — Windows release packaging configuration.
 
 ## License
 
-MIT. See `LICENSE`.
+MIT. See [`LICENSE`](LICENSE).

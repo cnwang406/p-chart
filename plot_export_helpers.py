@@ -4,6 +4,14 @@ from PySide6.QtWidgets import QApplication
 
 
 def shift_click_requests_png_file() -> bool:
+    return shift_modifier_active()
+
+
+def shift_click_clears_pinned_annotations() -> bool:
+    return shift_modifier_active()
+
+
+def shift_modifier_active() -> bool:
     return bool(
         QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier
     )

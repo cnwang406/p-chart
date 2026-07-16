@@ -15,45 +15,66 @@
   <string>p-Chart</string>
  </property>
  <property name="styleSheet">
-  <string notr="true">QMainWindow {
-   background-color: #f3f6fb;
+  <string notr="true">QMainWindow,
+QWidget#centralwidget {
+   background-color: #e8eef4;
 }
 QWidget {
-   background-color: #f3f6fb;
-   color: #26313d;
+   color: #1b2838;
+   selection-background-color: #0f6cbd;
+   selection-color: #ffffff;
+}
+QWidget#tabData,
+QWidget#tabScatter,
+QWidget#tabBoxplot,
+QWidget#tabWafermap,
+QWidget#tabContour,
+QWidget#logTab,
+QWidget#tabIdiot {
+   background-color: #f4f7fa;
 }
 QTabWidget::pane {
-   background-color: #ffffff;
-   border: 1px solid #bcc8d8;
-   border-radius: 6px;
+   background-color: #f4f7fa;
+   border: 1px solid #a8b8c8;
+   border-radius: 7px;
 }
 QTabBar::tab {
-   background-color: #dfe7f1;
-   color: #3b4858;
-   border: 1px solid #bcc8d8;
-   border-bottom-color: #aebccc;
-   padding: 5px 10px;
+   background-color: #d9e3ec;
+   color: #334a5e;
+   border: 1px solid #a8b8c8;
+   border-bottom-color: #91a4b5;
+   padding: 6px 11px;
 }
 QTabBar::tab:selected {
-   background-color: #ffffff;
-   color: #1f3f63;
-   border-top: 2px solid #2f80ed;
-   border-bottom-color: #ffffff;
+   background-color: #0f6cbd;
+   color: #ffffff;
+   border-color: #0b5ca8;
+   border-bottom-color: #0f6cbd;
 }
-QTabBar::tab:hover {
-   background-color: #edf3fb;
+QTabBar::tab:hover:!selected {
+   background-color: #c8ddf0;
+   color: #0b4f7a;
+   border-color: #7da6c5;
 }
 QGroupBox {
-   background-color: #fbfcff;
-   border: 1px solid #c8d2df;
-   border-radius: 6px;
-   margin-top: 12px;
+   background-color: #ffffff;
+   border: 1px solid #b4c3d2;
+   border-radius: 7px;
+   margin-top: 13px;
 }
 QGroupBox::title {
-   color: #31506d;
+   background-color: #ffffff;
+   color: #0b4f7a;
+   font-weight: 600;
    subcontrol-origin: margin;
    left: 8px;
-   padding: 0 4px;
+   padding: 0 5px;
+}
+QLabel,
+QCheckBox,
+QRadioButton {
+   background-color: transparent;
+   color: #263746;
 }
 QLineEdit,
 QComboBox,
@@ -62,11 +83,20 @@ QDoubleSpinBox,
 QTextEdit,
 QPlainTextEdit,
 QTableView,
+QTableWidget,
 QListWidget {
    background-color: #ffffff;
-   color: #24303c;
-   border: 1px solid #b8c6d6;
+   color: #172333;
+   border: 1px solid #9fb0c1;
    border-radius: 4px;
+}
+QLineEdit:hover,
+QComboBox:hover,
+QSpinBox:hover,
+QDoubleSpinBox:hover,
+QTextEdit:hover,
+QPlainTextEdit:hover {
+   border-color: #6f8da8;
 }
 QLineEdit:focus,
 QComboBox:focus,
@@ -74,50 +104,203 @@ QSpinBox:focus,
 QDoubleSpinBox:focus,
 QTextEdit:focus,
 QPlainTextEdit:focus {
-   border: 1px solid #2f80ed;
+   border-color: #0f6cbd;
+}
+QComboBox QAbstractItemView {
+   background-color: #ffffff;
+   color: #172333;
+   border: 1px solid #7f94a8;
+   selection-background-color: #0f6cbd;
+   selection-color: #ffffff;
 }
 QPushButton {
-   background-color: #e7eef8;
-   color: #203247;
-   border: 1px solid #a7b7ca;
+   background-color: #e2eaf1;
+   color: #203a50;
+   border: 1px solid #8fa4b7;
    border-radius: 4px;
 }
 QPushButton:hover {
-   background-color: #d9e8fb;
-   border-color: #7fa7d8;
+   background-color: #d3e3f0;
+   color: #0b4f7a;
+   border-color: #0f6cbd;
 }
-QPushButton:pressed {
-   background-color: #c8daf0;
+QPushButton:pressed,
+QPushButton:checked {
+   background-color: #bed5e7;
+   border-color: #0b5ca8;
+}
+QPushButton#loadButton,
+QPushButton#meltButton,
+QPushButton#saveButton,
+QPushButton#plotButton,
+QPushButton#boxPlotButton,
+QPushButton#refreshButton,
+QPushButton#contourPlotButton,
+QPushButton#logPlotButton,
+QPushButton#idiotTransferPushButton {
+   background-color: #0f6cbd;
+   color: #ffffff;
+   border-color: #0b5ca8;
+   font-weight: 600;
+}
+QPushButton#loadButton:hover,
+QPushButton#meltButton:hover,
+QPushButton#saveButton:hover,
+QPushButton#plotButton:hover,
+QPushButton#boxPlotButton:hover,
+QPushButton#refreshButton:hover,
+QPushButton#contourPlotButton:hover,
+QPushButton#logPlotButton:hover,
+QPushButton#idiotTransferPushButton:hover {
+   background-color: #115ea3;
+   border-color: #0c4f8a;
+}
+QPushButton#loadButton:pressed,
+QPushButton#meltButton:pressed,
+QPushButton#saveButton:pressed,
+QPushButton#plotButton:pressed,
+QPushButton#boxPlotButton:pressed,
+QPushButton#refreshButton:pressed,
+QPushButton#contourPlotButton:pressed,
+QPushButton#logPlotButton:pressed,
+QPushButton#idiotTransferPushButton:pressed {
+   background-color: #0c3b5e;
+}
+QPushButton#scatterDownloadPngButton,
+QPushButton#downloadHtmlButton,
+QPushButton#boxDownloadHtmlButton,
+QPushButton#boxDownloadPngButton,
+QPushButton#waferMapDownloadHtmlButton,
+QPushButton#waferMapDownloadPngButton,
+QPushButton#contourDownloadPngButton,
+QPushButton#contourDownloadHtmlButton,
+QPushButton#logDownloadPngButton,
+QPushButton#logDownloadHtmlButton {
+   background-color: #dff3ef;
+   color: #0a5c4b;
+   border-color: #65a89a;
+}
+QPushButton#scatterDownloadPngButton:hover,
+QPushButton#downloadHtmlButton:hover,
+QPushButton#boxDownloadHtmlButton:hover,
+QPushButton#boxDownloadPngButton:hover,
+QPushButton#waferMapDownloadHtmlButton:hover,
+QPushButton#waferMapDownloadPngButton:hover,
+QPushButton#contourDownloadPngButton:hover,
+QPushButton#contourDownloadHtmlButton:hover,
+QPushButton#logDownloadPngButton:hover,
+QPushButton#logDownloadHtmlButton:hover {
+   background-color: #c6e9e2;
+   color: #084c3f;
+   border-color: #338b78;
+}
+QPushButton#contourCleanFilesButton,
+QPushButton#logCleanFilesButton,
+QPushButton#idiotCleanPushButton {
+   background-color: #fce8e6;
+   color: #a12622;
+   border-color: #df9b95;
+}
+QPushButton#contourCleanFilesButton:hover,
+QPushButton#logCleanFilesButton:hover,
+QPushButton#idiotCleanPushButton:hover {
+   background-color: #f8d4d0;
+   color: #841b17;
+   border-color: #c86f68;
 }
 QPushButton:disabled,
 QLineEdit:disabled,
 QComboBox:disabled,
 QSpinBox:disabled,
 QDoubleSpinBox:disabled {
-   background-color: #e5eaf1;
+   background-color: #e4e9ee;
    color: #7b8794;
-   border-color: #c8d2df;
+   border-color: #c4ced8;
 }
-QCheckBox,
-QRadioButton,
-QLabel {
-   background-color: transparent;
-   color: #26313d;
+QPushButton#loadButton:disabled,
+QPushButton#meltButton:disabled,
+QPushButton#saveButton:disabled,
+QPushButton#plotButton:disabled,
+QPushButton#boxPlotButton:disabled,
+QPushButton#refreshButton:disabled,
+QPushButton#contourPlotButton:disabled,
+QPushButton#logPlotButton:disabled,
+QPushButton#idiotTransferPushButton:disabled,
+QPushButton#scatterDownloadPngButton:disabled,
+QPushButton#downloadHtmlButton:disabled,
+QPushButton#boxDownloadHtmlButton:disabled,
+QPushButton#boxDownloadPngButton:disabled,
+QPushButton#waferMapDownloadHtmlButton:disabled,
+QPushButton#waferMapDownloadPngButton:disabled,
+QPushButton#contourDownloadPngButton:disabled,
+QPushButton#contourDownloadHtmlButton:disabled,
+QPushButton#logDownloadPngButton:disabled,
+QPushButton#logDownloadHtmlButton:disabled,
+QPushButton#contourCleanFilesButton:disabled,
+QPushButton#logCleanFilesButton:disabled,
+QPushButton#idiotCleanPushButton:disabled {
+   background-color: #e4e9ee;
+   color: #7b8794;
+   border-color: #c4ced8;
+}
+QLabel:disabled,
+QCheckBox:disabled,
+QRadioButton:disabled {
+   color: #7b8794;
 }
 QHeaderView::section {
-   background-color: #e5edf7;
-   color: #2a4058;
-   border: 1px solid #c0ccda;
+   background-color: #dce7f0;
+   color: #1c3d55;
+   border: 1px solid #aab9c7;
+   font-weight: 600;
 }
 QTableView::item:selected,
+QTableWidget::item:selected,
 QListWidget::item:selected,
 QComboBox QAbstractItemView::item:selected {
-   background-color: #2f80ed;
+   background-color: #0f6cbd;
    color: #ffffff;
 }
+QLabel#statusLabelTab1,
+QLabel#statusLabelTab2,
+QLabel#boxStatusLabel,
+QLabel#waferMapStatusLabelx,
+QLabel#contourStatusLabel,
+QLabel#logStatusLabel,
+QLabel#idiotStatusLabelTab {
+   background-color: #e5f1fb;
+   color: #0b4f7a;
+   border: 1px solid #a8cce5;
+   border-radius: 4px;
+}
+QScrollBar:vertical,
+QScrollBar:horizontal {
+   background-color: #e7edf3;
+   border: none;
+}
+QScrollBar::handle:vertical {
+   background-color: #8fa4b7;
+   border-radius: 4px;
+   min-height: 24px;
+}
+QScrollBar::handle:horizontal {
+   background-color: #8fa4b7;
+   border-radius: 4px;
+   min-width: 24px;
+}
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover {
+   background-color: #5f7f9a;
+}
+QToolTip {
+   background-color: #17324d;
+   color: #ffffff;
+   border: 1px solid #0f6cbd;
+}
 QStatusBar {
-   background-color: #edf2f8;
-   color: #3d4f63;
+   background-color: #d7e3ed;
+   color: #29465c;
+   border-top: 1px solid #a8b8c8;
 }</string>
  </property>
  <widget class="QWidget" name="centralwidget">
@@ -2150,7 +2333,16 @@ Shift-click: Save PNG to file</string>
        </font>
       </property>
       <property name="text">
-       <string>Refresh</string>
+       <string>Refresh *</string>
+      </property>
+      <property name="toolTip">
+       <string>* Shift+Click clears all pinned annotations.</string>
+      </property>
+      <property name="statusTip">
+       <string>Refresh plot. Hold Shift while clicking to clear all pinned annotations.</string>
+      </property>
+      <property name="whatsThis">
+       <string>Refresh normally preserves pinned annotations. Shift+Click clears all pinned annotations for this plot.</string>
       </property>
      </widget>
     </widget>
@@ -3255,7 +3447,16 @@ Shift-click: Save PNG to file</string>
         </rect>
        </property>
        <property name="text">
-        <string>Refresh</string>
+        <string>Refresh *</string>
+       </property>
+       <property name="toolTip">
+        <string>* Shift+Click clears all pinned annotations.</string>
+       </property>
+       <property name="statusTip">
+        <string>Refresh plot. Hold Shift while clicking to clear all pinned annotations.</string>
+       </property>
+       <property name="whatsThis">
+        <string>Refresh normally preserves pinned annotations. Shift+Click clears all pinned annotations for this plot.</string>
        </property>
       </widget>
      </widget>
@@ -5815,7 +6016,16 @@ here.</string>
        </font>
       </property>
       <property name="text">
-       <string>Refresh</string>
+       <string>Refresh *</string>
+      </property>
+      <property name="toolTip">
+       <string>* Shift+Click clears all pinned annotations.</string>
+      </property>
+      <property name="statusTip">
+       <string>Refresh plot. Hold Shift while clicking to clear all pinned annotations.</string>
+      </property>
+      <property name="whatsThis">
+       <string>Refresh normally preserves pinned annotations. Shift+Click clears all pinned annotations for this plot.</string>
       </property>
      </widget>
      <widget class="QPushButton" name="contourDownloadPngButton">
@@ -6944,7 +7154,16 @@ Shift-click: Save PNG to file</string>
        </font>
       </property>
       <property name="text">
-       <string>Refresh</string>
+       <string>Refresh *</string>
+      </property>
+      <property name="toolTip">
+       <string>* Shift+Click clears all pinned annotations.</string>
+      </property>
+      <property name="statusTip">
+       <string>Refresh plot. Hold Shift while clicking to clear all pinned annotations.</string>
+      </property>
+      <property name="whatsThis">
+       <string>Refresh normally preserves pinned annotations. Shift+Click clears all pinned annotations for this plot.</string>
       </property>
      </widget>
     </widget>

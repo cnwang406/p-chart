@@ -14,6 +14,7 @@ datas = [
    ('mainwindow-mac.ui', '.'),
    ('plotly.min.js', '.'),
    ('CascadiaNextTC.wght.ttf', '.'),
+   ('CascadiaCode.ttf', '.'),
    ('w2l.png', '.'),
    ('AppIcon.appiconset/icon-ios-marketing-1024x1024-1x.png', 'AppIcon.appiconset'),
    ('coord-49.csv', '.'),
