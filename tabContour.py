@@ -1948,7 +1948,11 @@ class TabContourWidget(BackgroundTaskMixin):
         self._set_status('Rendering contour HTML...')
 
         def work() -> str:
-            return local_plotly_html(figure, fullHtml=True)
+            return local_plotly_html(
+                figure,
+                fullHtml=True,
+                annotationNamespace='contour',
+            )
 
         self._activeRenderTaskId = self._start_background_task(
             work,

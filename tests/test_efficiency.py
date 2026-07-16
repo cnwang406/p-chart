@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from plot_export_helpers import render_plotly_png, shift_click_requests_png_file
 from plotly_local import (
     PINNED_HOVER_ANNOTATION_NAME,
+    _annotation_state_key,
     _pinned_hover_annotation_script,
     local_plotly_html,
 )
@@ -130,6 +131,7 @@ class LogPreparedDataCacheTests(unittest.TestCase):
 class PlotlyHtmlTests(unittest.TestCase):
     def test_serializes_once_and_injects_one_local_loader(self) -> None:
         figure = go.Figure(go.Scatter(x=[1, 2], y=[3, 4]))
+        annotationStateKey = _annotation_state_key(figure, 'plot')
         with patch('plotly_local.pio.to_html', return_value='<html><head></head><body></body></html>') as toHtml:
             html = local_plotly_html(figure, fullHtml=True)
 
@@ -137,18 +139,43 @@ class PlotlyHtmlTests(unittest.TestCase):
             figure,
             full_html=True,
             include_plotlyjs=False,
-            post_script=_pinned_hover_annotation_script(),
+            post_script=_pinned_hover_annotation_script(annotationStateKey),
         )
         self.assertEqual(html.count('<script src='), 1)
         self.assertEqual(html.count('plotly.min.js'), 1)
 
     def test_enables_click_to_pin_and_click_annotation_to_remove(self) -> None:
-        script = _pinned_hover_annotation_script()
+        script = _pinned_hover_annotation_script('test-key')
 
         self.assertIn("plot.on('plotly_click'", script)
         self.assertIn("plot.on('plotly_clickannotation'", script)
+        self.assertIn("plot.on('plotly_hover'", script)
         self.assertIn(PINNED_HOVER_ANNOTATION_NAME, script)
+        self.assertIn("currentPlotlyHoverText() || lastHoverText", script)
+        self.assertIn("legendFont.size || layoutFont.size || 12", script)
+        self.assertIn("window.sessionStorage.setItem", script)
+        self.assertIn("window.name = windowStatePrefix", script)
         self.assertIn("Plotly.relayout(plot, { annotations: annotations })", script)
+
+    def test_annotation_state_key_ignores_layout_font_changes(self) -> None:
+        firstFigure = go.Figure(go.Scatter(x=[1, 2], y=[3, 4]))
+        firstFigure.update_layout(legend_font_size=10)
+        secondFigure = go.Figure(go.Scatter(x=[1, 2], y=[3, 4]))
+        secondFigure.update_layout(legend_font_size=24)
+
+        self.assertEqual(
+            _annotation_state_key(firstFigure, 'scatter'),
+            _annotation_state_key(secondFigure, 'scatter'),
+        )
+
+    def test_annotation_state_key_changes_with_plot_data(self) -> None:
+        firstFigure = go.Figure(go.Scatter(x=[1, 2], y=[3, 4]))
+        secondFigure = go.Figure(go.Scatter(x=[1, 2], y=[3, 5]))
+
+        self.assertNotEqual(
+            _annotation_state_key(firstFigure, 'scatter'),
+            _annotation_state_key(secondFigure, 'scatter'),
+        )
 
 
 class PreviewFilterTests(unittest.TestCase):

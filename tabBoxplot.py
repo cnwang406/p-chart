@@ -1393,7 +1393,11 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self.loadingOverlay.show('Loading...')
 
         def work() -> str:
-            return local_plotly_html(figure, fullHtml=True)
+            return local_plotly_html(
+                figure,
+                fullHtml=True,
+                annotationNamespace='boxplot',
+            )
 
         self._activeRenderTaskId = self._start_background_task(
             work,
