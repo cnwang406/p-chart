@@ -25,6 +25,7 @@ TOP_LEVEL_PY = [
     'pivot_helpers.py',
     'qt_helpers.py',
     'plot_templates.py',
+    'update_helpers.py',
 ]
 UI_FILES = ['mainwindow-win.ui', 'mainwindow-mac.ui']
 EMBEDDED_FONT_FILES = ['CascadiaNextTC.wght.ttf', 'CascadiaCode.ttf']

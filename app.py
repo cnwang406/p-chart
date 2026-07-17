@@ -1,7 +1,6 @@
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import sys
 import importlib.util
@@ -93,6 +92,15 @@ from tabIdiot import TabIdiotWidget
 from tabLog import TabLogWidget
 from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 from tabWafermap import TabWafermapWidget
+from update_helpers import (
+    copy_update_files,
+    is_newer_release,
+    is_newer_version,
+    normalize_build_number,
+    stage_update_files,
+    start_windows_update_after_exit,
+    update_target_paths,
+)
 
 APP_NAME = 'p-chart'
 APP_VERSION = 'v3.0'
@@ -167,23 +175,6 @@ def find_existing_rec_directory() -> Path | None:
     return None
 
 
-def version_key(versionText: str) -> tuple[int, ...]:
-    versionNumbers = re.findall(r'\d+', str(versionText))
-    return tuple(int(versionNumber) for versionNumber in versionNumbers)
-
-
-def is_newer_version(candidateVersion: str, currentVersion: str) -> bool:
-    candidateKey = version_key(candidateVersion)
-    currentKey = version_key(currentVersion)
-    if not candidateKey or not currentKey:
-        return str(currentVersion) < str(candidateVersion)
-
-    maxLength = max(len(candidateKey), len(currentKey))
-    candidateKey += (0,) * (maxLength - len(candidateKey))
-    currentKey += (0,) * (maxLength - len(currentKey))
-    return currentKey < candidateKey
-
-
 def read_launch_info() -> dict[str, str] | None:
     recDirectory = find_existing_rec_directory()
     if recDirectory is None:
@@ -192,6 +183,7 @@ def read_launch_info() -> dict[str, str] | None:
     infoPath = recDirectory / REC_INFO_FILENAME
     defaultInfo = {
         'version': APP_VERSION,
+        'build': normalize_build_number(APP_DATE),
         'launch': '1',
         'release_note': '',
     }
@@ -212,12 +204,22 @@ def read_launch_info() -> dict[str, str] | None:
     except (TypeError, ValueError):
         launchCount = 0
 
+    currentBuild = normalize_build_number(APP_DATE)
     savedVersion = str(launchInfo.get('version') or APP_VERSION)
-    launchInfo['version'] = (
-        APP_VERSION
-        if is_newer_version(APP_VERSION, savedVersion)
-        else savedVersion
+    savedBuild = normalize_build_number(launchInfo.get('build'))
+    versionsMatch = (
+        not is_newer_version(APP_VERSION, savedVersion)
+        and not is_newer_version(savedVersion, APP_VERSION)
     )
+    if not savedBuild and versionsMatch:
+        savedBuild = currentBuild
+
+    if is_newer_release(APP_VERSION, currentBuild, savedVersion, savedBuild):
+        launchInfo['version'] = APP_VERSION
+        launchInfo['build'] = currentBuild
+    else:
+        launchInfo['version'] = savedVersion
+        launchInfo['build'] = savedBuild
     launchInfo['launch'] = str(launchCount + 1)
     launchInfo['release_note'] = str(launchInfo.get('release_note') or '')
     write_launch_info(infoPath, launchInfo)
@@ -238,25 +240,6 @@ def current_app_directory() -> Path:
     if getattr(sys, 'frozen', False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
-
-
-def update_target_paths(sourceDirectory: Path, targetDirectory: Path) -> list[Path]:
-    targetPaths = []
-    for sourcePath in sourceDirectory.rglob('*'):
-        relativePath = sourcePath.relative_to(sourceDirectory)
-        targetPath = targetDirectory / relativePath
-        if targetPath.exists():
-            targetPaths.append(targetPath)
-    return targetPaths
-
-
-def copy_update_files(sourceDirectory: Path, targetDirectory: Path) -> None:
-    for sourcePath in sourceDirectory.iterdir():
-        targetPath = targetDirectory / sourcePath.name
-        if sourcePath.is_dir():
-            shutil.copytree(sourcePath, targetPath, dirs_exist_ok=True)
-        else:
-            shutil.copy2(sourcePath, targetPath)
 
 
 class ResponsiveUiResizer(QObject):
@@ -603,11 +586,25 @@ class AppMain:
             return
 
         latestVersion = self.launchInfo.get('version', '')
-        if not is_newer_version(latestVersion, APP_VERSION):
+        latestBuild = normalize_build_number(self.launchInfo.get('build'))
+        currentBuild = normalize_build_number(APP_DATE)
+        if not is_newer_release(
+            latestVersion,
+            latestBuild,
+            APP_VERSION,
+            currentBuild,
+        ):
             return
 
         releaseNote = str(self.launchInfo.get('release_note') or '').strip()
-        message = f'好像有新版本, {latestVersion}, 要更新到最新版嗎?'
+        latestRelease = latestVersion
+        if latestBuild:
+            latestRelease = f'{latestRelease}, build {latestBuild}'
+        message = (
+            f'目前版本: {APP_VERSION}, {APP_DATE}\n'
+            f'發現新版本: {latestRelease}\n\n'
+            '要更新到最新版嗎?'
+        )
         if releaseNote:
             message = f'{message}\n\nRelease note:\n{releaseNote}'
 
@@ -664,13 +661,36 @@ class AppMain:
             if answer != QMessageBox.StandardButton.Ok:
                 return
 
-            copy_update_files(sourceDirectory, targetDirectory)
+            if sys.platform.startswith('win') and getattr(sys, 'frozen', False):
+                stageDirectory = stage_update_files(sourceDirectory)
+                try:
+                    start_windows_update_after_exit(
+                        stageDirectory,
+                        targetDirectory,
+                        Path(sys.executable).resolve(),
+                    )
+                except Exception:
+                    shutil.rmtree(stageDirectory, ignore_errors=True)
+                    raise
+            else:
+                copy_update_files(sourceDirectory, targetDirectory)
         except Exception as exc:
             QMessageBox.warning(
                 self.ui,
                 'Update Failed',
                 f'更新失敗:\n{exc}',
             )
+            return
+
+        if sys.platform.startswith('win') and getattr(sys, 'frozen', False):
+            QMessageBox.information(
+                self.ui,
+                'Update Ready',
+                '更新檔已準備完成。程式現在會關閉；待檔案解除鎖定後，'
+                f'會自動完成更新並重新啟動 {APP_NAME}。',
+            )
+            self.ui.close()
+            self.app.quit()
             return
 
         QMessageBox.information(
