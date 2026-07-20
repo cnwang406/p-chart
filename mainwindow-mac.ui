@@ -1460,11 +1460,12 @@ inline_,</string>
        </font>
       </property>
       <property name="toolTip">
-       <string>如果X是日期, 也能用日期設定.
-也可以用下面的 HTML拉</string>
+       <string>格式：min,max 或 min,max,space。
+第三值是 minor grid 間隔；如果 X 是日期，space 單位為天。
+例如：0,100,10 或 2026-01-01,2026-01-31,7</string>
       </property>
       <property name="placeholderText">
-       <string>100,200</string>
+       <string>0,100,10</string>
       </property>
      </widget>
      <widget class="QLabel" name="yTitleLabel">
@@ -1539,8 +1540,12 @@ inline_,</string>
         <pointsize>10</pointsize>
        </font>
       </property>
+      <property name="toolTip">
+       <string>格式：min,max 或 min,max,space。
+第三值是 numeric Y axis 的 minor grid 間隔。</string>
+      </property>
       <property name="placeholderText">
-       <string>10,20</string>
+       <string>0,100,10</string>
       </property>
      </widget>
      <widget class="QCheckBox" name="legendCheckBox">
@@ -1664,16 +1669,15 @@ inline_,</string>
         </font>
        </property>
        <property name="toolTip">
-        <string>-2條線, 下面的統計會用這個當 range,
-avg 當 target. -3條線, 會被當 range 以及
-target</string>
+        <string>使用 comma 分隔；可輸入數值或 label=value，例如 100,USL=200。
+2 條線會作為統計 range、avg 作為 target；3 條線則以中間值作為 target。</string>
        </property>
        <property name="whatsThis">
         <string>如果有兩組,會作為上下限,target用 avg,
 計算 cpk. 有三組則中間那組當 target</string>
        </property>
        <property name="placeholderText">
-        <string>comma seperated, 100,200</string>
+        <string>100, USL=200</string>
        </property>
       </widget>
       <widget class="QLineEdit" name="vlineLineEdit">
@@ -1692,11 +1696,11 @@ target</string>
         </font>
        </property>
        <property name="toolTip">
-        <string>comma seperated, 100,200,
-如果X是日期, 也能用日期</string>
+        <string>使用 comma 分隔；可輸入數值或 label=value，例如 100,Start=200。
+如果 X 是日期，也可輸入 Start=2026-01-01。</string>
        </property>
        <property name="placeholderText">
-        <string>comma seperated, 100,200</string>
+        <string>100, Start=200</string>
        </property>
       </widget>
       <widget class="QLabel" name="lineWidthLabel">
@@ -3123,9 +3127,11 @@ and {value:.2f} is also accepted.</string>
         </rect>
        </property>
        <property name="toolTip">
-        <string>-2條線, 下面的統計會用這個當 range,
-avg 當 target. -3條線, 會被當 range 以及
-target</string>
+        <string>使用 comma 分隔；可輸入數值或 label=value，例如 100,USL=200。
+2 條線會作為統計 range、avg 作為 target；3 條線則以中間值作為 target。</string>
+       </property>
+       <property name="placeholderText">
+       <string>100, USL=200</string>
        </property>
       </widget>
       <widget class="QLineEdit" name="boxYRangeLineEdit">
@@ -3138,8 +3144,11 @@ target</string>
         </rect>
        </property>
        <property name="toolTip">
-        <string>如果X是日期, 也能用日期設定.
-也可以用下面的 HTML拉</string>
+        <string>格式：min,max 或 min,max,space。
+第三值是 numeric Y axis 的 minor grid 間隔，例如 0,100,10。</string>
+       </property>
+       <property name="placeholderText">
+       <string>0,100,10</string>
        </property>
       </widget>
       <widget class="QPushButton" name="boxplotPivotButton">

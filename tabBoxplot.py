@@ -33,6 +33,13 @@ from qt_helpers import require_child
 from async_helpers import BackgroundTaskMixin
 from loading_overlay import LoadingOverlay
 from pivot_helpers import build_pivot_table, show_pivot_dialog
+from plot_axis_inputs import (
+    AxisRange,
+    ReferenceLine,
+    minor_grid_options,
+    parse_numeric_axis_range,
+    parse_numeric_reference_lines,
+)
 from plot_annotation_helpers import add_preview_filter_annotation
 from plot_export_helpers import (
     copy_png_bytes_to_clipboard,
@@ -589,27 +596,11 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         self._redraw_existing_plot()
 
     def _parse_range(self, value: str) -> tuple | None:
-        if not value:
-            return None
-
-        rangeParts = [part.strip() for part in value.split(',') if part.strip()]
-        if len(rangeParts) != 2:
-            return None
-        try:
-            return float(rangeParts[0]), float(rangeParts[1])
-        except ValueError:
-            return None
+        parsedRange = parse_numeric_axis_range(value)
+        return parsedRange.values if parsedRange is not None else None
 
     def _parse_line_values(self, value: str) -> list[float]:
-        if not value:
-            return []
-        values = []
-        for linePart in [item.strip() for item in value.split(',') if item.strip()]:
-            try:
-                values.append(float(linePart))
-            except ValueError:
-                continue
-        return values
+        return [line.value for line in parse_numeric_reference_lines(value)]
 
     def _parse_single_line_value(self, value: str) -> float | None:
         values = self._parse_line_values(value)
@@ -633,14 +624,14 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             setting['title'] = sepValue
         return setting
 
-    def _setting_line_values(self, sepValue: str) -> list[float]:
+    def _setting_reference_lines(self, sepValue: str) -> list[ReferenceLine]:
         setting = self._group_line_setting(sepValue)
-        values = []
+        lines = []
         for key in ['low', 'target', 'high']:
-            lineValue = self._parse_single_line_value(setting.get(key, ''))
-            if lineValue is not None:
-                values.append(lineValue)
-        return values
+            parsedLines = parse_numeric_reference_lines(setting.get(key, ''))
+            if parsedLines:
+                lines.append(parsedLines[0])
+        return lines
 
     def _setting_y_range(self, sepValue: str) -> tuple[float, float] | None:
         setting = self._group_line_setting(sepValue)
@@ -679,6 +670,12 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             targetLineEdit = QLineEdit(setting.get('target', ''))
             highLineEdit = QLineEdit(setting.get('high', ''))
             titleLineEdit = QLineEdit(setting.get('title', sepValue) or sepValue)
+            lowLineEdit.setPlaceholderText('LSL=100')
+            targetLineEdit.setPlaceholderText('Target=150')
+            highLineEdit.setPlaceholderText('USL=200')
+            lineToolTip = '輸入數值，或使用 label=value 自訂 reference line 標示。'
+            for lineEdit in [lowLineEdit, targetLineEdit, highLineEdit]:
+                lineEdit.setToolTip(lineToolTip)
             layout.addWidget(lowLineEdit, rowIndex, 1)
             layout.addWidget(targetLineEdit, rowIndex, 2)
             layout.addWidget(highLineEdit, rowIndex, 3)
@@ -739,8 +736,13 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         valueSpan = upperValue - lowerValue
         return [lowerValue - valueSpan * 0.1, upperValue + valueSpan * 0.1]
 
-    def _format_line_label(self, axisTitle: str, value: float) -> str:
-        return f'{axisTitle}={value:g}'
+    def _format_line_label(
+        self,
+        axisTitle: str,
+        value: float,
+        customLabel: str | None = None,
+    ) -> str:
+        return customLabel or f'{axisTitle}={value:g}'
 
     def _line_color_with_opacity(self, opacity: float) -> str:
         opacity = max(0.0, min(1.0, opacity))
@@ -1015,23 +1017,27 @@ class TabBoxplotWidget(BackgroundTaskMixin):
     def _add_reference_lines(
         self,
         fig,
-        lineValues: list[float],
+        referenceLines: list[ReferenceLine],
         yTitle: str,
         lineColor: str,
         lineWidth: float,
         row: int | None = None,
         col: int | None = None,
     ) -> None:
-        for hValue in lineValues:
+        for referenceLine in referenceLines:
             kwargs = {}
             if row is not None and col is not None:
                 kwargs.update({'row': row, 'col': col})
             fig.add_hline(
-                y=hValue,
+                y=referenceLine.value,
                 line_dash='dash',
                 line_color=lineColor,
                 line_width=lineWidth,
-                annotation_text=self._format_line_label(yTitle, hValue),
+                annotation_text=self._format_line_label(
+                    yTitle,
+                    referenceLine.value,
+                    referenceLine.label,
+                ),
                 annotation_position='top right',
                 annotation_font_color=lineColor,
                 annotation_font_size=10,
@@ -1048,9 +1054,9 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         plotTitle: str,
         yTitle: str,
         plotlyTheme: str | None,
-        yRange: tuple | None,
+        yRangeSetting: AxisRange | None,
         legendVisible: bool,
-        hLines: list[float],
+        hLines: list[ReferenceLine],
         lineWidth: float,
         lineColorWithOpacity: str,
         pointsMode: str | bool,
@@ -1116,6 +1122,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         )
         xTitle = self._build_x_title(group1Column, group2Column)
         shownLegendNames = set()
+        yRange = yRangeSetting.values if yRangeSetting is not None else None
 
         for sepIndex, sepValue in enumerate(sepValues):
             row = sepIndex // columnCount + 1
@@ -1159,12 +1166,14 @@ class TabBoxplotWidget(BackgroundTaskMixin):
                 col=col,
             )
             subplotYRange = self._setting_y_range(sepValue) or yRange
-            fig.update_yaxes(
+            yAxisOptions = dict(
                 title_text=yTitle,
                 range=subplotYRange,
-                row=row,
-                col=col,
             )
+            yMinorGrid = minor_grid_options(yRangeSetting)
+            if yMinorGrid is not None:
+                yAxisOptions['minor'] = yMinorGrid
+            fig.update_yaxes(row=row, col=col, **yAxisOptions)
             subplotAxisIndex = sepIndex + 1
             self._add_box_annotations(
                 fig,
@@ -1188,7 +1197,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             )
             self._add_reference_lines(
                 fig,
-                self._setting_line_values(sepValue),
+                self._setting_reference_lines(sepValue),
                 yTitle,
                 lineColorWithOpacity,
                 lineWidth,
@@ -1256,9 +1265,10 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         yTitle = self.yTitleLineEdit.text().strip() or yColumn
         plotlyTheme = self.plotlyThemeComboBox.currentText().strip()
         plotlyTheme = None if plotlyTheme == 'none' else plotlyTheme or 'plotly'
-        yRange = self._parse_range(self.yRangeLineEdit.text())
+        yRangeSetting = parse_numeric_axis_range(self.yRangeLineEdit.text())
+        yRange = yRangeSetting.values if yRangeSetting is not None else None
         legendVisible = self.legendCheckBox.isChecked()
-        hLines = self._parse_line_values(self.hlineLineEdit.text())
+        hLines = parse_numeric_reference_lines(self.hlineLineEdit.text())
         lineWidth = self.lineWidthSpinBox.value()
         lineColorWithOpacity = self._line_color_with_opacity(lineWidth)
         pointsMode, jitterValue = self._plotly_points_mode()
@@ -1311,7 +1321,7 @@ class TabBoxplotWidget(BackgroundTaskMixin):
                     plotTitle,
                     yTitle,
                     plotlyTheme,
-                    yRange,
+                    yRangeSetting,
                     legendVisible,
                     hLines,
                     lineWidth,
@@ -1366,6 +1376,9 @@ class TabBoxplotWidget(BackgroundTaskMixin):
             fig.update_yaxes(title_text=yTitle)
             if yRange is not None:
                 fig.update_yaxes(range=yRange)
+            yMinorGrid = minor_grid_options(yRangeSetting)
+            if yMinorGrid is not None:
+                fig.update_yaxes(minor=yMinorGrid)
 
             self._add_box_annotations(
                 fig,

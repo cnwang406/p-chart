@@ -58,4 +58,5 @@ videos/
 # Tracked regression tests
 !tests/
 !tests/test_efficiency.py
+!tests/test_plot_axis_inputs.py
 !tests/test_update_helpers.py

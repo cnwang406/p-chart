@@ -105,7 +105,7 @@ from update_helpers import (
 APP_NAME = 'p-chart'
 APP_VERSION = 'v3.0'
 APP_AUTHOR = 'cnwang'
-APP_DATE = 'build 0716'
+APP_DATE = 'build 0720'
 WINDOW_TITLE = f'{APP_NAME} {APP_VERSION} {APP_DATE} by {APP_AUTHOR}'
 UI_FONT_STYLESHEET = '''
 QPushButton,

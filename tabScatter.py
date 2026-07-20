@@ -29,6 +29,14 @@ from qt_helpers import require_child
 from async_helpers import BackgroundTaskMixin
 from loading_overlay import LoadingOverlay
 from pivot_helpers import build_pivot_table, show_pivot_dialog
+from plot_axis_inputs import (
+    ReferenceLine,
+    minor_grid_options,
+    parse_date_axis_range,
+    parse_date_reference_lines,
+    parse_numeric_axis_range,
+    parse_numeric_reference_lines,
+)
 from plot_annotation_helpers import add_preview_filter_annotation
 from plot_export_helpers import (
     copy_png_bytes_to_clipboard,
@@ -438,59 +446,28 @@ class TabScatterWidget(BackgroundTaskMixin):
         self._redraw_existing_plot()
 
     def _parse_range(self, value: str) -> tuple | None:
-        if not value:
-            return None
-
-        rangeParts = [part.strip() for part in value.split(',') if part.strip()]
-        if len(rangeParts) != 2:
-            return None
-        try:
-            fromValue = float(rangeParts[0])
-            toValue = float(rangeParts[1])
-            return fromValue, toValue
-        except ValueError:
-            return None
+        parsedRange = parse_numeric_axis_range(value)
+        return parsedRange.values if parsedRange is not None else None
 
     def _parse_date_range(self, value: str) -> list | None:
-        if not value:
-            return None
-        rangeParts = [part.strip() for part in value.split(',') if part.strip()]
-        if len(rangeParts) != 2:
-            return None
-        parsedDates = pd.to_datetime(rangeParts, errors='coerce')
-        if pd.isna(parsedDates).any():
-            return None
-        return [parsedDate.to_pydatetime() for parsedDate in parsedDates]
+        parsedRange = parse_date_axis_range(value)
+        return list(parsedRange.values) if parsedRange is not None else None
 
     def _parse_line_values(self, value: str) -> list[float]:
-        if not value:
-            return []
-        lineParts = [item.strip() for item in value.split(',') if item.strip()]
-        values = []
-        for linePart in lineParts:
-            try:
-                values.append(float(linePart))
-            except ValueError:
-                continue
-        return values
+        return [line.value for line in parse_numeric_reference_lines(value)]
 
     def _parse_date_line_values(self, value: str) -> list:
-        if not value:
-            return []
-        lineParts = [item.strip() for item in value.split(',') if item.strip()]
-        parsedDates = pd.to_datetime(lineParts, errors='coerce')
-        return [
-            parsedDate.to_pydatetime()
-            for parsedDate in parsedDates
-            if not pd.isna(parsedDate)
-        ]
+        return [line.value for line in parse_date_reference_lines(value)]
+
+    def _current_vline_specs(self, xIsDate: bool) -> list[ReferenceLine]:
+        return (
+            parse_date_reference_lines(self.vlineLineEdit.text())
+            if xIsDate
+            else parse_numeric_reference_lines(self.vlineLineEdit.text())
+        )
 
     def _current_vline_values(self, xIsDate: bool) -> list:
-        return (
-            self._parse_date_line_values(self.vlineLineEdit.text())
-            if xIsDate
-            else self._parse_line_values(self.vlineLineEdit.text())
-        )
+        return [line.value for line in self._current_vline_specs(xIsDate)]
 
     def _filter_data_by_x_vlines(
         self,
@@ -618,11 +595,21 @@ class TabScatterWidget(BackgroundTaskMixin):
         valueSpan = upperValue - lowerValue
         return [lowerValue - valueSpan * 0.1, upperValue + valueSpan * 0.1]
 
-    def _format_line_label(self, axisTitle: str, value: float) -> str:
-        return f'{axisTitle}={value:g}'
+    def _format_line_label(
+        self,
+        axisTitle: str,
+        value: float,
+        customLabel: str | None = None,
+    ) -> str:
+        return customLabel or f'{axisTitle}={value:g}'
 
-    def _format_date_line_label(self, axisTitle: str, value) -> str:
-        return f'{axisTitle}={self._format_date_label(value)}'
+    def _format_date_line_label(
+        self,
+        axisTitle: str,
+        value,
+        customLabel: str | None = None,
+    ) -> str:
+        return customLabel or f'{axisTitle}={self._format_date_label(value)}'
 
     def _add_date_vline(
         self,
@@ -631,6 +618,7 @@ class TabScatterWidget(BackgroundTaskMixin):
         axisTitle: str,
         lineColor: str,
         lineWidth: float,
+        customLabel: str | None = None,
     ) -> None:
         fig.add_shape(
             type='line',
@@ -651,7 +639,7 @@ class TabScatterWidget(BackgroundTaskMixin):
             y=1,
             xref='x',
             yref='paper',
-            text=self._format_date_line_label(axisTitle, value),
+            text=self._format_date_line_label(axisTitle, value, customLabel),
             showarrow=False,
             yanchor='bottom',
             xanchor='left',
@@ -847,15 +835,17 @@ class TabScatterWidget(BackgroundTaskMixin):
         plotlyTheme = self.plotlyThemeComboBox.currentText().strip()
         plotlyTheme = None if plotlyTheme == 'none' else plotlyTheme or 'plotly'
         xIsDate = self._is_date_series(dataFrame[xColumn])
-        xRange = (
-            self._parse_date_range(self.xRangeLineEdit.text())
+        xRangeSetting = (
+            parse_date_axis_range(self.xRangeLineEdit.text())
             if xIsDate
-            else self._parse_range(self.xRangeLineEdit.text())
+            else parse_numeric_axis_range(self.xRangeLineEdit.text())
         )
-        yRange = self._parse_range(self.yRangeLineEdit.text())
+        yRangeSetting = parse_numeric_axis_range(self.yRangeLineEdit.text())
+        xRange = xRangeSetting.values if xRangeSetting is not None else None
+        yRange = yRangeSetting.values if yRangeSetting is not None else None
         legendVisible = self.legendCheckBox.isChecked()
-        hLines = self._parse_line_values(self.hlineLineEdit.text())
-        vLines = self._current_vline_values(xIsDate)
+        hLines = parse_numeric_reference_lines(self.hlineLineEdit.text())
+        vLines = self._current_vline_specs(xIsDate)
         lineWidth = self.lineWidthSpinBox.value()
         lineColorWithOpacity = self._line_color_with_opacity(lineWidth)
         plotWidth = self.plotWidthSpinBox.value()
@@ -889,7 +879,7 @@ class TabScatterWidget(BackgroundTaskMixin):
             plotData,
             xColumn,
             xIsDate,
-            vLines,
+            [line.value for line in vLines],
         )
         yStatSeries = pd.to_numeric(statData[yColumn], errors='coerce').dropna()
         if not yStatSeries.empty:
@@ -967,6 +957,12 @@ class TabScatterWidget(BackgroundTaskMixin):
                 fig.update_xaxes(range=xRange)
             if yRange is not None:
                 fig.update_yaxes(range=yRange)
+            xMinorGrid = minor_grid_options(xRangeSetting)
+            yMinorGrid = minor_grid_options(yRangeSetting)
+            if xMinorGrid is not None:
+                fig.update_xaxes(minor=xMinorGrid)
+            if yMinorGrid is not None:
+                fig.update_yaxes(minor=yMinorGrid)
             xFormat = self.xFormatLineEdit.text().strip()
             yFormat = self.yFormatLineEdit.text().strip()
             if xFormat:
@@ -974,32 +970,41 @@ class TabScatterWidget(BackgroundTaskMixin):
             if yFormat:
                 fig.update_yaxes(tickformat=yFormat)
 
-            for hValue in hLines:
+            for hLine in hLines:
                 fig.add_hline(
-                    y=hValue,
+                    y=hLine.value,
                     line_dash='dash',
                     line_color=lineColorWithOpacity,
                     line_width=lineWidth,
-                    annotation_text=self._format_line_label(yTitle, hValue),
+                    annotation_text=self._format_line_label(
+                        yTitle,
+                        hLine.value,
+                        hLine.label,
+                    ),
                     annotation_position='top right',
                     annotation_font_color=lineColorWithOpacity,
                 )
-            for vValue in vLines:
+            for vLine in vLines:
                 if xIsDate:
                     self._add_date_vline(
                         fig,
-                        vValue,
+                        vLine.value,
                         xTitle,
                         lineColorWithOpacity,
                         lineWidth,
+                        vLine.label,
                     )
                 else:
                     fig.add_vline(
-                        x=vValue,
+                        x=vLine.value,
                         line_dash='dash',
                         line_color=lineColorWithOpacity,
                         line_width=lineWidth,
-                        annotation_text=self._format_line_label(xTitle, vValue),
+                        annotation_text=self._format_line_label(
+                            xTitle,
+                            vLine.value,
+                            vLine.label,
+                        ),
                         annotation_position='top right',
                         annotation_font_color=lineColorWithOpacity,
                     )
