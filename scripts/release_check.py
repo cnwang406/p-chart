@@ -69,7 +69,7 @@ class ReleaseCheck:
             self.check_ui_xml,
             self.check_ui_object_contract,
             self.check_version_text,
-            self.check_update_release_manifest,
+            self.check_manual_update_notice,
             self.check_demo_data,
         ]
         for check in checks:
@@ -224,15 +224,26 @@ class ReleaseCheck:
             return
         self.ok(f'Version text: {appVersion}, {appDate}')
 
-    def check_update_release_manifest(self) -> None:
-        specText = (ROOT / 'p-chart.spec').read_text(encoding='utf-8')
-        if 'p-chart-release.json' not in specText:
-            self.fail('p-chart.spec does not generate the updater release manifest')
+    def check_manual_update_notice(self) -> None:
+        appText = (ROOT / 'app.py').read_text(encoding='utf-8')
+        forbiddenNames = [
+            'copy_update_files',
+            'stage_update_files',
+            'start_windows_update_after_exit',
+            'UPDATE_SOURCE_DIRECTORY',
+            'QProgressDialog',
+        ]
+        foundNames = [name for name in forbiddenNames if name in appText]
+        if foundNames:
+            self.fail(
+                'Automatic update code remains in app.py: '
+                f'{", ".join(foundNames)}'
+            )
             return
-        if "{'APP_VERSION', 'APP_DATE'}" not in specText:
-            self.fail('Updater release manifest does not use app.py release constants')
+        if r'請到 Z:\9630 下載最新版。' not in appText:
+            self.fail('New-version notice does not direct users to Z:\\9630')
             return
-        self.ok('Updater release manifest uses APP_VERSION and APP_DATE')
+        self.ok('New-version check is notification-only; automatic copy is disabled')
 
     def check_demo_data(self) -> None:
         import pandas as pd
