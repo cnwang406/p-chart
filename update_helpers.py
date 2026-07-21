@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -9,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 import uuid
+
+RELEASE_MANIFEST_FILENAME = 'p-chart-release.json'
 
 
 def version_key(versionText: str) -> tuple[int, ...]:
@@ -47,6 +51,106 @@ def is_newer_release(
         normalize_build_number(candidateBuild),
         normalize_build_number(currentBuild),
     )
+
+
+def resolve_update_package_directory(
+    sourceDirectory: Path,
+    executableName: str,
+) -> Path:
+    if not sourceDirectory.is_dir():
+        raise FileNotFoundError(f'Update source directory not found: {sourceDirectory}')
+    if not executableName:
+        raise ValueError('The update executable name is empty.')
+
+    if (sourceDirectory / executableName).is_file():
+        return sourceDirectory
+
+    nestedDirectories = sorted(
+        (
+            path
+            for path in sourceDirectory.iterdir()
+            if path.is_dir() and (path / executableName).is_file()
+        ),
+        key=lambda path: path.name.lower(),
+    )
+    if len(nestedDirectories) == 1:
+        return nestedDirectories[0]
+    if len(nestedDirectories) > 1:
+        nestedText = ', '.join(str(path) for path in nestedDirectories)
+        raise RuntimeError(
+            f'Multiple update packages contain {executableName}: {nestedText}'
+        )
+    raise FileNotFoundError(
+        f'Update package does not contain {executableName}: {sourceDirectory}'
+    )
+
+
+def read_package_release(packageDirectory: Path) -> dict[str, str] | None:
+    manifestPaths = [
+        packageDirectory / RELEASE_MANIFEST_FILENAME,
+        packageDirectory / '_internal' / RELEASE_MANIFEST_FILENAME,
+    ]
+    manifestPath = next((path for path in manifestPaths if path.is_file()), None)
+    if manifestPath is None:
+        return None
+    try:
+        releaseInfo = json.loads(manifestPath.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(releaseInfo, dict):
+        return None
+
+    version = str(releaseInfo.get('version') or '')
+    build = normalize_build_number(releaseInfo.get('build'))
+    if not version or not build:
+        return None
+    return {'version': version, 'build': build}
+
+
+def update_result_marker_path(executablePath: Path) -> Path:
+    executableKey = os.path.normcase(str(executablePath.resolve())).encode('utf-8')
+    executableHash = hashlib.sha256(executableKey).hexdigest()[:16]
+    return Path(tempfile.gettempdir()) / f'p-chart-update-result-{executableHash}.json'
+
+
+def write_update_result_marker(
+    executablePath: Path,
+    expectedVersion: str,
+    expectedBuild: str,
+    sourceDirectory: Path,
+) -> Path:
+    markerPath = update_result_marker_path(executablePath)
+    markerInfo = {
+        'expected_version': str(expectedVersion),
+        'expected_build': normalize_build_number(expectedBuild),
+        'source_directory': str(sourceDirectory),
+    }
+    markerPath.write_text(
+        json.dumps(markerInfo, ensure_ascii=False, indent=2),
+        encoding='utf-8',
+    )
+    return markerPath
+
+
+def read_update_result_marker(executablePath: Path) -> dict[str, str] | None:
+    markerPath = update_result_marker_path(executablePath)
+    if not markerPath.is_file():
+        return None
+    try:
+        markerInfo = json.loads(markerPath.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(markerInfo, dict):
+        return None
+    return {
+        'expected_version': str(markerInfo.get('expected_version') or ''),
+        'expected_build': normalize_build_number(markerInfo.get('expected_build')),
+        'source_directory': str(markerInfo.get('source_directory') or ''),
+    }
+
+
+def clear_update_result_marker(executablePath: Path) -> None:
+    update_result_marker_path(executablePath).unlink(missing_ok=True)
 
 
 def update_target_paths(sourceDirectory: Path, targetDirectory: Path) -> list[Path]:

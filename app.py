@@ -105,13 +105,18 @@ from tabLog import TabLogWidget
 from tabScatter import WEB_ENGINE_AVAILABLE, TabScatterWidget
 from tabWafermap import TabWafermapWidget
 from update_helpers import (
+    clear_update_result_marker,
     copy_update_files,
     is_newer_release,
     is_newer_version,
     normalize_build_number,
+    read_package_release,
+    read_update_result_marker,
+    resolve_update_package_directory,
     stage_update_files,
     start_windows_update_after_exit,
     update_target_paths,
+    write_update_result_marker,
 )
 
 APP_NAME = 'p-chart'
@@ -490,7 +495,10 @@ class AppMain(QObject):
         self._updateDialog = None
         self._updateThread = None
         self._updateWorker = None
+        self._updateSourceDirectory = None
         self._updateTargetDirectory = None
+        self._updateExpectedVersion = ''
+        self._updateExpectedBuild = ''
         self._updateIsFrozenWindows = False
         self.runtimeOptions = remove_runtime_args()
         if os.path.exists(QT_PLUGIN_PATH):
@@ -553,7 +561,9 @@ class AppMain(QObject):
             },
         )
         self.responsiveUiResizer.apply_all()
-        self._show_new_version_notice()
+        updateResultHandled = self._show_update_result_notice()
+        if not updateResultHandled:
+            self._show_new_version_notice()
 
     def _on_tab_changed(self, tabIndex: int) -> None:
         self._warn_if_plotting_loaded_data(tabIndex)
@@ -685,6 +695,46 @@ class AppMain(QObject):
 
         self._update_to_newest_version()
 
+    def _show_update_result_notice(self) -> bool:
+        if not (sys.platform.startswith('win') and getattr(sys, 'frozen', False)):
+            return False
+
+        executablePath = Path(sys.executable).resolve()
+        markerInfo = read_update_result_marker(executablePath)
+        if markerInfo is None:
+            return False
+
+        clear_update_result_marker(executablePath)
+        expectedVersion = markerInfo['expected_version']
+        expectedBuild = markerInfo['expected_build']
+        currentBuild = normalize_build_number(APP_DATE)
+        if is_newer_release(
+            expectedVersion,
+            expectedBuild,
+            APP_VERSION,
+            currentBuild,
+        ):
+            expectedRelease = f'{expectedVersion}, build {expectedBuild}'
+            currentRelease = f'{APP_VERSION}, build {currentBuild}'
+            sourceDirectory = markerInfo['source_directory']
+            QMessageBox.warning(
+                self.ui,
+                'Auto Update Failed',
+                '自動更新未完成，重啟後仍不是預期版本。\n\n'
+                f'預期版本: {expectedRelease}\n'
+                f'目前版本: {currentRelease}\n'
+                f'更新來源: {sourceDirectory}\n\n'
+                r'請到 Z:\9630 重新下載。',
+            )
+            return True
+
+        QMessageBox.information(
+            self.ui,
+            'Update Complete',
+            f'更新成功。\n目前版本: {APP_VERSION}, {APP_DATE}',
+        )
+        return False
+
     def _update_to_newest_version(self) -> None:
         if self._updateInProgress:
             return
@@ -698,6 +748,56 @@ class AppMain(QObject):
                 f'找不到更新來源資料夾:\n{sourceDirectory}',
             )
             return
+
+        isFrozenWindows = bool(
+            sys.platform.startswith('win') and getattr(sys, 'frozen', False)
+        )
+        if isFrozenWindows:
+            try:
+                sourceDirectory = resolve_update_package_directory(
+                    sourceDirectory,
+                    Path(sys.executable).name,
+                )
+            except Exception as exc:
+                QMessageBox.warning(
+                    self.ui,
+                    'Update Failed',
+                    f'更新來源不是有效的 p-chart package:\n{exc}',
+                )
+                return
+
+            packageRelease = read_package_release(sourceDirectory)
+            if packageRelease is None:
+                QMessageBox.warning(
+                    self.ui,
+                    'Update Failed',
+                    '更新來源缺少有效的 p-chart-release.json，無法確認 package 版本。\n\n'
+                    f'來源: {sourceDirectory}\n\n'
+                    r'請到 Z:\9630 重新下載，或請 release owner 重新建立 Windows package。',
+                )
+                return
+
+            latestVersion = str(self.launchInfo.get('version') or '')
+            latestBuild = normalize_build_number(self.launchInfo.get('build'))
+            if is_newer_release(
+                latestVersion,
+                latestBuild,
+                packageRelease['version'],
+                packageRelease['build'],
+            ):
+                QMessageBox.warning(
+                    self.ui,
+                    'Update Failed',
+                    '更新資料夾內的 Windows package 比公告版本舊，已停止更新。\n\n'
+                    f'公告版本: {latestVersion}, build {latestBuild}\n'
+                    f'Package 版本: {packageRelease["version"]}, '
+                    f'build {packageRelease["build"]}\n'
+                    f'來源: {sourceDirectory}\n\n'
+                    '請 release owner 重新建立並放置最新版 Windows package。',
+                )
+                return
+        else:
+            packageRelease = None
 
         try:
             overwritePaths = update_target_paths(sourceDirectory, targetDirectory)
@@ -739,6 +839,14 @@ class AppMain(QObject):
         if answer != QMessageBox.StandardButton.Ok:
             return
 
+        if packageRelease is not None:
+            self._updateExpectedVersion = packageRelease['version']
+            self._updateExpectedBuild = packageRelease['build']
+        else:
+            self._updateExpectedVersion = str(self.launchInfo.get('version') or '')
+            self._updateExpectedBuild = normalize_build_number(
+                self.launchInfo.get('build')
+            )
         self._start_update_copy(sourceDirectory, targetDirectory)
 
     def _start_update_copy(
@@ -747,6 +855,7 @@ class AppMain(QObject):
         targetDirectory: Path,
     ) -> None:
         self._updateInProgress = True
+        self._updateSourceDirectory = sourceDirectory
         self._updateTargetDirectory = targetDirectory
         self._updateIsFrozenWindows = bool(
             sys.platform.startswith('win') and getattr(sys, 'frozen', False)
@@ -814,13 +923,21 @@ class AppMain(QObject):
     def _on_update_copy_finished(self, result) -> None:
         if self._updateIsFrozenWindows:
             stageDirectory = Path(result)
+            executablePath = Path(sys.executable).resolve()
             try:
+                write_update_result_marker(
+                    executablePath,
+                    self._updateExpectedVersion,
+                    self._updateExpectedBuild,
+                    self._updateSourceDirectory,
+                )
                 start_windows_update_after_exit(
                     stageDirectory,
                     self._updateTargetDirectory,
-                    Path(sys.executable).resolve(),
+                    executablePath,
                 )
             except Exception as exc:
+                clear_update_result_marker(executablePath)
                 shutil.rmtree(stageDirectory, ignore_errors=True)
                 self._on_update_copy_failed(str(exc))
                 return

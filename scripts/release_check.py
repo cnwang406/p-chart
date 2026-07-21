@@ -69,6 +69,7 @@ class ReleaseCheck:
             self.check_ui_xml,
             self.check_ui_object_contract,
             self.check_version_text,
+            self.check_update_release_manifest,
             self.check_demo_data,
         ]
         for check in checks:
@@ -222,6 +223,16 @@ class ReleaseCheck:
             self.fail(f'README version {readmeVersion} does not match app.py {appVersion}')
             return
         self.ok(f'Version text: {appVersion}, {appDate}')
+
+    def check_update_release_manifest(self) -> None:
+        specText = (ROOT / 'p-chart.spec').read_text(encoding='utf-8')
+        if 'p-chart-release.json' not in specText:
+            self.fail('p-chart.spec does not generate the updater release manifest')
+            return
+        if "{'APP_VERSION', 'APP_DATE'}" not in specText:
+            self.fail('Updater release manifest does not use app.py release constants')
+            return
+        self.ok('Updater release manifest uses APP_VERSION and APP_DATE')
 
     def check_demo_data(self) -> None:
         import pandas as pd

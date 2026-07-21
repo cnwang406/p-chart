@@ -4,11 +4,17 @@ import shutil
 import unittest
 
 from update_helpers import (
+    clear_update_result_marker,
     copy_update_files,
     is_newer_release,
     normalize_build_number,
+    read_package_release,
+    read_update_result_marker,
+    resolve_update_package_directory,
     stage_update_files,
+    update_result_marker_path,
     windows_update_script,
+    write_update_result_marker,
 )
 
 
@@ -43,6 +49,87 @@ class UpdateHelpersTest(unittest.TestCase):
                 )
             finally:
                 shutil.rmtree(stageDirectory, ignore_errors=True)
+
+    def test_resolve_update_package_directory_accepts_package_root(self) -> None:
+        with tempfile.TemporaryDirectory() as sourceText:
+            sourceDirectory = Path(sourceText)
+            (sourceDirectory / 'p-chart.exe').write_text('exe', encoding='utf-8')
+
+            self.assertEqual(
+                resolve_update_package_directory(sourceDirectory, 'p-chart.exe'),
+                sourceDirectory,
+            )
+
+    def test_resolve_update_package_directory_accepts_single_nested_root(self) -> None:
+        with tempfile.TemporaryDirectory() as sourceText:
+            sourceDirectory = Path(sourceText)
+            packageDirectory = sourceDirectory / 'p-chart'
+            packageDirectory.mkdir()
+            (packageDirectory / 'p-chart.exe').write_text('exe', encoding='utf-8')
+
+            self.assertEqual(
+                resolve_update_package_directory(sourceDirectory, 'p-chart.exe'),
+                packageDirectory,
+            )
+
+    def test_resolve_update_package_directory_rejects_missing_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as sourceText:
+            with self.assertRaises(FileNotFoundError):
+                resolve_update_package_directory(Path(sourceText), 'p-chart.exe')
+
+    def test_read_package_release_requires_valid_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as sourceText:
+            packageDirectory = Path(sourceText)
+            self.assertIsNone(read_package_release(packageDirectory))
+
+            (packageDirectory / 'p-chart-release.json').write_text(
+                '{"version": "v3.0", "build": "build 0721"}',
+                encoding='utf-8',
+            )
+            self.assertEqual(
+                read_package_release(packageDirectory),
+                {'version': 'v3.0', 'build': '0721'},
+            )
+
+    def test_read_package_release_accepts_pyinstaller_internal_data(self) -> None:
+        with tempfile.TemporaryDirectory() as sourceText:
+            packageDirectory = Path(sourceText)
+            internalDirectory = packageDirectory / '_internal'
+            internalDirectory.mkdir()
+            (internalDirectory / 'p-chart-release.json').write_text(
+                '{"version": "v3.1", "build": "0722"}',
+                encoding='utf-8',
+            )
+
+            self.assertEqual(
+                read_package_release(packageDirectory),
+                {'version': 'v3.1', 'build': '0722'},
+            )
+
+    def test_update_result_marker_round_trip(self) -> None:
+        executablePath = Path(tempfile.gettempdir()) / 'p-chart-marker-test.exe'
+        clear_update_result_marker(executablePath)
+        try:
+            markerPath = write_update_result_marker(
+                executablePath,
+                'v3.0',
+                'build 0721',
+                Path(r'\\server\share\p-chart'),
+            )
+
+            self.assertEqual(markerPath, update_result_marker_path(executablePath))
+            self.assertEqual(
+                read_update_result_marker(executablePath),
+                {
+                    'expected_version': 'v3.0',
+                    'expected_build': '0721',
+                    'source_directory': r'\\server\share\p-chart',
+                },
+            )
+        finally:
+            clear_update_result_marker(executablePath)
+
+        self.assertIsNone(read_update_result_marker(executablePath))
 
     def test_copy_update_files_reports_deterministic_progress(self) -> None:
         with (
