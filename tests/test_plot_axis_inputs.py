@@ -111,7 +111,25 @@ class ReferenceLineFigureTests(unittest.TestCase):
 
         self.assertEqual(
             [annotation.text for annotation in figure.layout.annotations],
-            ['Thickness=100', 'USL'],
+            ['Thickness=100', 'USL=200'],
+        )
+
+    def test_scatter_custom_date_label_keeps_formatted_value(self) -> None:
+        widget = TabScatterWidget.__new__(TabScatterWidget)
+
+        class FakeLineEdit:
+            def text(self) -> str:
+                return 'mm/dd'
+
+        widget.xFormatLineEdit = FakeLineEdit()
+
+        self.assertEqual(
+            widget._format_date_line_label(
+                'Date',
+                pd.Timestamp('2026-01-11'),
+                'Start',
+            ),
+            'Start=01/11',
         )
 
     def test_controller_value_wrappers_ignore_custom_labels(self) -> None:

@@ -742,7 +742,8 @@ class TabBoxplotWidget(BackgroundTaskMixin):
         value: float,
         customLabel: str | None = None,
     ) -> str:
-        return customLabel or f'{axisTitle}={value:g}'
+        label = customLabel or axisTitle
+        return f'{label}={value:g}'
 
     def _line_color_with_opacity(self, opacity: float) -> str:
         opacity = max(0.0, min(1.0, opacity))

@@ -601,7 +601,8 @@ class TabScatterWidget(BackgroundTaskMixin):
         value: float,
         customLabel: str | None = None,
     ) -> str:
-        return customLabel or f'{axisTitle}={value:g}'
+        label = customLabel or axisTitle
+        return f'{label}={value:g}'
 
     def _format_date_line_label(
         self,
@@ -609,7 +610,8 @@ class TabScatterWidget(BackgroundTaskMixin):
         value,
         customLabel: str | None = None,
     ) -> str:
-        return customLabel or f'{axisTitle}={self._format_date_label(value)}'
+        label = customLabel or axisTitle
+        return f'{label}={self._format_date_label(value)}'
 
     def _add_date_vline(
         self,
