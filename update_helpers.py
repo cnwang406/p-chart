@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import os
 from pathlib import Path
 import re
@@ -58,8 +59,19 @@ def update_target_paths(sourceDirectory: Path, targetDirectory: Path) -> list[Pa
     return targetPaths
 
 
-def copy_update_files(sourceDirectory: Path, targetDirectory: Path) -> None:
-    for sourcePath in sourceDirectory.iterdir():
+UpdateProgressCallback = Callable[[int, int, str], None]
+
+
+def copy_update_files(
+    sourceDirectory: Path,
+    targetDirectory: Path,
+    progressCallback: UpdateProgressCallback | None = None,
+) -> None:
+    sourcePaths = sorted(sourceDirectory.iterdir(), key=lambda path: path.name.lower())
+    totalPaths = len(sourcePaths)
+    for pathIndex, sourcePath in enumerate(sourcePaths, start=1):
+        if progressCallback is not None:
+            progressCallback(pathIndex, totalPaths, sourcePath.name)
         targetPath = targetDirectory / sourcePath.name
         if sourcePath.is_dir():
             shutil.copytree(sourcePath, targetPath, dirs_exist_ok=True)
@@ -67,10 +79,13 @@ def copy_update_files(sourceDirectory: Path, targetDirectory: Path) -> None:
             shutil.copy2(sourcePath, targetPath)
 
 
-def stage_update_files(sourceDirectory: Path) -> Path:
+def stage_update_files(
+    sourceDirectory: Path,
+    progressCallback: UpdateProgressCallback | None = None,
+) -> Path:
     stageDirectory = Path(tempfile.mkdtemp(prefix='p-chart-update-'))
     try:
-        copy_update_files(sourceDirectory, stageDirectory)
+        copy_update_files(sourceDirectory, stageDirectory, progressCallback)
     except Exception:
         shutil.rmtree(stageDirectory, ignore_errors=True)
         raise

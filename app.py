@@ -68,7 +68,18 @@ def configure_qt_runtime_environment() -> None:
 
 import PySide6
 configure_qt_runtime_environment()
-from PySide6.QtCore import QCoreApplication, QEvent, QFile, QObject, QSignalBlocker, QTimer
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QFile,
+    QObject,
+    QSignalBlocker,
+    QThread,
+    QTimer,
+    Qt,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QFont, QFontDatabase, QIcon, QColor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -77,6 +88,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QTabWidget,
     QTextEdit,
@@ -425,8 +437,61 @@ class ResponsiveUiResizer(QObject):
             self._apply_parent_rules(parentWidget)
 
 
-class AppMain:
+class UpdateCopyWorker(QObject):
+    progress = Signal(str, int, int)
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        sourceDirectory: Path,
+        targetDirectory: Path,
+        stageOnly: bool,
+    ) -> None:
+        super().__init__()
+        self.sourceDirectory = sourceDirectory
+        self.targetDirectory = targetDirectory
+        self.stageOnly = stageOnly
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            actionText = '正在複製至暫存區' if self.stageOnly else '正在複製'
+
+            def report_progress(current: int, total: int, name: str) -> None:
+                self.progress.emit(
+                    f'更新中：{actionText} {name} ({current}/{total})',
+                    max(0, current - 1),
+                    total,
+                )
+
+            if self.stageOnly:
+                result = stage_update_files(
+                    self.sourceDirectory,
+                    report_progress,
+                )
+            else:
+                copy_update_files(
+                    self.sourceDirectory,
+                    self.targetDirectory,
+                    report_progress,
+                )
+                result = self.targetDirectory
+            self.progress.emit('更新中：檔案複製完成，正在確認更新狀態…', 1, 1)
+            self.finished.emit(result)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class AppMain(QObject):
     def __init__(self) -> None:
+        super().__init__()
+        self._updateInProgress = False
+        self._updateDialog = None
+        self._updateThread = None
+        self._updateWorker = None
+        self._updateTargetDirectory = None
+        self._updateIsFrozenWindows = False
         self.runtimeOptions = remove_runtime_args()
         if os.path.exists(QT_PLUGIN_PATH):
             QCoreApplication.addLibraryPath(QT_PLUGIN_PATH)
@@ -621,6 +686,9 @@ class AppMain:
         self._update_to_newest_version()
 
     def _update_to_newest_version(self) -> None:
+        if self._updateInProgress:
+            return
+
         sourceDirectory = UPDATE_SOURCE_DIRECTORY
         targetDirectory = current_app_directory()
         if not sourceDirectory.exists() or not sourceDirectory.is_dir():
@@ -633,71 +701,188 @@ class AppMain:
 
         try:
             overwritePaths = update_target_paths(sourceDirectory, targetDirectory)
-            if overwritePaths:
-                overwriteText = '\n'.join(str(path) for path in overwritePaths[:40])
-                if len(overwritePaths) > 40:
-                    overwriteText = (
-                        f'{overwriteText}\n...and {len(overwritePaths) - 40} more path(s)'
-                    )
-                message = (
-                    f'目前 pchart {APP_VERSION} 會被覆蓋:\n\n'
-                    f'{overwriteText}\n\n'
-                    '按 OK 後開始更新；按 Cancel 可以拒絕這次更新。'
-                )
-            else:
-                message = (
-                    '目前沒有找到會被覆蓋的 existing path。\n\n'
-                    f'更新檔會從:\n{sourceDirectory}\n\n'
-                    f'複製到:\n{targetDirectory}\n\n'
-                    '按 OK 後開始更新；按 Cancel 可以拒絕這次更新。'
-                )
-            answer = QMessageBox.question(
-                self.ui,
-                'Update Targets',
-                message,
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Cancel,
-            )
-            if answer != QMessageBox.StandardButton.Ok:
-                return
-
-            if sys.platform.startswith('win') and getattr(sys, 'frozen', False):
-                stageDirectory = stage_update_files(sourceDirectory)
-                try:
-                    start_windows_update_after_exit(
-                        stageDirectory,
-                        targetDirectory,
-                        Path(sys.executable).resolve(),
-                    )
-                except Exception:
-                    shutil.rmtree(stageDirectory, ignore_errors=True)
-                    raise
-            else:
-                copy_update_files(sourceDirectory, targetDirectory)
         except Exception as exc:
             QMessageBox.warning(
                 self.ui,
                 'Update Failed',
-                f'更新失敗:\n{exc}',
+                f'無法檢查更新目標:\n{exc}',
             )
             return
 
-        if sys.platform.startswith('win') and getattr(sys, 'frozen', False):
-            QMessageBox.information(
-                self.ui,
-                'Update Ready',
-                '更新檔已準備完成。程式現在會關閉；待檔案解除鎖定後，'
-                f'會自動完成更新並重新啟動 {APP_NAME}。',
+        if overwritePaths:
+            overwriteText = '\n'.join(str(path) for path in overwritePaths[:40])
+            if len(overwritePaths) > 40:
+                overwriteText = (
+                    f'{overwriteText}\n...and {len(overwritePaths) - 40} more path(s)'
+                )
+            message = (
+                f'目前 pchart {APP_VERSION} 會被覆蓋:\n\n'
+                f'{overwriteText}\n\n'
+                '按 OK 後開始更新；更新期間請勿關閉程式。\n'
+                '按 Cancel 可以拒絕這次更新。'
             )
-            self.ui.close()
-            self.app.quit()
+        else:
+            message = (
+                '目前沒有找到會被覆蓋的 existing path。\n\n'
+                f'更新檔會從:\n{sourceDirectory}\n\n'
+                f'複製到:\n{targetDirectory}\n\n'
+                '按 OK 後開始更新；更新期間請勿關閉程式。\n'
+                '按 Cancel 可以拒絕這次更新。'
+            )
+        answer = QMessageBox.question(
+            self.ui,
+            'Update Targets',
+            message,
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Ok:
             return
+
+        self._start_update_copy(sourceDirectory, targetDirectory)
+
+    def _start_update_copy(
+        self,
+        sourceDirectory: Path,
+        targetDirectory: Path,
+    ) -> None:
+        self._updateInProgress = True
+        self._updateTargetDirectory = targetDirectory
+        self._updateIsFrozenWindows = bool(
+            sys.platform.startswith('win') and getattr(sys, 'frozen', False)
+        )
+        self._show_update_progress_dialog()
+
+        thread = QThread()
+        worker = UpdateCopyWorker(
+            sourceDirectory,
+            targetDirectory,
+            self._updateIsFrozenWindows,
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_update_copy_progress)
+        worker.finished.connect(self._on_update_copy_finished)
+        worker.failed.connect(self._on_update_copy_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
+        thread.finished.connect(self._on_update_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._updateThread = thread
+        self._updateWorker = worker
+        thread.start()
+
+    def _show_update_progress_dialog(self) -> None:
+        initialText = (
+            '更新中：正在建立更新暫存區…'
+            if self._updateIsFrozenWindows
+            else '更新中：正在複製更新檔案…'
+        )
+        dialog = QProgressDialog(initialText, '', 0, 0, self.ui)
+        dialog.setWindowTitle(f'{APP_NAME} 更新中')
+        dialog.setCancelButton(None)
+        dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setMinimumDuration(0)
+        dialog.setMinimumWidth(460)
+        dialog.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, False)
+        dialog.setLabelText(f'{initialText}\n請勿關閉程式。')
+        dialog.show()
+        self._updateDialog = dialog
+        self.app.processEvents()
+
+    @Slot(str, int, int)
+    def _on_update_copy_progress(
+        self,
+        statusText: str,
+        progressValue: int,
+        progressMaximum: int,
+    ) -> None:
+        if self._updateDialog is None:
+            return
+        if progressMaximum > 0:
+            self._updateDialog.setRange(0, progressMaximum)
+            self._updateDialog.setValue(progressValue)
+        else:
+            self._updateDialog.setRange(0, 0)
+        self._updateDialog.setLabelText(f'{statusText}\n請勿關閉程式。')
+
+    @Slot(object)
+    def _on_update_copy_finished(self, result) -> None:
+        if self._updateIsFrozenWindows:
+            stageDirectory = Path(result)
+            try:
+                start_windows_update_after_exit(
+                    stageDirectory,
+                    self._updateTargetDirectory,
+                    Path(sys.executable).resolve(),
+                )
+            except Exception as exc:
+                shutil.rmtree(stageDirectory, ignore_errors=True)
+                self._on_update_copy_failed(str(exc))
+                return
+
+            self._set_update_dialog_complete(
+                '更新檔已準備完成。\n'
+                '程式即將關閉，接著會安裝更新並自動重新啟動。'
+            )
+            QTimer.singleShot(1500, self._quit_for_update)
+            return
+
+        self._set_update_dialog_complete('更新完成。正在確認更新狀態…')
+        QTimer.singleShot(600, self._show_update_complete)
+
+    def _set_update_dialog_complete(self, statusText: str) -> None:
+        if self._updateDialog is None:
+            return
+        self._updateDialog.setRange(0, 1)
+        self._updateDialog.setValue(1)
+        self._updateDialog.setLabelText(statusText)
+
+    @Slot(str)
+    def _on_update_copy_failed(self, errorText: str) -> None:
+        self._close_update_dialog()
+        self._updateInProgress = False
+        QMessageBox.warning(
+            self.ui,
+            'Update Failed',
+            f'更新失敗:\n{errorText}',
+        )
+
+    @Slot()
+    def _on_update_thread_finished(self) -> None:
+        self._updateThread = None
+        self._updateWorker = None
+
+    def _close_update_dialog(self) -> None:
+        dialog = self._updateDialog
+        self._updateDialog = None
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+
+    def _show_update_complete(self) -> None:
+        targetDirectory = self._updateTargetDirectory
+        self._close_update_dialog()
+        self._updateInProgress = False
 
         QMessageBox.information(
             self.ui,
             'Update Complete',
             f'更新完成。請重新啟動 {APP_NAME}。\n\nTarget:\n{targetDirectory}',
         )
+
+    def _quit_for_update(self) -> None:
+        if self._updateDialog is not None:
+            self._updateDialog.setLabelText(
+                '更新中：正在關閉舊版本…\n'
+                '請等待安裝完成並自動重新啟動。'
+            )
+        self.ui.close()
+        self.app.quit()
 
     def _show_about_dialog(self) -> None:
         dialog = QDialog(self.ui)
